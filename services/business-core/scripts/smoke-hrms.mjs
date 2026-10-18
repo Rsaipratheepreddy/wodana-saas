@@ -26,10 +26,13 @@ try{
  }
  const staffId=await member(staff),managerId=await member(manager),otherId=await member(other);await member(viewer,'viewer');
  const managerRole=randomUUID();await db.query(`INSERT INTO roles(id,workspace_id,code,name,is_system) VALUES($1,$2,'hr-reviewer','HR reviewer',false)`,[managerRole,w]);await db.query(`INSERT INTO role_permissions(workspace_id,role_id,permission_id) SELECT $1,$2,id FROM permissions WHERE code IN ('hrms.team','hrms.evidence')`,[w,managerRole]);await db.query(`INSERT INTO member_roles(workspace_id,membership_id,role_id) VALUES($1,$2,$3)`,[w,managerId,managerRole]);
- await request(`${root}/bootstrap`,{headers:viewer,expected:403});
- const calendar=await request(`${root}/calendars`,{body:{name:'Six-day studio',timezone:'Asia/Kolkata',workingDays:[1,2,3,4,5,6],holidays:['2027-01-05'],dayStart:'09:00',halfDay:'13:00',dayEnd:'18:00'}});
- await request(`${root}/settings`,{method:'PUT',body:{version:0,defaultCalendarId:calendar.id,fallbackApproverId:own.id}});
- for(const [id,reporting] of [[own.id,null],[managerId,own.id],[staffId,managerId],[otherId,own.id]])await request(`${root}/people/${id}`,{method:'PUT',body:{version:0,calendarId:calendar.id,managerId:reporting,activeFrom:'2020-01-01',enabled:true,remoteAllowed:false,employeeCode:id.slice(0,8),designation:'Staff',department:'Design'}});
+ // Everyone uses their own attendance and leave from day one: the first call sets HRMS up and enrols them.
+ assert.equal((await request(`${root}/bootstrap`,{headers:viewer})).permissions.self,true);
+ const calendar=await request(`${root}/calendars`,{body:{name:'Six-day studio',timezone:'Asia/Kolkata',workingDays:[1,2,3,4,5,6],dayStart:'09:00',halfDay:'13:00',dayEnd:'18:00'}});
+ await request(`${root}/calendars/${calendar.id}/holidays`,{body:{name:'Holiday',startsOn:'2027-01-05',endsOn:'2027-01-05'}});
+ await request(`${root}/settings`,{method:'PUT',body:{version:(await request(`${root}/bootstrap`)).settings.version,defaultCalendarId:calendar.id,fallbackApproverId:own.id}});
+ const enrolled=Object.fromEntries((await request(`${root}/people`)).map(p=>[p.membershipId,p.version]));
+ for(const [id,reporting] of [[own.id,null],[managerId,own.id],[staffId,managerId],[otherId,own.id]])await request(`${root}/people/${id}`,{method:'PUT',body:{version:enrolled[id],calendarId:calendar.id,managerId:reporting,activeFrom:'2020-01-01',enabled:true,remoteAllowed:false,employeeCode:id.slice(0,8),designation:'Staff',department:'Design'}});
  const boot=await request(`${root}/bootstrap`,{headers:staff});assert.equal(boot.employee.membershipId,staffId);assert.equal(boot.permissions.self,true);assert.equal(boot.permissions.manage,false);
  assert.deepEqual((await request(`${root}/people`,{headers:manager})).map(p=>p.membershipId),[staffId]);await request(`${root}/people`,{headers:staff,expected:403});
  const office=await request(`${projects}/locations`,{method:'PUT',body:{version:0,name:'Studio',kind:'office',latitude:12.9716,longitude:77.5946,radiusM:150}});
@@ -59,7 +62,11 @@ try{
  const opportunity=randomUUID(),caseId=randomUUID();await db.query(`INSERT INTO crm_opportunities(id,workspace_id,party_id,pipeline_id,stage_id,title,status,owner_membership_id) VALUES($1,$2,$3,$4,$5,'Villa project','won',$6)`,[opportunity,w,party.id,pipeline.id,pipeline.stages[0].id,managerId]);await db.query(`INSERT INTO pre_project_cases(id,workspace_id,opportunity_id,created_by) VALUES($1,$2,$3,$4)`,[caseId,w,opportunity,created.membership?.userId??(await db.query('SELECT user_id FROM workspace_memberships WHERE id=$1',[own.id])).rows[0].user_id]);
  await request(`${projects}/assignments`,{method:'PUT',body:{caseId,membershipId:staffId,isManager:false,active:true}});
  const site=await request(`${projects}/locations`,{method:'PUT',body:{version:0,name:'Villa site',kind:'site',caseId,latitude:12.9716,longitude:77.5946,radiusM:150}});
- const project=await request(`${projects}/from-pre-project`,{body:{caseId}});assert.equal((await request(`${projects}/from-pre-project`,{body:{caseId}})).id,project.id);assert.equal((await request(`${projects}/locations`,{headers:staff})).find(l=>l.id===site.id).projectId,project.id);
+ // A project identity for attendance; projects themselves start from an accepted quotation (project-core).
+ const project=(await db.query(`INSERT INTO delivery_projects(workspace_id,case_id,name,created_by) SELECT $1,$2,'Villa project',user_id FROM workspace_memberships WHERE id=$3 RETURNING id`,[w,caseId,managerId])).rows[0];
+ await db.query(`INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager,active) SELECT workspace_id,$3,membership_id,is_manager,active FROM project_assignments WHERE workspace_id=$1 AND case_id=$2`,[w,caseId,project.id]);
+ await db.query(`UPDATE work_locations SET project_id=$3,case_id=NULL,version=version+1 WHERE workspace_id=$1 AND case_id=$2`,[w,caseId,project.id]);
+ assert.equal((await request(`${projects}/locations`,{headers:staff})).find(l=>l.id===site.id).projectId,project.id);
  const projectIn=await request(`${root}/attendance/actions`,{headers:staff,body:await payload('check_in',null,{mode:'site',locationId:site.id,projectId:project.id})});
  const switched=await request(`${root}/attendance/actions`,{headers:staff,body:await payload('switch',projectIn.current,{mode:'field',locationId:null,projectId:null})});assert.equal(switched.current.segments.length,2);
  const back=await request(`${root}/attendance/actions`,{headers:staff,body:await payload('switch',switched.current,{mode:'site',locationId:site.id,projectId:project.id})});

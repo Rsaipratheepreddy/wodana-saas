@@ -13,7 +13,4 @@ export const fontAssets = {
   NotoSansArabic_400Regular, NotoSansArabic_500Medium, NotoSansArabic_600SemiBold, NotoSansArabic_700Bold,
 };
 
-export const fontFamilies = {
-  latin: { regular: 'Inter_400Regular', medium: 'Inter_500Medium', semibold: 'Inter_600SemiBold', bold: 'Inter_700Bold' },
-  arabic: { regular: 'NotoSansArabic_400Regular', medium: 'NotoSansArabic_500Medium', semibold: 'NotoSansArabic_600SemiBold', bold: 'NotoSansArabic_700Bold' },
-} as const;
+export { fontFamilies } from './font-families';

@@ -27,6 +27,10 @@ describe("OrganizationStructurePage", () => {
     render(<OrganizationStructurePage initialData={data} />);
 
     expect(screen.getByRole("tab", { name: "Teams (1)" })).toHaveAttribute("aria-selected", "true");
+    // The counts show once, on the tabs: no summary strip repeating them.
+    expect(screen.queryByText("1 team")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 department")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Organization structure summary" })).not.toBeInTheDocument();
     expect(screen.getByText("Concept Design")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit members in Concept Design" })).toBeInTheDocument();
     await interaction.click(screen.getByRole("tab", { name: "Business units (1)" }));

@@ -2,28 +2,63 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { leadsPageFixture } from "@/lib/crm/leads";
+import { LeadAssignmentDialog } from "./lead-assignment-dialog";
 import { LeadRouting } from "./lead-operations";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Auto-assignment settings", () => {
-  it("sets the unanswered-owner handoff on the selected queue", async () => {
+  it("sets the unanswered-owner handoff on the selected queue, keeping how it shares enquiries", async () => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
     data.queues[0].takeoverAfterMinutes = 60;
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
-    expect(await screen.findByText(/elapsed minutes, including outside business hours/i)).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Lead handoff" }));
-    const dialog = await screen.findByRole("dialog", { name: "Unanswered lead handoff" });
-    const minutes = within(dialog).getByRole("textbox", { name: /Elapsed minutes before another sales owner/ });
+    expect(await screen.findByText(/working minutes/i)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Queue settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Queue settings" });
+    const minutes = within(dialog).getByRole("textbox", { name: /Working minutes before another sales owner/ });
     await user.clear(minutes);
     await user.type(minutes, "60");
-    await user.click(within(dialog).getByRole("button", { name: "Save handoff" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
     const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
     expect(String(call[0])).toContain(`/queues/${data.queues[0].id}`);
-    expect(JSON.parse(String(call[1].body))).toEqual({ version: data.queues[0].version, takeoverAfterMinutes: 60 });
+    expect(JSON.parse(String(call[1].body))).toEqual({ version: data.queues[0].version, assignmentMode: "balanced", takeoverAfterMinutes: 60 });
+  });
+
+  it("turns on unassigning an enquiry nobody picked up after a working day (PLM-180)", async () => {
+    const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
+    data.canManageSales = true;
+    data.salesSettings = { takeoverCap: 2, unownedEscalationMinutes: 15, clientReviewMinutes: 30, duplicateWindowDays: 90, stuckDealDays: 14, salesAdminMembershipId: null, version: 3 };
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? { ...data.salesSettings, unassignAfterWorkingDay: true, version: 4 } : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LeadRouting initialData={data} />);
+    await user.click(await screen.findByRole("button", { name: "Escalation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Escalation" });
+    const toggle = within(dialog).getByRole("checkbox", { name: "Unassign after a working day and tell the owner" });
+    expect(toggle).not.toBeChecked();
+    await user.click(toggle);
+    await user.click(within(dialog).getByRole("button", { name: "Save escalation" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
+    const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
+    expect(String(call[0])).toContain("/sales-settings");
+    expect(JSON.parse(String(call[1].body))).toMatchObject({ version: 3, unassignAfterWorkingDay: true, takeoverCap: 2 });
+  });
+
+  it("switches a queue to round-robin (each sales owner in turn)", async () => {
+    const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LeadRouting initialData={data} />);
+    await user.click(await screen.findByRole("button", { name: "Queue settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Queue settings" });
+    await user.click(within(dialog).getByRole("button", { name: /New enquiries go to/ }));
+    await user.click(await screen.findByRole("option", { name: "Each sales owner in turn" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init.method === "PATCH")).toBe(true));
+    const call = fetchMock.mock.calls.find(([, init]) => init.method === "PATCH")!;
+    expect(JSON.parse(String(call[1].body))).toMatchObject({ version: data.queues[0].version, assignmentMode: "round_robin" });
   });
   it("updates capacity without clearing existing skills, languages, or territories", async () => {
     const user = userEvent.setup(), data = structuredClone(leadsPageFixture);
@@ -46,7 +81,7 @@ describe("Auto-assignment settings", () => {
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({ ok: true, json: async () => init.method === "PATCH" ? {} : url.includes("assignment-policies") ? data.assignmentPolicies : data.queues }));
     vi.stubGlobal("fetch", fetchMock);
     render(<LeadRouting initialData={data} />);
-    await user.click(await screen.findByRole("tab", { name: "Routing order" }));
+    await user.click(await screen.findByRole("radio", { name: "Routing order" }));
     await user.click(await screen.findByRole("button", { name: `Edit ${policy.name}` }));
     const dialog = await screen.findByRole("dialog", { name: "Edit auto-assignment" });
     const order = within(dialog).getByRole("textbox", { name: /Order/ });
@@ -73,4 +108,19 @@ describe("Auto-assignment settings", () => {
     expect(JSON.parse(String(call[1].body))).toMatchObject({ membershipId: data.members[0].id, capacity: 25, weight: 1, isAvailable: true });
   });
 
+});
+
+it("keeps a successful assignment saved when refreshing fails and prevents another submission", async () => {
+  const data = structuredClone(leadsPageFixture), lead = data.items[0];
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ...lead, version: lead.version + 1 }) });
+  vi.stubGlobal("fetch", fetchMock);
+  const onClose = vi.fn(), onSaved = vi.fn().mockRejectedValue(new Error("Refresh unavailable"));
+  render(<LeadAssignmentDialog lead={lead} members={data.members} workspaceId={data.workspaceId} onClose={onClose} onSaved={onSaved} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: "Auto-assign" }));
+  await user.click(screen.getByRole("button", { name: "Reassign" }));
+  expect(await screen.findByText("Assignment saved. Refresh the page to see the updated sales owner.")).toBeInTheDocument();
+  expect(onClose).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Reassign" })).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });

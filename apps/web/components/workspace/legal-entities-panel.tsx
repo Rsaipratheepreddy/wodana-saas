@@ -1,8 +1,13 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { Building2, CheckCircle2, Pencil, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, SelectField, TextInput } from "@/design-system";
+import { useMemo, useState, type FormEvent } from "react";
+import { Badge, Button, Callout, ConfirmationDialog, PhoneField, SelectField, TextAreaField, TextInput, useDesignSystem, FormDialog, FormSection } from "@/design-system";
+import { joinPhone, splitPhone } from "@/lib/phone";
+import { EntityImageField } from "./entity-image-field";
+import { countryFromLocale } from "@/lib/workspace/region-labels";
+import { TaxNumberingSheet } from "./tax-numbering-sheet";
 import type { CompanyAddress, LegalEntityRecord, WorkspaceRecord } from "@/lib/workspace/company-profile";
 import { countryOptions, currencyOptions, localeOptions, timeZoneOptions } from "@/lib/workspace/regional-options";
 import styles from "./company-profile.module.css";
@@ -22,6 +27,10 @@ type LegalEntityDraft = {
   city: string;
   region: string;
   postalCode: string;
+  phoneCountry: string;
+  phone: string;
+  email: string;
+  letterheadFooter: string;
 };
 
 function addressValue(address: CompanyAddress, key: keyof CompanyAddress) {
@@ -49,12 +58,15 @@ function createDraft(workspace: WorkspaceRecord, entity?: LegalEntityRecord, tem
     city: addressValue(entity.address, "city"),
     region: addressValue(entity.address, "region"),
     postalCode: addressValue(entity.address, "postalCode"),
+    ...phoneOf(entity.phone, entity.countryCode),
+    email: entity.email ?? "",
+    letterheadFooter: entity.letterheadFooter ?? "",
   };
   return {
     code: "",
     displayName: "",
     registeredName: "",
-    countryCode: template?.countryCode ?? "AE",
+    countryCode: template?.countryCode ?? countryFromLocale(workspace.defaultLocale) ?? "",
     baseCurrency: template?.baseCurrency ?? workspace.defaultCurrency,
     locale: template?.locale ?? workspace.defaultLocale,
     timezone: template?.timezone ?? workspace.defaultTimezone,
@@ -65,7 +77,15 @@ function createDraft(workspace: WorkspaceRecord, entity?: LegalEntityRecord, tem
     city: "",
     region: "",
     postalCode: "",
+    ...phoneOf(null, template?.countryCode ?? countryFromLocale(workspace.defaultLocale) ?? ""),
+    email: "",
+    letterheadFooter: "",
   };
+}
+
+function phoneOf(phone: string | null | undefined, country: string) {
+  const split = splitPhone(phone ?? "", country);
+  return { phoneCountry: split.country, phone: split.national };
 }
 
 function optionalAddress(draft: LegalEntityDraft) {
@@ -82,8 +102,8 @@ function responseMessage(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-function displayRegion(code: string) {
-  try { return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code; } catch { return code; }
+function displayRegion(code: string, locale: string) {
+  try { return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code; } catch { return code; }
 }
 
 export function LegalEntitiesPanel({
@@ -99,7 +119,12 @@ export function LegalEntitiesPanel({
   workspace: WorkspaceRecord;
   onChange: (entities: LegalEntityRecord[]) => void;
 }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
   const [entities, setEntities] = useState(initialEntities);
+  // A reloaded list from the page replaces the local one, adjusted while rendering rather than in an effect.
+  const [entitiesFrom, setEntitiesFrom] = useState(initialEntities);
+  if (initialEntities !== entitiesFrom) { setEntitiesFrom(initialEntities); setEntities(initialEntities); }
   const [editing, setEditing] = useState<LegalEntityRecord | "new" | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<LegalEntityRecord | null>(null);
   const [draft, setDraft] = useState<LegalEntityDraft>(() => createDraft(workspace));
@@ -112,10 +137,6 @@ export function LegalEntitiesPanel({
   const locales = useMemo(() => localeOptions, []);
   const timezones = useMemo(() => timeZoneOptions(), []);
   const existing = editing && editing !== "new" ? editing : null;
-
-  useEffect(() => {
-    setEntities(initialEntities);
-  }, [initialEntities]);
 
   const commit = (next: LegalEntityRecord[]) => {
     setEntities(next);
@@ -150,9 +171,9 @@ export function LegalEntitiesPanel({
     const code = draft.code.trim().toUpperCase();
     const displayName = draft.displayName.trim();
     const registeredName = draft.registeredName.trim();
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(code)) { setError("Entity code must be 2–24 letters, numbers, hyphens, or underscores."); return; }
-    if (displayName.length < 2 || registeredName.length < 2) { setError("Enter a display name and registered company name."); return; }
-    if (!/^[A-Z]{2}$/.test(draft.countryCode) || !/^[A-Z]{3}$/.test(draft.baseCurrency) || !draft.locale || !draft.timezone) { setError("Choose country, currency, locale, and time zone."); return; }
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(code)) { setError(t("Entity code must be 2–24 letters, numbers, hyphens, or underscores.")); return; }
+    if (displayName.length < 2 || registeredName.length < 2) { setError(t("Enter a display name and registered company name.")); return; }
+    if (!/^[A-Z]{2}$/.test(draft.countryCode) || !/^[A-Z]{3}$/.test(draft.baseCurrency) || !draft.locale || !draft.timezone) { setError(t("Choose country, currency, locale, and time zone.")); return; }
     setSaving(true);
     setError("");
     setNotice("");
@@ -168,6 +189,9 @@ export function LegalEntitiesPanel({
       registrationNumber: draft.registrationNumber.trim(),
       taxRegistrationNumber: draft.taxRegistrationNumber.trim(),
       address: optionalAddress(draft),
+      phone: draft.phone.trim() ? joinPhone(draft.phoneCountry, draft.phone) : "",
+      email: draft.email.trim(),
+      letterheadFooter: draft.letterheadFooter.trim(),
     };
     try {
       const response = await fetch(existing ? `/api/workspace/legal-entities/${existing.id}` : "/api/workspace/legal-entities", {
@@ -175,16 +199,23 @@ export function LegalEntitiesPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The business record could not be saved."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The business record could not be saved.")));
       const saved = await response.json() as LegalEntityRecord;
       commit(existing ? entities.map((entity) => entity.id === saved.id ? saved : entity) : [...entities, saved]);
       setEditing(null);
-      setNotice(existing ? `${saved.displayName} updated.` : `${saved.displayName} added.`);
+      setNotice(existing ? t("{name} updated.", { name: saved.displayName }) : t("{name} added.", { name: saved.displayName }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The business record could not be saved.");
+      setError(failure instanceof Error ? failure.message : t("The business record could not be saved."));
     } finally {
       setSaving(false);
     }
+  };
+
+  // A new logo or letterhead saves at once and moves the business to its next version.
+  const updateImage = (entity: LegalEntityRecord, change: Partial<LegalEntityRecord>) => {
+    const next = { ...entity, ...change };
+    setEditing(next);
+    commit(entities.map((item) => item.id === next.id ? next : item));
   };
 
   const archive = async () => {
@@ -198,13 +229,13 @@ export function LegalEntitiesPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId: workspace.id, version: archiveTarget.version }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The business record could not be archived."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The business record could not be archived.")));
       const archived = await response.json() as LegalEntityRecord;
       commit(entities.filter((entity) => entity.id !== archived.id));
       setArchiveTarget(null);
-      setNotice(`${archived.displayName} archived.`);
+      setNotice(t("{name} archived.", { name: archived.displayName }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The business record could not be archived.");
+      setError(failure instanceof Error ? failure.message : t("The business record could not be archived."));
       setArchiveTarget(null);
     } finally {
       setArchiving(false);
@@ -212,68 +243,79 @@ export function LegalEntitiesPanel({
   };
 
   return <>
-    <section aria-label={standalone ? "Business records" : undefined} aria-labelledby={standalone ? undefined : "legal-entities-heading"} className={`${styles.detailSection} ${styles.legalEntitiesSection}`}>
+    <section aria-label={standalone ? t("Business records") : undefined} aria-labelledby={standalone ? undefined : "legal-entities-heading"} className={`${styles.detailSection} ${styles.legalEntitiesSection}`}>
       <header>
-        <div>{standalone ? <p className={styles.standaloneSectionHint}>Official company, trade-license and tax details used on contracts and invoices.</p> : <><h2 id="legal-entities-heading">Business records</h2><p className={styles.sectionHint}>Official company, trade-license and tax details used on contracts and invoices.</p></>}</div>
-        {canManage ? <Button onPress={openCreate} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />Add business</Button> : null}
+        <div>{standalone ? <h2 className={styles.standaloneHeading}>{t("Businesses")}</h2> : <><h2 id="legal-entities-heading">{t("Business records")}</h2><p className={styles.sectionHint}>{t("Official company, trade-license and tax details used on contracts and invoices.")}</p></>}</div>
+        {canManage ? <Button onPress={openCreate} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />{t("Add business")}</Button> : null}
       </header>
       {notice ? <p aria-live="polite" className={styles.organizationNotice}><CheckCircle2 aria-hidden="true" size={14} />{notice}</p> : null}
-      {error ? <Callout title="Business record action failed" tone="danger">{error}</Callout> : null}
-      <ul aria-label="Active legal entities" className={styles.legalEntityList}>
+      {error ? <Callout title={t("Business record action failed")} tone="danger">{error}</Callout> : null}
+      <ul aria-label={t("Active legal entities")} className={styles.legalEntityList}>
         {entities.map((entity) => <li key={entity.id}>
           <span aria-hidden="true" className={styles.organizationIcon}><Building2 size={15} /></span>
           <div className={styles.legalEntityDetails}>
             <strong>{entity.displayName}</strong>
             <small>{entity.code} · {entity.registeredName}</small>
-            <small>{displayRegion(entity.countryCode)} · {entity.baseCurrency} · {entity.timezone}</small>
+            <small>{displayRegion(entity.countryCode, locale)} · {entity.baseCurrency} · {entity.timezone}</small>
           </div>
-          <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status}</Badge>
+          <Badge tone={entity.status === "active" ? "success" : "neutral"}>{entity.status === "active" ? t("Active") : t("Archived")}</Badge>
+          <TaxNumberingSheet canManage={canManage} entityId={entity.id} entityName={entity.displayName} workspaceId={workspace.id} />
           {canManage ? <div className={styles.legalEntityActions}>
-            <Button aria-label={`Edit ${entity.displayName}`} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />Edit</Button>
-            {entities.length > 1 ? <Button aria-label={`Archive ${entity.displayName}`} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />Archive</Button> : null}
+            <Button aria-label={t("Edit {name}", { name: entity.displayName })} onPress={() => openEdit(entity)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button>
+            {entities.length > 1 ? <Button aria-label={t("Archive {name}", { name: entity.displayName })} onPress={() => setArchiveTarget(entity)} size="compact" variant="quiet"><Trash2 aria-hidden="true" size={14} />{t("Archive")}</Button> : null}
           </div> : null}
         </li>)}
       </ul>
-      {entities.length === 1 && canManage ? <p className={styles.permissionNote}>At least one active business record is required for a workspace.</p> : null}
+      {entities.length === 1 && canManage ? <p className={styles.permissionNote}>{t("At least one active business record is required for a workspace.")}</p> : null}
     </section>
 
-    <ControlledModalDialog
-      description={existing ? "Update the official details and defaults for this business." : "Add official business details for documents, operating units and integrations."}
-      footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setEditing(null)}>Cancel</Button><Button form="legal-entity-form" isLoading={saving} type="submit" variant="primary">{existing ? "Save business" : "Add business"}</Button></div>}
-      isDismissable={!saving}
-      isOpen={Boolean(editing)}
-      onOpenChange={(open) => { if (!open && !saving) setEditing(null); }}
-      size="lg"
-      title={existing ? `Edit ${existing.displayName}` : "Add business"}
-    >
-      <form className={styles.legalEntityForm} id="legal-entity-form" noValidate onSubmit={save}>
-        {error ? <Callout title="Could not save business record" tone="danger">{error}</Callout> : null}
-        <div className={styles.formGrid}>
-          <TextInput isDisabled={Boolean(existing)} isRequired label="Entity code" onChange={(code) => { setDraft((current) => ({ ...current, code: code.toUpperCase() })); setError(""); }} placeholder="PALM_LIVING" value={draft.code} />
-          <TextInput isRequired label="Display name" onChange={updateDisplayName} placeholder="Palm Living" value={draft.displayName} />
-          <div className={styles.fullField}><TextInput isRequired label="Registered company name" onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} /></div>
-          <SelectField isRequired items={countries} label="Country / region" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, countryCode: String(key) }))} selectedKey={draft.countryCode} />
-          <SelectField isRequired items={currencies} label="Base currency" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, baseCurrency: String(key) }))} selectedKey={draft.baseCurrency} />
-          <SelectField isRequired items={locales} label="Language & format" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, locale: String(key) }))} selectedKey={draft.locale} />
-          <SelectField isRequired items={timezones} label="Time zone" onSelectionChange={(key) => key && setDraft((current) => ({ ...current, timezone: String(key) }))} selectedKey={draft.timezone} />
-          <TextInput label="Registration number" onChange={(registrationNumber) => setDraft((current) => ({ ...current, registrationNumber }))} value={draft.registrationNumber} />
-          <TextInput label="Tax registration number" onChange={(taxRegistrationNumber) => setDraft((current) => ({ ...current, taxRegistrationNumber }))} value={draft.taxRegistrationNumber} />
-          <div className={styles.fullField}><TextInput label="Address line 1" onChange={(line1) => setDraft((current) => ({ ...current, line1 }))} value={draft.line1} /></div>
-          <div className={styles.fullField}><TextInput label="Address line 2" onChange={(line2) => setDraft((current) => ({ ...current, line2 }))} value={draft.line2} /></div>
-          <TextInput label="City" onChange={(city) => setDraft((current) => ({ ...current, city }))} value={draft.city} />
-          <TextInput label="State / region" onChange={(region) => setDraft((current) => ({ ...current, region }))} value={draft.region} />
-          <TextInput label="Postal code" onChange={(postalCode) => setDraft((current) => ({ ...current, postalCode }))} value={draft.postalCode} />
-        </div>
-      </form>
-    </ControlledModalDialog>
+    <FormDialog isOpen={Boolean(editing)} size="lg" title={existing ? t("Edit {name}", { name: existing.displayName }) : t("Add business")} onClose={() => { setEditing(null); }} isSubmitting={saving} submitLabel={existing ? t("Save business") : t("Add business")} onSubmit={save} formClassName={styles.legalEntityForm}>
+
+        {error ? <Callout title={t("Could not save business record")} tone="danger">{error}</Callout> : null}
+        <FormSection>
+          <TextInput isDisabled={Boolean(existing)} isRequired label={t("Entity code")} onChange={(code) => { setDraft((current) => ({ ...current, code: code.toUpperCase() })); setError(""); }} placeholder={t("MAIN_ENTITY")} value={draft.code} />
+          <TextInput isRequired label={t("Display name")} onChange={updateDisplayName} value={draft.displayName} />
+        </FormSection>
+        <FormSection title={t("Legal & tax")}>
+          <TextInput isRequired label={t("Registered company name")} onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} />
+          <SelectField isRequired items={countries} label={t("Country / region")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, countryCode: String(key) }))} selectedKey={draft.countryCode} />
+          <TextInput label={t("Registration number")} onChange={(registrationNumber) => setDraft((current) => ({ ...current, registrationNumber }))} value={draft.registrationNumber} />
+          <TextInput label={t("Tax registration number")} onChange={(taxRegistrationNumber) => setDraft((current) => ({ ...current, taxRegistrationNumber }))} value={draft.taxRegistrationNumber} />
+        </FormSection>
+        <FormSection title={t("Registered office")}>
+          <TextInput label={t("Address line 1")} onChange={(line1) => setDraft((current) => ({ ...current, line1 }))} value={draft.line1} />
+          <TextInput label={t("Address line 2")} onChange={(line2) => setDraft((current) => ({ ...current, line2 }))} value={draft.line2} />
+          <TextInput label={t("City")} onChange={(city) => setDraft((current) => ({ ...current, city }))} value={draft.city} />
+          <TextInput label={t("State / region")} onChange={(region) => setDraft((current) => ({ ...current, region }))} value={draft.region} />
+          <TextInput label={t("Postal code")} onChange={(postalCode) => setDraft((current) => ({ ...current, postalCode }))} value={draft.postalCode} />
+        </FormSection>
+        <FormSection title={t("Contact")}>
+          <PhoneField label={t("Phone")} kind="any" value={draft.phone} onChange={(phone) => setDraft((current) => ({ ...current, phone }))} countryCode={draft.phoneCountry}
+            onCountryChange={(phoneCountry) => setDraft((current) => ({ ...current, phoneCountry }))} />
+          <TextInput inputType="email" label={t("Email")} maxLength={320} onChange={(email) => setDraft((current) => ({ ...current, email }))} value={draft.email} />
+        </FormSection>
+        <FormSection title={t("Letterhead")}>
+          {existing ? <>
+            <EntityImageField entityId={existing.id} kind="logo" label={t("Logo")} url={existing.logoUrl ?? null} workspaceId={workspace.id} onChange={(result) => updateImage(existing, { logoUrl: result.url, version: result.version })} />
+            <EntityImageField entityId={existing.id} kind="letterhead" label={t("Letterhead header")} url={existing.letterheadUrl ?? null} workspaceId={workspace.id}
+              onChange={(result) => updateImage(existing, { letterheadUrl: result.url, version: result.version })} />
+          </> : null}
+          <TextAreaField label={t("Letterhead footer")} maxLength={1000} onChange={(letterheadFooter) => setDraft((current) => ({ ...current, letterheadFooter }))} value={draft.letterheadFooter} />
+        </FormSection>
+        <FormSection title={t("Regional defaults")}>
+          <SelectField isRequired items={currencies} label={t("Base currency")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, baseCurrency: String(key) }))} selectedKey={draft.baseCurrency} />
+          <SelectField isRequired items={locales} label={t("Language & format")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, locale: String(key) }))} selectedKey={draft.locale} />
+          <SelectField isRequired items={timezones} label={t("Time zone")} onSelectionChange={(key) => key && setDraft((current) => ({ ...current, timezone: String(key) }))} selectedKey={draft.timezone} />
+        </FormSection>
+</FormDialog>
 
     <ConfirmationDialog
-      body={archiveTarget ? <>Archive <strong>{archiveTarget.displayName}</strong>? Its operating units and integrations must already be reassigned or archived.</> : null}
-      confirmLabel={archiving ? "Archiving…" : "Archive business"}
+      body={archiveTarget ? t("Archive {name}? Its operating units and integrations must already be reassigned or archived.", { name: archiveTarget.displayName }) : null}
+      confirmLabel={archiving ? t("Archiving…") : t("Archive business")}
       isOpen={Boolean(archiveTarget)}
       onConfirm={() => void archive()}
       onOpenChange={(open) => { if (!open && !archiving) setArchiveTarget(null); }}
-      title="Archive business record?"
+      title={t("Archive business record?")}
     />
   </>;
 }

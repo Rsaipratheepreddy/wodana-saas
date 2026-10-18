@@ -1,0 +1,22 @@
+{
+  "ai": "workspace",
+  "ai-settings": "workspace",
+  "approvals": "workspace",
+  "crm": "crm",
+  "factory": "projects",
+  "home": "workspace",
+  "hrms": "hrms",
+  "inventory": "projects",
+  "me": "workspace",
+  "members": "workspace",
+  "my-day": "workspace",
+  "payables": "projects",
+  "petty-cash": "projects",
+  "pre-projects": "pre-project",
+  "project-changes": "projects",
+  "project-core": "projects",
+  "projects": "projects",
+  "purchasing": "projects",
+  "receivables": "projects",
+  "site": "projects"
+}

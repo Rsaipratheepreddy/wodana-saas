@@ -1,0 +1,7 @@
+.importBody { display: grid; gap: var(--wd-space-4); }
+.importBody p { margin: 0; }
+.file { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.preview { display: grid; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.preview p { overflow-wrap: anywhere; }
+.summary { font-weight: var(--wd-weight-semibold); }
+.rowResult { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }

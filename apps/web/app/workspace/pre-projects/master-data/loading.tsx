@@ -1,1 +1,5 @@
-export default function LoadingMasterData() { return <div role="status" aria-live="polite" style={{padding:"1.5rem"}}>Loading rooms…</div>; }
+import { PageSkeleton } from "@/design-system";
+
+export default function MasterDataLoading() {
+  return <PageSkeleton page variant="list" tabs={3} />;
+}

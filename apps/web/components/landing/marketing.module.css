@@ -1,0 +1,177 @@
+/*
+ * The public site's frame: the page canvas, shared measures (width, gutter, header height), the skip link, the
+ * company-page intro and panel, and the footer. Marketing display sizes are clamp() values; everything else uses
+ * the spacing, type, radius and colour tokens. Logical properties only.
+ */
+.page {
+  --landing-max: 76rem;
+  --landing-gutter: clamp(1rem, 4vw, 2.5rem);
+  --landing-header: 4rem;
+  --landing-section: clamp(4.5rem, 10vw, 8.5rem);
+  min-block-size: 100vh;
+  background: var(--wd-color-canvas);
+  color: var(--wd-color-text);
+  font-family: var(--wd-font-sans);
+  overflow-x: clip;
+}
+.page :where(h1, h2, h3, p) { margin: 0; }
+.page :where(a) { color: inherit; }
+.page :where(a, button):focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; border-radius: var(--wd-radius-sm); }
+.page :where([id]) { scroll-margin-block-start: calc(var(--landing-header) + var(--wd-space-6)); }
+
+.skip {
+  position: absolute;
+  inset-inline-start: var(--wd-space-4);
+  inset-block-start: -10rem;
+  z-index: 70;
+  padding: var(--wd-space-2) var(--wd-space-4);
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-text);
+  color: var(--wd-color-text-inverse);
+  font-size: var(--wd-text-md);
+  text-decoration: none;
+}
+.skip:focus { inset-block-start: var(--wd-space-3); }
+
+/* ── Company pages ─────────────────────────────────────────────────────────────────────── */
+.intro {
+  display: grid;
+  justify-items: center;
+  gap: var(--wd-space-5);
+  max-inline-size: var(--landing-max);
+  margin-inline: auto;
+  padding: var(--wd-phi-6) var(--landing-gutter) var(--wd-phi-5);
+  text-align: center;
+}
+.introTitle {
+  max-inline-size: 18ch;
+  font-family: var(--wd-font-display);
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: var(--wd-weight-semibold);
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.introLead { max-inline-size: 36rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xl); line-height: 1.5; text-wrap: pretty; }
+.panel {
+  max-inline-size: var(--landing-max);
+  margin-inline: auto;
+  padding-inline: var(--landing-gutter);
+}
+.panel > * { border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-muted); }
+.panel :global(.wd-empty-state) { min-block-size: 22rem; gap: var(--wd-space-3); padding: var(--wd-space-12) var(--wd-space-6); }
+.panel :global(.wd-empty-state) strong { font-size: var(--wd-text-xl); }
+.nextStep {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-2);
+  min-block-size: 2.75rem;
+  margin-block-start: var(--wd-space-3);
+  padding-inline: var(--wd-space-5);
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface);
+  box-shadow: inset 0 0 0 1px var(--wd-color-border-strong);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-semibold);
+  text-decoration: none;
+}
+.nextStep:hover { background: var(--wd-color-surface-hover); }
+.roleList { display: grid; margin: 0; padding: var(--wd-space-2); list-style: none; }
+.roleList a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--wd-space-1) var(--wd-space-4);
+  padding: var(--wd-space-5);
+  border-radius: var(--wd-radius-md);
+  color: var(--wd-color-text);
+  text-decoration: none;
+}
+.roleList a:hover { background: var(--wd-color-surface-hover); }
+.roleList strong { font-size: var(--wd-text-lg); }
+.roleList span { grid-row: 2; color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); }
+.roleList svg { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.teamGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--wd-space-6); margin: 0; padding: var(--wd-space-8); list-style: none; }
+.teamGrid li { display: grid; justify-items: center; gap: var(--wd-space-1); text-align: center; }
+.teamGrid img { inline-size: 6rem; block-size: 6rem; margin-block-end: var(--wd-space-2); border-radius: var(--wd-radius-round); object-fit: cover; }
+.teamGrid span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); }
+
+/* ── Legal and contact pages ───────────────────────────────────────────────────────────── */
+.article {
+  display: grid;
+  gap: var(--wd-phi-4);
+  padding: var(--wd-phi-5) var(--landing-gutter);
+  counter-reset: legal;
+}
+.article > * { inline-size: 100%; max-inline-size: 42rem; margin-inline: auto; }
+.article a { color: inherit; text-decoration: underline; text-underline-offset: 0.15em; }
+.article a:hover { color: var(--wd-color-link-hover); }
+.articleMeta { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.articleSection { display: grid; gap: var(--wd-space-3); }
+.articleSection h2 {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--wd-space-3);
+  margin-block-end: var(--wd-space-1);
+  font-size: var(--wd-text-xl);
+  font-weight: var(--wd-weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.articleSection h2::before {
+  content: counter(legal);
+  counter-increment: legal;
+  color: var(--wd-color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.articleSection p, .articleSection li { font-size: var(--wd-text-lg); line-height: 1.6; text-wrap: pretty; }
+.articleSection ul { display: grid; gap: var(--wd-space-2); margin: 0; padding-inline-start: var(--wd-space-5); }
+.address { display: grid; font-size: var(--wd-text-lg); font-style: normal; line-height: 1.5; }
+.contactList { display: grid; gap: var(--wd-space-8); margin: 0; }
+.contactList > div { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(0, 3fr); gap: var(--wd-space-2) var(--wd-space-6); }
+.contactList dt { color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); line-height: 1.6; }
+.contactList dd { display: grid; justify-items: start; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-lg); line-height: 1.6; }
+
+@media (max-width: 40rem) {
+  .article { padding: var(--wd-space-8) var(--wd-space-5); }
+  .contactList > div { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────────────────────── */
+.footer { margin-block-start: var(--landing-section); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.footerInner {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: var(--wd-space-12) clamp(2rem, 5vw, 5rem);
+  max-inline-size: var(--landing-max);
+  margin-inline: auto;
+  padding: var(--wd-space-16) var(--landing-gutter) var(--wd-space-12);
+}
+.footerBrand { display: grid; align-content: start; justify-items: start; gap: var(--wd-space-4); }
+.footerBrand p { max-inline-size: 22rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); line-height: 1.5; }
+.footerLogo { display: inline-flex; color: var(--wd-color-text); text-decoration: none; }
+.footerColumns { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--wd-space-8) var(--wd-space-6); }
+.footerColumn { display: grid; align-content: start; gap: var(--wd-space-4); }
+.footerColumn ul { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.footerHeading { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.footerColumn a { color: var(--wd-color-text-secondary); font-size: var(--wd-text-md); text-decoration: none; }
+.footerColumn a:hover { color: var(--wd-color-text); }
+.footerBase {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--wd-space-2) var(--wd-space-6);
+  margin-inline: max(var(--landing-gutter), calc((100% - var(--landing-max)) / 2 + var(--landing-gutter)));
+  padding-block: var(--wd-space-6) var(--wd-space-8);
+  border-block-start: 1px solid var(--wd-color-structural-divider);
+  color: var(--wd-color-text-tertiary);
+  font-size: var(--wd-text-sm);
+}
+.footerLegal { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-5); }
+.footerLegal a { color: inherit; text-decoration: none; }
+.footerLegal a:hover { color: var(--wd-color-text); }
+
+@media (max-width: 60rem) {
+  .footerInner { grid-template-columns: minmax(0, 1fr); }
+  .footerColumns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

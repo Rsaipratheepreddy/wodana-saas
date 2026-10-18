@@ -1,10 +1,10 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from "@nestjs/common";
+import { loadEnquiryFacts, requirementContext, requirementProblems, throwProblems } from "../leads/enquiry-problems";
+import { carryTeamToOpportunity, teamRolesForType } from "../leads/lead-team";
+import { OpportunityDiscoveryService } from "./discovery.service";
+import { opportunityFunnel } from "./opportunity-funnel";
+import { flowSummary, loadFlowFacts, paymentProofs, pipelineStages } from "./flow-facts";
+import { flowAsks, moveBlockers } from "../flows/flow-interpreter";
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException, Optional } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
@@ -13,6 +13,14 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { canonicalHash, decodeCursor, encodeCursor, normalizeName } from "../shared/crm-types";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
 import { evaluateQualification, QualificationEvidence } from "../leads/qualification-evidence";
+import { hasResolvedEnquiryType } from "../leads/lead-options";
+import { thankForDeal } from "../conversations/inbox/client-followups";
+import { markProposalWon, type ProposalKind } from "./opportunity-proposals";
+import { tellDealOutcome } from "../leads/sales-attention";
+import { ELIGIBLE_SALES_OWNERS_SQL, SALES_OWNER_PERMISSIONS } from "../leads/crm-leads.service";
+import { loadDealClosing } from "./deal-closing";
+import { takeForDeal } from "../../fulfilment/stock-reservations";
+import { cancelOpenFollowUps } from "./follow-ups";
 import {
   AddStakeholderDto,
   CreateOpportunityDto,
@@ -42,6 +50,7 @@ export class CrmOpportunitiesService {
     private readonly access: WorkspaceAccessService,
     private readonly events: CrmEventsService,
     private readonly slas: CrmSlaLifecycleService = new CrmSlaLifecycleService(),
+    @Optional() private readonly discovery?: OpportunityDiscoveryService,
   ) {}
 
   listPipelines(actor: RequestActor, workspaceId: string) {
@@ -198,7 +207,14 @@ export class CrmOpportunitiesService {
       const hasMore = result.rows.length > query.limit;
       const rawData = hasMore ? result.rows.slice(0, query.limit) : result.rows;
       const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
-      const data = rawData.map((row) => this.presentOpportunity(row as Row, canViewSensitiveValues));
+      const presented = rawData.map((row) => this.presentOpportunity(row as Row, canViewSensitiveValues));
+      // PLM-102: a won card shows Deal Closed, computed from the records its enquiry type's closing event names.
+      const data = [];
+      for (const row of presented) {
+        if ((row as { status?: string }).status !== "won") { data.push(row); continue; }
+        const closing = await loadDealClosing(client, workspaceId, String((row as { id: string }).id));
+        data.push({ ...row, dealClosed: closing?.closed ?? false, dealClosedAt: closing?.closedAt ?? null });
+      }
       const last = data.at(-1) as { id: string; createdAt: Date } | undefined;
       return { data, nextCursor: hasMore && last ? encodeCursor({ value: new Date(last.createdAt).toISOString(), id: last.id }) : null };
     });
@@ -220,6 +236,8 @@ export class CrmOpportunitiesService {
         stageHistory: history.rows,
         forecastHistory: canViewSensitiveValues ? snapshots.rows : snapshots.rows.map((row) => this.presentOpportunity(row as Row, false)),
         projectLink: project.rows[0] ?? null,
+        funnel: await opportunityFunnel(client, workspaceId, opportunityId, this.discovery ? (await this.discovery.missing(client, workspaceId, opportunityId)).length : null),
+        flow: await this.flowView(client, workspaceId, opportunity, actorUser.userId),
       };
     });
   }
@@ -260,11 +278,18 @@ export class CrmOpportunitiesService {
       if (input.leadId && input.leadId !== leadId) throw new UnprocessableEntityException("leadId does not match the route");
       if (String(row.party_id) !== input.partyId) throw new UnprocessableEntityException("Opportunity party must match the lead party");
       const qualification = row.status === "qualified" && row.qualification_evidence && row.qualification_evidence_hash
+        && hasResolvedEnquiryType(String((row.qualification_evidence as Record<string, unknown>).serviceType ?? ""))
         ? {
           evidence: row.qualification_evidence as Record<string, unknown>,
           evidenceHash: String(row.qualification_evidence_hash),
         }
         : await evaluateQualification(client, workspaceId, leadId, {}, true);
+      // PLM-096 / PLM-092: everything the enquiry type requires before converting, named at once.
+      const facts = await loadEnquiryFacts(client, workspaceId, leadId);
+      if (facts) {
+        const context = await requirementContext(client, workspaceId, facts.serviceType, await teamRolesForType(client, workspaceId, facts.serviceType));
+        throwProblems(requirementProblems(facts, context, "convert"), "Complete the enquiry before converting");
+      }
       const conversion: ConversionContext = {
         origin: "lead_qualification",
         requestHash,
@@ -272,6 +297,8 @@ export class CrmOpportunitiesService {
         qualificationEvidenceHash: qualification.evidenceHash,
       };
       const opportunity = await this.createInTransaction(client, workspaceId, { ...input, leadId }, actorUser.userId, true, conversion);
+      // PLM-100: the enquiry's team (and its designer) carries into the opportunity.
+      await carryTeamToOpportunity(client, workspaceId, leadId, String(opportunity.id), actorUser.userId);
       const updated = await client.query(
         `UPDATE crm_leads SET status='qualified',next_action_at=NULL,
            qualified_at=COALESCE(qualified_at,now()),qualification_evidence=$4,
@@ -305,7 +332,8 @@ export class CrmOpportunitiesService {
     return this.access.withPermissions(actor, workspaceId, permissions, async (client, actorUser) => {
       const before = await this.requireOpportunity(client, workspaceId, opportunityId, true);
       if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
-      if (input.ownerMembershipId !== undefined && input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
+      // A new owner is someone who can own enquiries (the same rule as the owner pickers); an unchanged one stays.
+      if (input.ownerMembershipId && input.ownerMembershipId !== before.owner_membership_id) await this.requireSalesOwner(client, workspaceId, input.ownerMembershipId);
       const hasAmount = input.amount !== undefined;
       const hasCurrency = input.currencyCode !== undefined;
       const amount = hasAmount ? input.amount ?? null : before.amount;
@@ -344,43 +372,105 @@ export class CrmOpportunitiesService {
   }
 
   transition(actor: RequestActor, workspaceId: string, opportunityId: string, input: TransitionOpportunityDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.opportunities.transition", async (client, actorUser) => {
-      const before = await this.requireOpportunity(client, workspaceId, opportunityId, true);
-      if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
-      const targetStatus = input.status ?? String(before.status);
-      if (String(before.status) === "won" && targetStatus !== "open") throw new UnprocessableEntityException("A won opportunity may only be reopened");
-      if (String(before.status) === "lost" && targetStatus !== "open") throw new UnprocessableEntityException("A lost opportunity may only be reopened");
-      if (["won", "lost", "abandoned"].includes(targetStatus) && !input.reason?.trim()) throw new UnprocessableEntityException("A reason is required for this transition");
-      if (targetStatus === "lost" && !input.reason) throw new UnprocessableEntityException("Loss reason is required");
-      const targetStage = input.stageId ? await this.requireStage(client, workspaceId, input.stageId, String(before.pipeline_id)) : await this.requireStage(client, workspaceId, String(before.stage_id), String(before.pipeline_id));
-      const nextActionAt = input.nextActionAt ? this.date(input.nextActionAt, "nextActionAt") : before.next_action_at;
-      if (targetStatus === "open" && !nextActionAt && !before.paused_reason) throw new UnprocessableEntityException("Schedule the next action when reopening an opportunity");
-      if (targetStatus === "open" || targetStatus === "won") await this.assertEntryRequirements(client, workspaceId, { ...before, next_action_at: nextActionAt }, targetStage);
-      const result = await client.query(
-        `UPDATE crm_opportunities SET stage_id = $1, status = $2::crm_opportunity_status,
-           probability = CASE WHEN $2 = 'won' THEN 100 WHEN $2 IN ('lost', 'abandoned') THEN 0 ELSE $3::numeric END,
-           forecast_category = CASE WHEN $2 = 'won' THEN 'closed' WHEN $2 IN ('lost', 'abandoned') THEN 'omitted' ELSE $4 END,
-           paused_reason = CASE WHEN $2 = 'abandoned' THEN $5 ELSE NULL END,
-           outcome_reason = CASE WHEN $2 IN ('won', 'lost', 'abandoned') THEN $5 ELSE NULL END,
-           competitor = CASE WHEN $2 = 'lost' THEN $6 ELSE competitor END,
-           closed_at = CASE WHEN $2 IN ('won', 'lost', 'abandoned') THEN now() ELSE NULL END,
-           next_action_at = CASE WHEN $2 = 'open' THEN $10::timestamptz ELSE NULL END,
-           version = version + 1
-         WHERE workspace_id = $7 AND id = $8 AND version = $9 RETURNING *`,
-        [targetStage.id, targetStatus, targetStage.probability, targetStage.forecast_category, input.reason ?? null, input.competitor ?? null, workspaceId, opportunityId, input.version, nextActionAt],
+    return this.access.withPermission(actor, workspaceId, "crm.opportunities.transition", (client, actorUser) =>
+      this.transitionWithin(client, actorUser.userId, workspaceId, opportunityId, input));
+  }
+
+  /** A stage move inside the caller's permission-checked tenant transaction (the board, the edit dialog, Woddy, a payment proof). */
+  async transitionWithin(client: PoolClient, actorUserId: string, workspaceId: string, opportunityId: string, input: TransitionOpportunityDto, options: { wonRound?: ProposalKind | null } = {}) {
+    const actorUser = { userId: actorUserId };
+    const before = await this.requireOpportunity(client, workspaceId, opportunityId, true);
+    if (Number(before.version) !== input.version) throw new ConflictException("Opportunity changed; reload and try again");
+    const targetStatus = input.status ?? String(before.status);
+    if (String(before.status) === "won" && targetStatus !== "open") throw new UnprocessableEntityException("A won opportunity may only be reopened");
+    if (String(before.status) === "lost" && targetStatus !== "open") throw new UnprocessableEntityException("A lost opportunity may only be reopened");
+    if (["won", "lost", "abandoned"].includes(targetStatus) && !input.reason?.trim()) throw new UnprocessableEntityException("A reason is required for this transition");
+    if (targetStatus === "lost" && !input.reason) throw new UnprocessableEntityException("Loss reason is required");
+    const targetStage = input.stageId ? await this.requireStage(client, workspaceId, input.stageId, String(before.pipeline_id)) : await this.requireStage(client, workspaceId, String(before.stage_id), String(before.pipeline_id));
+    const terminalStageStatus = ["won", "lost"].includes(String(targetStage.code)) ? String(targetStage.code) : null;
+    if (terminalStageStatus && targetStatus !== terminalStageStatus) {
+      throw new UnprocessableEntityException(`The ${terminalStageStatus} stage requires a ${terminalStageStatus} outcome`);
+    }
+    if (targetStatus === "won" || targetStatus === "lost") {
+      const configuredTerminalStage = await client.query<{ id: string }>(
+        `SELECT id FROM crm_pipeline_stages WHERE workspace_id = $1 AND pipeline_id = $2 AND code = $3 AND status = 'active' LIMIT 1`,
+        [workspaceId, before.pipeline_id, targetStatus],
       );
-      if (!result.rowCount) throw new ConflictException("Opportunity changed; reload and try again");
-      const response = result.rows[0] as Row;
-      if (targetStatus === "open") await this.syncCommitment(client, workspaceId, response, actorUser.userId);
-      if (targetStatus !== "open") await client.query(`UPDATE crm_activities SET is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND opportunity_id = $2 AND is_next_action`, [workspaceId, opportunityId]);
-      if (targetStatus === "won") await client.query(`UPDATE crm_parties SET lifecycle = 'customer', version = version + 1 WHERE workspace_id = $1 AND id = $2 AND lifecycle <> 'customer'`, [workspaceId, before.party_id]);
-      await client.query(`INSERT INTO crm_stage_history (workspace_id, opportunity_id, from_stage_id, to_stage_id, from_status, to_status, reason, changed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [workspaceId, opportunityId, before.stage_id, targetStage.id, before.status, targetStatus, input.reason ?? null, actorUser.userId]);
-      await this.snapshot(client, workspaceId, response, "stage_changed");
-      const event = targetStatus === "won" ? "crm.opportunity.won.v1" : targetStatus === "lost" ? "crm.opportunity.lost.v1" : "crm.opportunity.stage_changed.v1";
-      await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: event, entityType: "crm_opportunity", entityId: opportunityId, before, after: response });
-      const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
-      return this.presentOpportunity(response, canViewSensitiveValues);
+      if (configuredTerminalStage.rowCount && String(targetStage.id) !== configuredTerminalStage.rows[0].id) {
+        throw new UnprocessableEntityException(`Choose the ${targetStatus} stage for this outcome`);
+      }
+    }
+    const nextActionAt = input.nextActionAt ? this.date(input.nextActionAt, "nextActionAt") : before.next_action_at;
+    if (targetStatus === "open" && !nextActionAt && !before.paused_reason) throw new UnprocessableEntityException("Schedule the next action when reopening an opportunity");
+    if (targetStatus === "open" || targetStatus === "won") await this.assertEntryRequirements(client, workspaceId, { ...before, next_action_at: nextActionAt }, targetStage);
+    // PLM-121/122: one step at a time, by what the enquiry type's flow needs at every column passed.
+    await this.assertFlowGates(client, workspaceId, before, targetStage, targetStatus, actorUser.userId);
+    const result = await client.query(
+      `UPDATE crm_opportunities SET stage_id = $1, status = $2::crm_opportunity_status,
+         probability = CASE WHEN $2 = 'won' THEN 100 WHEN $2 IN ('lost', 'abandoned') THEN 0 ELSE $3::numeric END,
+         forecast_category = CASE WHEN $2 = 'won' THEN 'closed' WHEN $2 IN ('lost', 'abandoned') THEN 'omitted' ELSE $4 END,
+         paused_reason = CASE WHEN $2 = 'abandoned' THEN $5 ELSE NULL END,
+         outcome_reason = CASE WHEN $2 IN ('won', 'lost', 'abandoned') THEN $5 ELSE NULL END,
+         competitor = CASE WHEN $2 = 'lost' THEN $6 ELSE competitor END,
+         closed_at = CASE WHEN $2 IN ('won', 'lost', 'abandoned') THEN now() ELSE NULL END,
+         next_action_at = CASE WHEN $2 = 'open' THEN $10::timestamptz ELSE NULL END,
+         version = version + 1
+       WHERE workspace_id = $7 AND id = $8 AND version = $9 RETURNING *`,
+      [targetStage.id, targetStatus, targetStage.probability, targetStage.forecast_category, input.reason ?? null, input.competitor ?? null, workspaceId, opportunityId, input.version, nextActionAt],
+    );
+    if (!result.rowCount) throw new ConflictException("Opportunity changed; reload and try again");
+    const response = result.rows[0] as Row;
+    if (targetStatus === "open") await this.syncCommitment(client, workspaceId, response, actorUser.userId);
+    if (targetStatus !== "open") await client.query(`UPDATE crm_activities SET is_next_action = false, version = version + 1 WHERE workspace_id = $1 AND opportunity_id = $2 AND is_next_action`, [workspaceId, opportunityId]);
+    // A closed deal has nothing left to follow up: its open follow-ups are cancelled (audited, one history line).
+    if (targetStatus === "won" || targetStatus === "lost") await cancelOpenFollowUps(client, { workspaceId, opportunityId, outcome: targetStatus, actorUserId: actorUser.userId });
+    if (targetStatus === "won") await client.query(`UPDATE crm_parties SET lifecycle = 'customer', version = version + 1 WHERE workspace_id = $1 AND id = $2 AND lifecycle <> 'customer'`, [workspaceId, before.party_id]);
+    await client.query(`INSERT INTO crm_stage_history (workspace_id, opportunity_id, from_stage_id, to_stage_id, from_status, to_status, reason, changed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [workspaceId, opportunityId, before.stage_id, targetStage.id, before.status, targetStatus, input.reason ?? null, actorUser.userId]);
+    await this.snapshot(client, workspaceId, response, "stage_changed");
+    const event = targetStatus === "won" ? "crm.opportunity.won.v1" : targetStatus === "lost" ? "crm.opportunity.lost.v1" : "crm.opportunity.stage_changed.v1";
+    await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: event, entityType: "crm_opportunity", entityId: opportunityId, before, after: response });
+    // PLM-009: Won is reported per proposal (design, main); this win marks the first proposal not yet Won.
+    if (targetStatus === "won") await markProposalWon(client, { workspaceId, opportunityId, round: options.wonRound ?? null, actorUserId: actorUser.userId });
+    // A won deal: the client is thanked on WhatsApp and told what happens next (once per opportunity).
+    if (targetStatus === "won") await thankForDeal(client, workspaceId, opportunityId, { actorUserId: actorUser.userId });
+    // PLM-125: Won takes the deal's goods out of stock where its path says so (Furniture A and B).
+    if (targetStatus === "won") await takeForDeal(client, workspaceId, { opportunityId, event: "won", actorUserId: actorUser.userId });
+    // The Sales admin and the Owners hear a deal closed, with why (S-23).
+    if (targetStatus === "won" || targetStatus === "lost") await tellDealOutcome(client, workspaceId, { opportunityId, outcome: targetStatus, reason: input.reason ?? null, actorUserId: actorUser.userId });
+    const canViewSensitiveValues = await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.opportunities.sensitive_values");
+    return this.presentOpportunity(response, canViewSensitiveValues);
+  }
+
+  private async assertFlowGates(client: PoolClient, workspaceId: string, before: Row, targetStage: Row, targetStatus: string, actorUserId: string) {
+    if (String(before.status) !== "open" && targetStatus === "open") return; // reopening goes back
+    const stages = await pipelineStages(client, workspaceId, String(before.pipeline_id));
+    const from = stages.find((stage) => stage.id === before.stage_id) ?? { code: "", position: -1 };
+    const facts = await loadFlowFacts(client, workspaceId, String(before.id), this.discovery, { actorUserId });
+    // The job's pinned flow decides what every column passed needs (plan §5a, engine rules 1–2).
+    const missing = moveBlockers({
+      definition: facts.flowDefinition.definition, facts, from, to: { code: String(targetStage.code), position: Number(targetStage.position) },
+      firstPosition: stages[0]?.position ?? 0, stages, targetStatus,
     });
+    if (missing.length) throw new UnprocessableEntityException({ message: "Stage requirements are not met", missing: missing.map(({ key, label }) => ({ key, label })) });
+  }
+
+  /** PLM-121/122: the opportunity's flow, its step line, what the next column needs, and the flow's own facts. */
+  private async flowView(client: PoolClient, workspaceId: string, opportunity: Row, actorUserId: string) {
+    const facts = await loadFlowFacts(client, workspaceId, String(opportunity.id), this.discovery, { actorUserId });
+    const stages = await pipelineStages(client, workspaceId, String(opportunity.pipeline_id));
+    return {
+      ...flowSummary({ facts, stages, currentStageId: String(opportunity.stage_id), status: String(opportunity.status) }),
+      enquiryType: facts.enquiryTypeLabel ?? facts.enquiryType,
+      furniture: flowAsks(facts.flowDefinition.definition, "sub_path_chosen") ? {
+        path: facts.furniturePath,
+        feasibility: facts.feasibilityAt ? { at: facts.feasibilityAt, by: facts.feasibilityBy } : null,
+        materialsChange: facts.materialsChange,
+      } : null,
+      clientApproval: opportunity.client_approved_at ? { at: opportunity.client_approved_at, by: facts.clientApprovedBy } : null,
+      quotationExists: facts.quotationExists,
+      paymentVerified: facts.verifiedPayment,
+      proofs: await paymentProofs(client, workspaceId, String(opportunity.id)),
+    };
   }
 
   private async syncCommitment(client: PoolClient, workspaceId: string, opportunity: Row, actorUserId: string) {
@@ -567,20 +657,24 @@ export class CrmOpportunitiesService {
 
   private async assertEntryRequirements(client: PoolClient, workspaceId: string, opportunity: Row, stage: Row) {
     const requirements = (stage.entry_requirements ?? {}) as Record<string, unknown>;
-    const missing: string[] = [];
-    if (requirements.amount === true && opportunity.amount == null) missing.push("amount");
-    if (requirements.expectedCloseAt === true && opportunity.expected_close_at == null) missing.push("expectedCloseAt");
-    if (requirements.nextAction === true && opportunity.next_action_at == null) missing.push("nextAction");
-    if (requirements.owner === true && opportunity.owner_membership_id == null) missing.push("owner");
+    const missing: Array<{ key: string; label: string }> = [];
+    if (requirements.amount === true && opportunity.amount == null) missing.push({ key: "amount", label: "Value" });
+    if (requirements.expectedCloseAt === true && opportunity.expected_close_at == null) missing.push({ key: "expectedCloseAt", label: "Expected close date" });
+    if (requirements.nextAction === true && opportunity.next_action_at == null) missing.push({ key: "nextAction", label: "Next follow-up" });
+    if (requirements.owner === true && opportunity.owner_membership_id == null) missing.push({ key: "owner", label: "Sales owner" });
     if (requirements.stakeholders === true && opportunity.id) {
       const result = await client.query(`SELECT 1 FROM crm_opportunity_stakeholders WHERE workspace_id = $1 AND opportunity_id = $2 LIMIT 1`, [workspaceId, opportunity.id]);
-      if (!result.rowCount) missing.push("stakeholders");
+      if (!result.rowCount) missing.push({ key: "stakeholders", label: "Stakeholders" });
+    }
+    // PLM-040: e.g. Design Quote needs the Account Manager's discovery form complete.
+    if (requirements.discovery === true && opportunity.id && this.discovery) {
+      for (const item of await this.discovery.missing(client, workspaceId, String(opportunity.id))) missing.push({ key: `discovery:${item.key}`, label: item.label });
     }
     if (missing.length) throw new UnprocessableEntityException({ message: "Stage requirements are not met", missing });
   }
 
   private validateRequirements(requirements: Record<string, unknown>) {
-    const allowed = new Set(["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders"]);
+    const allowed = new Set(["amount", "expectedCloseAt", "nextAction", "owner", "stakeholders", "discovery"]);
     for (const [key, value] of Object.entries(requirements)) {
       if (!allowed.has(key) || typeof value !== "boolean") throw new UnprocessableEntityException(`Invalid stage requirement: ${key}`);
     }
@@ -589,6 +683,12 @@ export class CrmOpportunitiesService {
   private assertAssociationRole(role: string) {
     const normalized = role?.trim();
     if (!normalized || normalized.length > 80) throw new BadRequestException("A valid role is required");
+  }
+
+  /** The opportunity as this person sees it, inside a transaction another command already holds. */
+  async presentFor(client: PoolClient, workspaceId: string, opportunityId: string, userId: string) {
+    const row = await this.requireOpportunity(client, workspaceId, opportunityId, false);
+    return this.presentOpportunity(row, await this.access.hasPermission(client, workspaceId, userId, "crm.opportunities.sensitive_values"));
   }
 
   private presentOpportunity(opportunity: Row, canViewSensitiveValues: boolean): Row {
@@ -616,6 +716,8 @@ export class CrmOpportunitiesService {
     ]) {
       if (Object.hasOwn(redacted, key)) redacted[key] = null;
     }
+    // Says the value exists but is not shown, so an edit never sends (and clears) a value this person can't see.
+    redacted.valueHidden = true;
     return redacted;
   }
 
@@ -629,6 +731,12 @@ export class CrmOpportunitiesService {
   private async requireCurrency(client: PoolClient, code: string) {
     const result = await client.query(`SELECT 1 FROM currencies WHERE code = $1 AND active`, [code]);
     if (!result.rowCount) throw new UnprocessableEntityException(`Unsupported currency: ${code}`);
+  }
+
+  /** Someone who can own an enquiry: active, with the sales-owner permissions (what the owner pickers list). */
+  private async requireSalesOwner(client: PoolClient, workspaceId: string, membershipId: string) {
+    const eligible = await client.query(ELIGIBLE_SALES_OWNERS_SQL, [workspaceId, membershipId, SALES_OWNER_PERMISSIONS, SALES_OWNER_PERMISSIONS.length, null]);
+    if (!eligible.rowCount) throw new UnprocessableEntityException("Choose a sales owner: someone who works enquiries in this workspace.");
   }
 
   private async requireMembership(client: PoolClient, workspaceId: string, membershipId: string) {
@@ -671,10 +779,23 @@ export class CrmOpportunitiesService {
                    opportunity.expected_close_at AS "expectedCloseAt",
                    opportunity.next_action_at AS "nextActionAt",
                    opportunity.created_at AS "createdAt", opportunity.updated_at AS "updatedAt",
-                   party.display_name AS "partyName", pipeline.name AS "pipelineName",
+                   party.display_name AS "partyName", enquiry.reference AS "enquiryReference",
+                   -- The phone and email typed on the enquiry: shown when the client record holds no contact points.
+                   enquiry.details->'contact' AS "enquiryContact",
+                   source_case.id AS "preProjectCaseId", commercial_case.content #>> '{dealFile,reference}' AS "dealFileReference",
+                   case_project.id AS "projectId", case_project.reference AS "projectReference",
+                   pipeline.name AS "pipelineName",
                    stage.name AS "stageName", account.display_name AS "ownerName"
             FROM crm_opportunities opportunity
             JOIN crm_parties party ON party.id = opportunity.party_id AND party.workspace_id = opportunity.workspace_id
+            LEFT JOIN crm_leads source_lead ON source_lead.id = opportunity.lead_id AND source_lead.workspace_id = opportunity.workspace_id
+            LEFT JOIN crm_enquiries enquiry ON enquiry.id = source_lead.enquiry_id AND enquiry.workspace_id = opportunity.workspace_id
+            LEFT JOIN pre_project_cases source_case ON source_case.workspace_id = opportunity.workspace_id AND source_case.opportunity_id = opportunity.id
+            LEFT JOIN commercial_cases_view commercial_case ON commercial_case.workspace_id = source_case.workspace_id AND commercial_case.case_id = source_case.id
+            -- After Won, the job's live project (a cancelled one is history), so the record leads to it.
+            LEFT JOIN LATERAL (SELECT project.id, project.reference FROM delivery_projects project
+                                WHERE project.workspace_id = source_case.workspace_id AND project.case_id = source_case.id AND project.status <> 'cancelled'
+                                ORDER BY project.created_at DESC LIMIT 1) case_project ON true
             JOIN crm_pipelines pipeline ON pipeline.id = opportunity.pipeline_id AND pipeline.workspace_id = opportunity.workspace_id
             JOIN crm_pipeline_stages stage ON stage.id = opportunity.stage_id AND stage.workspace_id = opportunity.workspace_id
             LEFT JOIN workspace_memberships membership ON membership.id = opportunity.owner_membership_id

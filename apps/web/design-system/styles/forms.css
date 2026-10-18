@@ -1,0 +1,157 @@
+/* The form system: labels above fields, "Optional" on the fields that may be skipped, one column with
+   grouped sections, a summary of blocked fields at the top, drafts, conflicts and quick picks. */
+
+/* ── Labels ─────────────────────────────────────────────────────────────────────────────────────────── */
+/* The label and its marker are laid out in a row with a gap, so the space holds in either direction. */
+.wd-field-label[data-optional] { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--wd-space-1-5); }
+.wd-field-label[data-optional]::after {
+  content: attr(data-optional);
+  color: var(--wd-color-text-tertiary);
+  font-size: var(--wd-text-xs);
+  font-weight: var(--wd-weight-regular);
+}
+/* A label kept for screen readers only shows no marker either. */
+.wd-field-label[data-optional]:has(> .wd-visually-hidden:only-child)::after, .wd-field-label[data-optional]:empty::after { content: none; }
+
+/* ── Rhythm: one column, sections a φ step apart ─────────────────────────────────────────────────────── */
+.wd-form { grid-template-columns: minmax(0, 1fr); }
+.wd-form-section { display: grid; gap: var(--wd-space-4); min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.wd-form-section + .wd-form-section, .wd-form-section + .wd-more-details, .wd-more-details + .wd-form-section { margin-block-start: var(--wd-phi-2); }
+.wd-form-section-title { margin: 0 0 var(--wd-space-1); padding: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0.02em; }
+
+/* ── More details ───────────────────────────────────────────────────────────────────────────────────── */
+.wd-more-details { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.wd-more-details-toggle { justify-self: start; }
+.wd-more-details-toggle > svg { transition: transform var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-more-details[data-open] > .wd-more-details-toggle > svg { transform: rotate(180deg); }
+.wd-more-details-body { display: grid; gap: var(--wd-space-5); min-inline-size: 0; animation: wd-fade-up var(--wd-duration-base) var(--wd-ease-out) both; }
+.wd-more-details-body[hidden] { display: none; }
+
+/* ── Banners at the top of a form ───────────────────────────────────────────────────────────────────── */
+.wd-form-summary, .wd-form-banner {
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--wd-space-2) var(--wd-space-3);
+  padding: var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-sm);
+  background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); font-size: var(--wd-text-sm);
+  animation: wd-fade-up var(--wd-duration-base) var(--wd-ease-out) both;
+}
+.wd-form-summary > svg, .wd-form-banner > svg { flex: none; margin-block-start: var(--wd-space-0-5); }
+.wd-form-summary > div, .wd-form-banner > div:not(.wd-form-banner-actions) { display: grid; flex: 1 1 12rem; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.wd-form-banner > strong { flex: 1 1 12rem; align-self: center; }
+.wd-form-banner span { color: var(--wd-color-text); overflow-wrap: anywhere; }
+.wd-form-summary ul { display: flex; flex-wrap: wrap; gap: var(--wd-space-1) var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.wd-form-summary ul[data-layout="list"] { display: grid; gap: var(--wd-space-1); }
+.wd-form-summary li button, .wd-text-button {
+  padding: 0; border: 0; background: transparent; color: var(--wd-color-link); font: inherit; cursor: pointer;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 0.2em;
+}
+.wd-form-summary li button { color: var(--wd-color-text); }
+.wd-form-summary li button:hover, .wd-text-button:hover { text-decoration-color: currentColor; }
+.wd-form-summary li button:focus-visible, .wd-text-button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-2xs); }
+.wd-form-banner-actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin-inline-start: auto; }
+
+.wd-draft-notice { display: flex; align-items: center; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); animation: wd-fade-up var(--wd-duration-base) var(--wd-ease-out) both; }
+.wd-draft-notice > svg { flex: none; color: var(--wd-color-icon-subtle); }
+
+/* ── Footer: other actions at the start, Cancel then the primary action at the end ─────────────────────── */
+.wd-form-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-3); }
+.wd-form-footer > .wd-dialog-actions { margin-inline-start: auto; }
+.wd-form-footer-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+@media (max-width: 640px) {
+  .wd-form-footer > .wd-dialog-actions { flex: 1 1 100%; }
+}
+
+/* ── Quick picks (dates) ───────────────────────────────────────────────────────────────────────────── */
+.wd-quick-picks { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); }
+.wd-calendar-popover .wd-quick-picks { padding: var(--wd-space-2) var(--wd-space-2) 0; }
+.wd-chip {
+  min-block-size: var(--wd-control-xs); display: inline-flex; align-items: center; gap: var(--wd-space-1);
+  padding-inline: var(--wd-space-2-5); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); cursor: pointer;
+  transition: background var(--wd-duration-fast) var(--wd-ease-standard), border-color var(--wd-duration-fast) var(--wd-ease-standard), color var(--wd-duration-fast) var(--wd-ease-standard);
+}
+.wd-chip:hover { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.wd-chip:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.wd-chip[aria-pressed="true"] { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-text); }
+@media (pointer: coarse) { .wd-chip { min-block-size: var(--wd-control-md); } }
+
+/* ── Pickers: "Create '…'" ─────────────────────────────────────────────────────────────────────────── */
+.wd-picker-create { display: flex; gap: var(--wd-space-2); color: var(--wd-color-link); font-weight: var(--wd-weight-medium); }
+.wd-picker-create > svg { flex: none; }
+
+/* ── A warning under a field that doesn't block the save (a duplicate) ──────────────────────────────── */
+.wd-field-with-notice { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.wd-field-notice:empty { display: none; }
+
+/* ── Fill with Woddy (top of a create form) ─────────────────────────────────────────────────────────── */
+.wd-fill-woddy[data-step="closed"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.wd-fill-woddy-open > .wd-woddy { flex: none; }
+.wd-fill-woddy-done { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.wd-fill-woddy:not([data-step="closed"]) {
+  display: grid; gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); border-radius: var(--wd-radius-md);
+  background: var(--wd-color-surface-subtle); animation: wd-fade-up var(--wd-duration-base) var(--wd-ease-out) both;
+}
+.wd-fill-woddy > header { display: flex; align-items: center; gap: var(--wd-space-2); }
+.wd-fill-woddy > header > strong { flex: 1; font-size: var(--wd-text-sm); }
+.wd-fill-woddy-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.wd-fill-woddy-actions > :first-child { margin-inline-end: auto; }
+.wd-fill-woddy-file { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.wd-fill-woddy-problem { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+.wd-fill-woddy-found { display: grid; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
+.wd-fill-woddy-found .wd-checkbox { align-items: flex-start; }
+.wd-fill-woddy-label { display: block; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.wd-fill-woddy-value { display: block; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+
+/* ── Money ──────────────────────────────────────────────────────────────────────────────────────────── */
+.wd-money-input { font-variant-numeric: tabular-nums; }
+
+/* ── Editable in place (record details) ─────────────────────────────────────────────────────────────── */
+.wd-editable-list { display: grid; gap: var(--wd-space-1); margin: 0; min-inline-size: 0; }
+.wd-editable { display: grid; grid-template-columns: minmax(6rem, 36%) minmax(0, 1fr); align-items: start; gap: var(--wd-space-3); min-inline-size: 0; }
+/* Stacked (label above value) inside a narrow panel: the list or its host says data-layout="stacked". */
+[data-layout="stacked"] > .wd-editable, .wd-editable-list[data-layout="stacked"] .wd-editable { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
+/* Typography yields to the host's fact list (:where has no weight); layout does not. */
+:where(.wd-editable > .wd-editable-label) { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+:where(.wd-editable > .wd-editable-cell) { color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+/* Label and value on one row line up on their text, whether the value is read-only or opens an editor. */
+.wd-editable-list:not([data-layout="stacked"]) > .wd-editable:not([data-state="editing"]) { align-items: baseline; }
+.wd-editable > dt.wd-editable-label { padding-block: var(--wd-space-1-5); overflow-wrap: anywhere; }
+[data-layout="stacked"] > .wd-editable > dt.wd-editable-label { padding-block: 0; }
+.wd-editable > dd.wd-editable-cell { display: flex; flex-wrap: wrap; align-items: center; justify-items: start; gap: var(--wd-space-1); min-inline-size: 0; margin: 0; }
+.wd-editable[data-readonly] > dd.wd-editable-cell { padding-block: var(--wd-space-1-5); color: var(--wd-color-text); overflow-wrap: anywhere; }
+[data-layout="stacked"] > .wd-editable[data-readonly] > dd.wd-editable-cell { padding-block: 0; }
+.wd-editable-value {
+  display: inline-flex; align-items: center; gap: var(--wd-space-1-5); max-inline-size: 100%; min-block-size: var(--wd-control-sm);
+  margin-inline-start: calc(var(--wd-space-2) * -1); padding: var(--wd-space-1) var(--wd-space-2); border: 1px solid transparent; border-radius: var(--wd-radius-xs);
+  background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; overflow-wrap: anywhere; cursor: text;
+  transition: background var(--wd-duration-fast) var(--wd-ease-standard), border-color var(--wd-duration-fast) var(--wd-ease-standard);
+}
+.wd-editable-value:hover { border-color: var(--wd-color-border); background: var(--wd-color-surface-hover); }
+.wd-editable-value:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.wd-editable-value:disabled { cursor: progress; }
+.wd-editable-value > span { min-inline-size: 0; white-space: pre-wrap; }
+.wd-editable-pen { flex: none; opacity: 0; color: var(--wd-color-icon-subtle); transition: opacity var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-editable-value:hover .wd-editable-pen, .wd-editable-value:focus-visible .wd-editable-pen { opacity: 1; }
+@media (hover: none) { .wd-editable-pen { opacity: 0.6; } }
+.wd-editable-empty { color: var(--wd-color-text-tertiary); }
+.wd-editable-lock { display: inline-flex; align-items: center; margin-inline-start: var(--wd-space-1); color: var(--wd-color-icon-subtle); cursor: help; vertical-align: middle; }
+.wd-editable[data-state="saving"] .wd-editable-value { color: var(--wd-color-text-secondary); }
+.wd-editable-status { display: inline-flex; align-items: center; min-inline-size: var(--wd-space-4); }
+.wd-editable-tick { color: var(--wd-color-success); animation: wd-tick-in var(--wd-duration-base) var(--wd-ease-out) both; }
+.wd-editable-editor { display: grid; flex: 1 1 100%; gap: var(--wd-space-1-5); min-inline-size: 0; }
+.wd-editable-editor .wd-field-label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.wd-editable-problem { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+.wd-editable-problem > svg { flex: none; }
+/* A record's title edited in place keeps the host's heading type. */
+.wd-editable[data-variant="title"] { display: block; min-inline-size: 0; }
+.wd-editable[data-variant="title"] > .wd-editable-cell { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; }
+.wd-editable-title-hit { position: relative; display: inline-flex; max-inline-size: 100%; min-inline-size: 0; }
+.wd-editable-heading { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; margin-inline-start: calc(var(--wd-space-2) * -1); padding-inline: var(--wd-space-2); border-radius: var(--wd-radius-xs); transition: background var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-editable-cover { position: absolute; inset: 0; margin: 0; padding: 0; border: 0; border-radius: var(--wd-radius-xs); background: transparent; cursor: text; }
+.wd-editable-cover:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.wd-editable-title-hit:has(> .wd-editable-cover:hover) > .wd-editable-heading { background: var(--wd-color-surface-hover); }
+.wd-editable-title-hit:has(> .wd-editable-cover:hover, > .wd-editable-cover:focus-visible) .wd-editable-pen { opacity: 1; }
+@keyframes wd-tick-in { from { opacity: 0; transform: scale(0.5); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .wd-form-summary, .wd-form-banner, .wd-draft-notice, .wd-more-details-body, .wd-editable-tick, .wd-fill-woddy { animation: none; }
+}

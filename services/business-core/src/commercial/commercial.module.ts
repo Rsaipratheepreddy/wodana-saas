@@ -1,7 +1,6 @@
 import {UseGuards} from "@nestjs/common";
 import {InternalServiceGuard} from "../auth/internal-service.guard";
 import {AccountingReconciliationService} from "./accounting-reconciliation.service";
-import { StreamableFile } from "@nestjs/common";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import {
   Body,
@@ -20,7 +19,6 @@ import { CurrentActor } from "../auth/current-actor.decorator";
 import type { RequestActor } from "../auth/actor";
 import { WorkspacesModule } from "../workspaces/workspaces.module";
 import { CommercialService } from "./commercial.service";
-import { ClientPortalService } from "./client-portal.service";
 import { CatalogSellingPriceService } from "./catalog-selling-price.service";
 import { PreProjectsModule } from "../pre-projects/pre-projects.module";
 import { ProjectsModule } from "../projects/projects.module";
@@ -100,19 +98,6 @@ export class CommercialController {
   ) {
     return this.composer.dismiss(actor, workspaceId, caseId, runId, body);
   }
-  @Get("portal-settings") settings(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) w: string,
-  ) {
-    return this.service.settings(actor, w);
-  }
-  @Put("portal-settings") saveSettings(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) w: string,
-    @Body() body: unknown,
-  ) {
-    return this.service.saveSettings(actor, w, body);
-  }
   @Get("cases/:caseId") state(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
@@ -128,53 +113,6 @@ export class CommercialController {
   ) {
     return this.service.command(actor, w, c, body);
   }
-  @Put("cases/:caseId/contacts") contact(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) w: string,
-    @Param("caseId", ParseUUIDPipe) c: string,
-    @Body() body: unknown,
-  ) {
-    return this.service.contact(actor, w, c, body);
-  }
-}
-@Public()
-@Controller("client-portal/:slug")
-export class ClientPortalController {
-  constructor(private readonly service: ClientPortalService) {}
-  @Get("brand") brand(@Param("slug") slug: string) {
-    return this.service.branding(slug);
-  }
-  @Post("challenge") challenge(
-    @Param("slug") slug: string,
-    @Body() body: unknown,
-    @Headers("authorization") auth = "",
-  ) {
-    return this.service.challenge(slug, body, auth.replace(/^Bearer /, ""));
-  }
-  @Post("login") login(@Param("slug") slug: string, @Body() body: unknown) {
-    return this.service.login(slug, body);
-  }
-  @Get("project-files/:projectId/:fileId") async projectFile(@Param("slug") slug:string,@Param("projectId",ParseUUIDPipe) p:string,@Param("fileId",ParseUUIDPipe) f:string,@Headers("authorization") auth=""){const file=await this.service.projectFile(slug,auth.replace(/^Bearer /,""),p,f);return new StreamableFile(file.body,{type:file.mimeType,disposition:'inline'});}
-  @Get("designs/:versionId") async design(@Param("slug") slug:string,@Param("versionId",ParseUUIDPipe) id:string,@Headers("authorization") auth=""){const file=await this.service.designAsset(slug,auth.replace(/^Bearer /,""),id);return new StreamableFile(file.body,{type:file.mimeType,disposition:'inline'});}
-  @Get("data") data(
-    @Param("slug") slug: string,
-    @Headers("authorization") auth = "",
-  ) {
-    return this.service.data(slug, auth.replace(/^Bearer /, ""));
-  }
-  @Post("action") action(
-    @Param("slug") slug: string,
-    @Headers("authorization") auth = "",
-    @Body() body: unknown,
-  ) {
-    return this.service.command(slug, auth.replace(/^Bearer /, ""), body);
-  }
-  @Post("logout") logout(
-    @Param("slug") slug: string,
-    @Headers("authorization") auth = "",
-  ) {
-    return this.service.logout(slug, auth.replace(/^Bearer /, ""));
-  }
 }
 @Public()
 @UseGuards(InternalServiceGuard)
@@ -186,7 +124,8 @@ export class InternalAccountingReconciliationController {
 }
 @Module({
   imports: [WorkspacesModule, PreProjectsModule, ProjectsModule],
-  controllers: [InternalAccountingReconciliationController,CommercialController, ClientPortalController],
-  providers: [AccountingReconciliationService,InternalServiceGuard,CatalogSellingPriceService,CommercialService,QuotationComposerService,ClientPortalService,BrandAssetStorageService],
+  controllers: [InternalAccountingReconciliationController,CommercialController],
+  providers: [AccountingReconciliationService,InternalServiceGuard,CatalogSellingPriceService,CommercialService,QuotationComposerService,BrandAssetStorageService],
+  exports: [CommercialService],
 })
 export class CommercialModule {}

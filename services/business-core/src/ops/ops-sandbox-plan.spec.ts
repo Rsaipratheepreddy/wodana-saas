@@ -1,0 +1,191 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { validateProfile } from "./ops-profile";
+import {
+  fileFirm, inSandboxName, parseCrmFile, parseTeamsFile, patternEmail, planMembers, rolesToAdd, SANDBOX_PERSONAS, sandboxAddress, sandboxEmail, sandboxLegalEntityCode, sandboxProfile,
+  sandboxSeatLimit, scrubForSandbox, SandboxFileError,
+} from "./ops-sandbox-plan";
+
+const docs = resolve(__dirname, "../../../../docs/fixtures");
+const json = (name: string) => JSON.parse(readFileSync(resolve(docs, name), "utf8")) as unknown;
+const KIT_ROLES = new Set(["owner", "administrator", "member", "viewer", "sales", "quantity_surveyor", "finance_reviewer", "operations_approver", "project_manager",
+  "site_supervisor", "buyer", "purchasing_approver", "storekeeper", "factory_lead", "qc_inspector", "finance", "finance_approver"]);
+
+describe("sandbox members", () => {
+  it("is one member per role at <role>@<slug>.test, each with a distinct name", () => {
+    const keys = SANDBOX_PERSONAS.map((persona) => persona.key);
+    expect(keys).toEqual(["owner", "manager", "sales", "designer", "design-manager", "qs", "purchasing", "factory", "logistics", "site", "finance", "accountant"]);
+    expect(new Set(SANDBOX_PERSONAS.map((persona) => persona.displayName)).size).toBe(keys.length);
+    expect(sandboxEmail("owner", "iglo")).toBe("owner@iglo.test");
+    expect(SANDBOX_PERSONAS.find((persona) => persona.key === "sales")?.displayName).toBe("Sam Sales");
+    expect(SANDBOX_PERSONAS[0].displayName).toBe("Olivia Owner");
+  });
+
+  it("maps each member to the kit's roles and to the team that holds their work's permission (Palm's teams file)", () => {
+    const plan = planMembers("iglo", KIT_ROLES, parseTeamsFile(json("palm-teams-access.json")));
+    const by = Object.fromEntries(plan.map((member) => [member.key, { roles: member.roleCodes, teams: member.teamCodes }]));
+    expect(by).toEqual({
+      owner: { roles: ["owner"], teams: [] },
+      manager: { roles: ["administrator", "project_manager", "operations_approver"], teams: ["OPS_ADMIN", "PROJECT_MANAGERS"] },
+      sales: { roles: ["sales"], teams: ["SALES"] },
+      designer: { roles: [], teams: ["INTERIOR_DESIGN"] },
+      "design-manager": { roles: [], teams: ["CREATIVE_DIRECTOR"] },
+      qs: { roles: ["quantity_surveyor"], teams: ["QS"] },
+      purchasing: { roles: ["buyer"], teams: ["PROCUREMENT"] },
+      factory: { roles: ["factory_lead"], teams: ["PRODUCTION_LEAD"] },
+      logistics: { roles: [], teams: ["PRODUCTION"] },
+      site: { roles: ["site_supervisor"], teams: [] },
+      finance: { roles: ["finance"], teams: ["FINANCE"] },
+      accountant: { roles: ["finance_approver"], teams: ["FINANCE"] },
+    });
+    expect(plan.every((member) => member.missingRoles.length === 0)).toBe(true);
+  });
+
+  it("without teams, gives the kit's roles, and the member role to someone the kit has no role for", () => {
+    const plan = planMembers("studio-2", new Set(["owner", "administrator", "member", "sales"]), []);
+    expect(plan.find((member) => member.key === "designer")).toMatchObject({ roleCodes: ["member"], teamCodes: [], email: "designer@studio-2.test" });
+    expect(plan.find((member) => member.key === "qs")).toMatchObject({ roleCodes: ["member"], missingRoles: ["quantity_surveyor"] });
+    expect(plan.find((member) => member.key === "manager")).toMatchObject({ roleCodes: ["administrator"], missingRoles: ["project_manager", "operations_approver"] });
+  });
+
+  it("leaves an existing member's roles as they are on a re-run without teams: the member role is only for joining", () => {
+    const withoutTeams = planMembers("studio-2", new Set(["owner", "administrator", "member", "sales"]), []);
+    const designer = withoutTeams.find((member) => member.key === "designer")!;
+    expect(designer).toMatchObject({ roleCodes: ["member"], fallback: true });
+    // A designer who joined through the design team (an earlier run with --teams) holds no role: nothing is added.
+    expect(rolesToAdd(designer, [])).toEqual([]);
+    // A kit role the plan gives is still added when it's missing.
+    const sales = withoutTeams.find((member) => member.key === "sales")!;
+    expect(sales.fallback).toBe(false);
+    expect(rolesToAdd(sales, [])).toEqual(["sales"]);
+    expect(rolesToAdd(sales, ["sales"])).toEqual([]);
+    // With the teams file the designer joins a team and needs no fallback role.
+    expect(planMembers("iglo", KIT_ROLES, parseTeamsFile(json("palm-teams-access.json"))).find((member) => member.key === "designer")).toMatchObject({ fallback: false });
+  });
+
+  it("gives each member the address --email-pattern makes from their role, else <role>@<slug>.test", () => {
+    const pattern = "wodanatechnology+{role}@gmail.com";
+    expect(planMembers("iglo", KIT_ROLES, [], pattern).map((member) => member.email)).toEqual(SANDBOX_PERSONAS.map((persona) => `wodanatechnology+${persona.key}@gmail.com`));
+    expect(patternEmail(pattern, "design-manager")).toBe("wodanatechnology+design-manager@gmail.com");
+    expect(sandboxAddress("iglo", pattern)("qs")).toBe("wodanatechnology+qs@gmail.com");
+    expect(sandboxAddress("iglo", null)("qs")).toBe("qs@iglo.test");
+    expect(planMembers("iglo", KIT_ROLES, []).map((member) => member.email)).toEqual(SANDBOX_PERSONAS.map((persona) => `${persona.key}@iglo.test`));
+  });
+
+  it("names the company after the slug and leaves seats to spare", () => {
+    expect(sandboxLegalEntityCode("iglo")).toBe("IGLO");
+    expect(sandboxLegalEntityCode("test-studio-2")).toBe("TEST-STUDIO-2");
+    expect(sandboxLegalEntityCode("a".repeat(40))).toHaveLength(24);
+    expect(sandboxSeatLimit(5)).toBe(SANDBOX_PERSONAS.length + 10);
+    expect(sandboxSeatLimit(100)).toBe(100);
+  });
+});
+
+describe("what never reaches a sandbox", () => {
+  it("takes Palm's finance inbox out of its go-live profile, leaves the inbox empty, and keeps the rest valid", () => {
+    const raw = json("palm-golive-config.json");
+    const { profile, dropped } = sandboxProfile(raw);
+    expect(dropped).toEqual([{ path: "financeRequests.inbox", reason: "an email address" }]);
+    expect(JSON.stringify(profile)).not.toContain("@");
+    const valid = validateProfile(profile);
+    expect(valid.financeRequests?.inbox).toBeNull();
+    expect(valid.financeRequests?.paymentMethods).toHaveLength(3);
+    expect(valid.vehicles).toHaveLength(9);
+    expect(valid.routes).toHaveLength(1);
+    expect(valid.inbox).toEqual({ closingMessages: { received: null, form: null, closing: null }, closingAfterHours: 3 });
+    expect(JSON.stringify((profile as { inbox: unknown }).inbox)).not.toContain("Palm Living");
+  });
+
+  it("drops integration settings, credentials, web addresses, phone numbers and bank accounts anywhere, and lists each", () => {
+    const { value, dropped } = scrubForSandbox({
+      description: "Mail ops@realfirm.com",
+      _note: "call +971 4 123 4567",
+      shopify: { store: "realfirm" },
+      factory: { clientPaymentReminderDays: 7, webhookUrl: "https://hooks.example.org/x", apiKey: "k-123" },
+      financeRequests: { inbox: "accounts@realfirm.ae", paymentMethods: [
+        { name: "Bank transfer", guidance: "Pay to AE07 0331 2345 6789 0123 456" },
+        { name: "Card", guidance: "Call +971501234567 for a link" },
+        { name: "Stripe", guidance: "See www.realfirm.ae/pay" },
+        { name: "Cash", guidance: "At the showroom" },
+      ] },
+      quotations: { qsWorkPackages: ["Joinery", "Ask sales@realfirm.ae"] },
+      tests: { contact: "finance@iglo.test", other: "someone@example.com" },
+      routes: [{ default: true, addStages: [{ name: "Permit collection", key: "permit", before: "Delivery and installation" }] }],
+    });
+    expect(dropped).toEqual([
+      { path: "shopify", reason: "an integration or contact setting" },
+      { path: "factory.webhookUrl", reason: "an integration or contact setting" },
+      { path: "factory.apiKey", reason: "an integration or contact setting" },
+      { path: "financeRequests.inbox", reason: "an email address" },
+      { path: "financeRequests.paymentMethods[0].guidance", reason: "a bank account number" },
+      { path: "financeRequests.paymentMethods[1].guidance", reason: "a phone number" },
+      { path: "financeRequests.paymentMethods[2].guidance", reason: "a web address" },
+      { path: "quotations.qsWorkPackages[1]", reason: "an email address" },
+    ]);
+    expect(value).toEqual({
+      factory: { clientPaymentReminderDays: 7 },
+      financeRequests: { paymentMethods: [{ name: "Bank transfer" }, { name: "Card" }, { name: "Stripe" }, { name: "Cash", guidance: "At the showroom" }] },
+      quotations: { qsWorkPackages: ["Joinery"] },
+      tests: { contact: "finance@iglo.test", other: "someone@example.com" },
+      routes: [{ default: true, addStages: [{ name: "Permit collection", key: "permit", before: "Delivery and installation" }] }],
+    });
+  });
+
+  it("reads a CRM intake profile's lead options as taxonomies, and nothing else from it", () => {
+    const taxonomies = parseCrmFile(json("palm-crm-intake-profile.json"));
+    const codes = taxonomies.map((taxonomy) => taxonomy.code);
+    expect(codes[0]).toBe("lead_source");
+    expect(codes).toEqual(expect.arrayContaining(["enquiry_type", "budget_range", "customer_type", "referral_partner", "lead_channel_self_generated"]));
+    expect(codes).not.toContain("referral_broker"); // an empty list is left out
+    expect(taxonomies.find((taxonomy) => taxonomy.code === "enquiry_type")?.options.map((option) => option.code))
+      .toEqual(["renovation_fit_out", "full_fit_out", "interior_design", "interior_design_furniture", "furniture_only", "concepts_early_ideas", "architecture_odg", "not_sure"]);
+    // QA-002: each enquiry type starts from the flow it names, else the one its code and label suggest; "Not sure yet" has none.
+    expect(Object.fromEntries(taxonomies.find((taxonomy) => taxonomy.code === "enquiry_type")!.options.map((option) => [option.code, option.flow ?? null]))).toEqual({
+      renovation_fit_out: "fit_out", full_fit_out: "fit_out", interior_design: "design", interior_design_furniture: "design", furniture_only: "furniture",
+      concepts_early_ideas: "design", architecture_odg: "basic", not_sure: null,
+    });
+    expect(parseCrmFile({ sources: [{ code: "web", label: "Web" }], enquiryTypes: [{ code: "studio", label: "Studio work", flow: "furniture" }, { code: "not_sure", label: "Not sure" }], budgetRanges: [{ code: "any", label: "Any" }] })
+      .find((taxonomy) => taxonomy.code === "enquiry_type")!.options.map((option) => option.flow ?? null)).toEqual(["furniture", null]);
+    expect(() => parseCrmFile({ sources: [{ code: "web", label: "Web" }], enquiryTypes: [{ code: "studio", label: "Studio", flow: "bespoke_flow" }], budgetRanges: [{ code: "any", label: "Any" }] }))
+      .toThrow(/enquiryTypes\[0\]\.flow is one of furniture, design, fit_out, basic/);
+    // Other lead options name no flow.
+    expect(taxonomies.filter((taxonomy) => taxonomy.code !== "enquiry_type").flatMap((taxonomy) => taxonomy.options).some((option) => "flow" in option)).toBe(false);
+    expect(taxonomies[0].options.find((option) => option.code === "self_generated")).toEqual({ code: "self_generated", label: "Self Generated", teams: ["SALES", "SALES_ADMIN", "OPS_ADMIN"] });
+    expect(JSON.stringify(taxonomies)).not.toMatch(/Asia\/Dubai|not_connected|queue/);
+    expect(() => parseCrmFile({ sources: [{ code: "Web Site", label: "" }], channels: { other: [] }, enquiryTypes: [], budgetRanges: "x" }))
+      .toThrow(/sources\[0\]\.code[\s\S]*channels\.other is not one of the sources[\s\S]*budgetRanges is a list/);
+  });
+
+  it("names the sandbox, never the firm a CRM file was written for, in its lead options", () => {
+    const raw = json("palm-crm-intake-profile.json");
+    const firm = fileFirm(raw);
+    expect(firm).not.toBeNull();
+    const { taxonomies, renamed } = inSandboxName(parseCrmFile(raw), firm, "Demo Studio");
+    expect(renamed).toBeGreaterThan(0);
+    const text = JSON.stringify(taxonomies.map((taxonomy) => [taxonomy.name, taxonomy.options.map((option) => option.label)]));
+    expect(text.toLowerCase()).not.toContain(firm!.toLowerCase());
+    expect(text).toContain("Demo Studio");
+    // Codes stay, so a channel list still belongs to its source.
+    const sources = taxonomies.find((taxonomy) => taxonomy.code === "lead_source")!.options;
+    expect(sources.slice(0, 2).map((option) => option.label)).toEqual(["Demo Studio Enquiry", "Demo Studio Socials"]);
+    expect(taxonomies.some((taxonomy) => taxonomy.code === `lead_channel_${sources[0].code}` && taxonomy.name === "Demo Studio Enquiry channels")).toBe(true);
+    // Whole words, any case; a file that names no firm, or a sandbox with the firm's own name, changes nothing.
+    const spec = (label: string) => [{ code: "lead_source", name: "Lead source", options: [{ code: "a", label }] }];
+    expect(inSandboxName(spec("ACME studio walk-in"), "Acme Studio", "Demo").taxonomies[0].options[0].label).toBe("Demo walk-in");
+    expect(inSandboxName(spec("Acme Studios"), "Acme Studio", "Demo").renamed).toBe(0);
+    expect(inSandboxName(spec("Acme Studio"), null, "Demo").renamed).toBe(0);
+    expect(inSandboxName(spec("Acme Studio"), "Acme Studio", "acme studio").renamed).toBe(0);
+    expect(fileFirm({ tenant: "  " })).toBeNull();
+  });
+
+  it("reads a teams file and refuses a malformed one with every problem", () => {
+    const teams = parseTeamsFile(json("palm-teams-access.json"));
+    expect(teams.map((team) => team.code)).toContain("OPS_ADMIN");
+    expect(teams.find((team) => team.code === "OPS_ADMIN")?.permissions).toEqual(["*"]);
+    expect(() => parseTeamsFile([])).toThrow(SandboxFileError);
+    expect(() => parseTeamsFile({ teams: [] })).toThrow("lists no teams");
+    expect(() => parseTeamsFile({ teams: [{ code: "x", name: "A", permissions: ["Bad Code"] }, { code: "SALES", name: "Sales", permissions: [] }, { code: "sales", name: "Sales again", permissions: [] }] }))
+      .toThrow(/teams\[0\]\.code[\s\S]*teams\[2\]\.code repeats SALES/);
+  });
+});

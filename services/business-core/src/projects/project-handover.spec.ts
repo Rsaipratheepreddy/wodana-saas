@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyProject } from "./execution.domain";
+import { applyExecution, emptyProject, type ExecutionActor } from "./execution.domain";
 import {
   addHandoverOutstandingItem,
   assertHandoverPacketCurrent,
@@ -108,6 +108,84 @@ function prepared(data: ProjectData) {
 }
 
 describe("automatic area acceptance packs", () => {
+  it("uses accepted factory output for installation without duplicating its raw-material purchase", () => {
+    const data = project();
+    data.scope!.lines[0].material = "Oak veneer";
+    const factory = { ...completedTask(), id: "factory-task", title: "Make master-bedroom joinery",
+      location: "factory" as const, ownerId: "factory-owner", predecessors: [] };
+    data.tasks[0].predecessors = [factory.id];
+    data.tasks.unshift(factory);
+    data.materials = [{
+      id: "oak", title: "Oak veneer", specification: "Approved finish", catalogId: "", catalogVersion: 0,
+      unit: "room", required: 1, supply: "company", taskId: factory.id,
+      scopeLineId: "scope-bedroom", needBy: "2026-09-01",
+      movements: [{ id: "receipt", kind: "receive", quantity: 1, reference: "Inspected GRN", at: now }],
+    }];
+    data.dispatches = [{
+      id: "delivery", title: "Joinery to site", taskId: factory.id, receivingTaskId: "site-task",
+      destination: "Master bedroom", quantity: 1, unit: "room", dueDate: "2026-09-10",
+      carrier: "Crew", reference: "DN-1", status: "received", preparedBy: "factory-owner",
+      accepted: 1, rejected: 0, receiptEvidence: "Signed site receipt", receivedBy: "site-owner",
+    }];
+    expect(() => prepared(data)).not.toThrow();
+    data.dispatches[0].accepted = 0;
+    expect(() => assertHandoverPacketCurrent(data, data.handovers[0])).toThrow(/material planning and procurement evidence/);
+  });
+  it("hands over distinct inspected batches from one unfinished task without duplicate acceptance",()=>{
+    const data=project(),task=data.tasks[0];task.quantity=10;task.approved=4;task.status='in_progress';
+    data.reports=[{id:'progress',date:'2026-09-16',shift:'Day',location:'site',authorId:'site-owner',author:'Installer',status:'approved',entries:[{taskId:task.id,quantity:4}],hours:2,people:1,materials:'',issues:'',tomorrow:'',evidence:'Site photos',note:''}];
+    const planner:ExecutionActor={id:'pm',name:'Planner',manage:true,review:true,report:true,buy:true,memberIds:['pm','qc','site-owner'],resourceIds:[],released:true,now};
+    const qc={...planner,id:'qc'};
+    applyExecution(data,'installation_batch',{id:task.id,title:'First two',quantity:2},planner);
+    applyExecution(data,'installation_batch',{id:task.id,title:'Next two',quantity:2},planner);
+    const [first,second]=task.installationBatches!;
+    expect(()=>applyExecution(data,'installation_batch',{id:task.id,title:'Excess',quantity:1},planner)).toThrow('approved installed output');
+    expect(()=>applyExecution(data,'installation_batch_review',{id:task.id,batchId:first.id,passed:true,note:'QC'},planner)).toThrow('Another reviewer');
+    applyExecution(data,'installation_batch_review',{id:task.id,batchId:first.id,passed:true,note:'QC passed'},qc);
+    applyExecution(data,'installation_batch_review',{id:task.id,batchId:second.id,passed:false,note:'Adjust hinges'},qc);
+    const create=(id:string,batchId:string)=>applyExecution(data,'handover',{handover:{id,sourcePackageId:'package-bedroom',installationBatchIds:[batchId]}},planner);
+    expect(()=>create('bad',second.id)).toThrow('passed installation');
+    create('first',first.id);applyExecution(data,'handover_status',{id:'first',status:'ready',confirmed:true},planner);
+    expect(data.handovers[0].packet?.tasks[0].quantity).toBe(2);expect(data.phase).toBe('active');
+    applyExecution(data,'handover_status',{id:'first',status:'accepted',signedRecord:true,acceptedBy:'Client',note:'Signed first two'},planner);
+    create('duplicate',first.id);expect(()=>applyExecution(data,'handover_status',{id:'duplicate',status:'ready',confirmed:true},planner)).toThrow('already included');
+    applyExecution(data,'installation_batch_review',{id:task.id,batchId:second.id,passed:true,note:'Correction verified'},qc);
+    expect(second.reviews).toHaveLength(2);
+    create('second',second.id);applyExecution(data,'handover_status',{id:'second',status:'ready',confirmed:true,clientApproverId:'client'},planner);
+    decideHandoverFromPortal(data,{handoverId:'second',grantId:'client',grantName:'Client',decision:'accept',note:'',challengeId:'batch-two',now});
+    expect(data.handovers.find(h=>h.id==='second')?.status).toBe('accepted');expect(task.status).toBe('in_progress');expect(task.approved).toBe(4);
+    data.handovers=data.handovers.filter(h=>h.id!=='duplicate');
+    expect(()=>applyExecution(data,'commercial',{budget:100,forecast:100,financeClosed:true,note:'Final account',financeEvidence:'Reconciled'},planner)).toThrow('remaining work');
+    applyExecution(data,'report_submit',{report:{...data.reports[0],id:'correction',supersedes:'progress',entries:[{taskId:task.id,quantity:1}]}},{...planner,id:'site-owner'});
+    expect(()=>applyExecution(data,'approve_report',{id:'correction'},qc)).toThrow('reducing installed output');
+    expect(data.reports.find(r=>r.id==='correction')?.status).toBe('submitted');
+    expect(()=>applyExecution(data,'installation_batch_cancel',{id:task.id,batchId:first.id,note:'Undo'},planner)).toThrow('current batch');
+    expect(()=>applyExecution(data,'inspect',{id:task.id,passed:true,note:'Whole task'},qc)).toThrow('individually');
+  });
+  it("rejects stale units in authenticated portal acceptance",()=>{
+    const data=project(),handover=prepared(data);data.tasks[0].unit='set';
+    expect(()=>decideHandoverFromPortal(data,{handoverId:handover.id,grantId:'client-approver',grantName:'Client',decision:'accept',note:'',challengeId:'challenge',now})).toThrow('quantity, unit');
+    expect(handover.status).toBe('ready');
+  });
+  it("reserves ready/accepted task scope across overlapping packs without mutating a failed candidate",()=>{
+    const data=project(),first=prepared(data);
+    const other=createAutomaticHandover(data,{id:'other',area:first.area});data.handovers.push(other);
+    const before=JSON.stringify(other);
+    expect(()=>refreshHandoverPacket(data,other,'pm',now)).toThrow('already included');
+    expect(JSON.stringify(other)).toBe(before);
+    first.status='accepted';expect(()=>refreshHandoverPacket(data,other,'pm',now)).toThrow('already included');
+    first.status='returned';expect(()=>refreshHandoverPacket(data,other,'pm',now)).not.toThrow();
+  });
+  it("validates quantities and preserves the exact reviewed pack for signed acceptance",()=>{
+    const data=project(),handover=prepared(data),packet=handover.packet;
+    const actor:ExecutionActor={id:'pm',name:'Planner',manage:true,review:true,buy:true,report:true,memberIds:[],resourceIds:[],released:true,now};
+    data.tasks[0].quantity=2;
+    expect(()=>applyExecution(data,'handover_status',{id:handover.id,status:'accepted',signedRecord:true,acceptedBy:'Client',note:'Signed document'},actor)).toThrow('quantity, unit');
+    expect(handover.packet).toBe(packet);expect(handover.status).toBe('ready');
+    data.tasks[0].quantity=1;
+    applyExecution(data,'handover_status',{id:handover.id,status:'accepted',signedRecord:true,acceptedBy:'Client',note:'Signed document'},actor);
+    expect(handover.packet).toBe(packet);expect(handover.packets).toHaveLength(1);expect(handover.status).toBe('accepted');
+  });
   it("derives the exact package tasks and approved scoped documents without manual IDs", () => {
     const data = project();
     const handover = prepared(data);

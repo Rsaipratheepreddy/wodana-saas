@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { OFFLINE_DRAFT_TTL_MS, isOfflineDraftExpired, openOfflineBytes, openOfflineText, sealOfflineBytes, sealOfflineText } from '../src/security/offline-envelope';
+import { OFFLINE_DRAFT_TTL_MS, isOfflineDraftExpired, openOfflineBytes, openOfflineText, sealOfflineBytes, sealOfflineText } from '../src/core/offline-envelope';
 
 const key = new Uint8Array(32).fill(7);
 const nonce = new Uint8Array(24).fill(3);

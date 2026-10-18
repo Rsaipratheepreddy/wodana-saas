@@ -1,0 +1,49 @@
+/* Settings → Client portal: the choices, and a live preview in the tenant's real brand. */
+.fields { display: grid; gap: var(--wd-space-3); padding-block: var(--wd-space-3); }
+.link { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); font-size: var(--wd-text-sm); }
+
+.preview { display: grid; gap: var(--wd-space-3); }
+.previewFrame {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--wd-color-border);
+  border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-canvas);
+  color: var(--wd-color-text);
+  font-family: var(--wd-font-sans);
+}
+.previewHeader { display: flex; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); background: var(--wd-color-brand-surface); }
+.previewLogo { display: block; block-size: var(--wd-space-10); inline-size: auto; max-inline-size: 10rem; object-fit: contain; }
+.previewName {
+  font-family: var(--wd-font-display);
+  font-weight: var(--wd-weight-semibold);
+  letter-spacing: var(--wd-workspace-heading-tracking, normal);
+  text-transform: var(--wd-workspace-heading-transform, none);
+}
+.previewBody { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-6) var(--wd-space-4); }
+.previewTitle {
+  margin: 0;
+  font-family: var(--wd-font-display);
+  font-size: var(--wd-text-2xl);
+  font-weight: var(--wd-weight-semibold);
+  letter-spacing: var(--wd-workspace-heading-tracking, normal);
+  text-transform: var(--wd-workspace-heading-transform, none);
+}
+.previewText { margin: 0; color: var(--wd-color-text-secondary); }
+.previewTabs { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.previewTab { padding: var(--wd-space-1) var(--wd-space-3); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); font-size: var(--wd-text-sm); }
+.previewTab[data-selected="true"] { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
+.previewAction {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--wd-button-height-standard);
+  padding-inline: var(--wd-space-4);
+  border-radius: var(--wd-radius-sm);
+  background: var(--wd-color-action-primary);
+  color: var(--wd-color-action-on-primary);
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-semibold);
+}
+.previewFooter { padding: var(--wd-space-3) var(--wd-space-4); background: var(--wd-color-brand-surface); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+.choices { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-2); }

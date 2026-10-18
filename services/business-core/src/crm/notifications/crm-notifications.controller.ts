@@ -15,6 +15,7 @@ export class CrmNotificationsController {
   @Post("notification-policies") policy(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() input:CreateNotificationPolicyDto){return this.notifications.createPolicy(actor,workspaceId,input);}
   @Get("notification-policies") policies(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.policies(actor,workspaceId);}
   @Patch("notification-policies/:id/status") policyStatus(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string,@Body() input:NotificationPolicyStatusDto){return this.notifications.setPolicyStatus(actor,workspaceId,id,input);}
+  @Get("notification-preferences/me") myPreferences(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.myPreferences(actor,workspaceId);}
   @Post("notification-preferences") preference(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() input:UpsertPreferenceDto){return this.notifications.preference(actor,workspaceId,input);}
   @Get("notification-settings") settings(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.notificationSettings(actor,workspaceId);}
   @Put("notification-settings/consent") consent(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() input:RecordDeviceConsentDto){return this.notifications.recordDeviceConsent(actor,workspaceId,input);}
@@ -22,6 +23,7 @@ export class CrmNotificationsController {
   @Post("device-endpoints") registerDevice(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() input:RegisterDeviceEndpointDto){return this.notifications.registerDevice(actor,workspaceId,input);}
   @Post("device-endpoints/:id/revoke") revokeDevice(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string,@Body() input:RevokeDeviceEndpointDto){return this.notifications.revokeDevice(actor,workspaceId,id,input);}
   @Get("notifications") inbox(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.inbox(actor,workspaceId);}
+  @Post("notifications/read-all") readAll(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){return this.notifications.readAll(actor,workspaceId);}
   @Post("notifications/:id/read") read(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string){return this.notifications.read(actor,workspaceId,id);}
   @Post("notifications/:id/open") open(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Param("id",ParseUUIDPipe) id:string){return this.notifications.open(actor,workspaceId,id);}
 }
@@ -30,6 +32,7 @@ export class InternalCrmNotificationsController {
   constructor(private readonly notifications:CrmNotificationsService){}
   @Post("enqueue") enqueue(@Body() input:EnqueueNotificationDto){return this.notifications.enqueueInternal(input);}
   @Post("claim") claim(@Body() input:ClaimNotificationJobsDto){return this.notifications.claimInternal(input);}
+  @Post("staff-email/dispatch") dispatchStaffEmails(@Body() input:ClaimNotificationJobsDto){return this.notifications.dispatchStaffEmailsInternal(input);}
   @Post(":id/result") result(@Param("id",ParseUUIDPipe) id:string,@Body() input:NotificationResultDto){return this.notifications.resultInternal(id,input);}
   @Post("push-receipts/claim") claimPushReceipts(@Body() input:ClaimPushReceiptsDto){return this.notifications.claimPushReceipts(input);}
   @Post(":id/push-receipt") pushReceipt(@Param("id",ParseUUIDPipe) id:string,@Body() input:PushReceiptResultDto){return this.notifications.pushReceiptResult(id,input);}

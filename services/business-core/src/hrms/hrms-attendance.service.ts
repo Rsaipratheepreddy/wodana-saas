@@ -23,6 +23,7 @@ import {
   csvCell,
   dateRange,
   fingerprint,
+  formatWhen,
   localDate,
   locationEvidence,
   splitInterval,
@@ -412,9 +413,9 @@ export class HrmsAttendanceService {
             [workspaceId, sessionId],
           );
       }
-      if (issues.length)
-        await ctx.client.query(
-          `INSERT INTO hrms_reviews(workspace_id,membership_id,session_id,action_id,kind,event_id,reason) VALUES($1,$2,$3,$4,'exception',$5,$6)`,
+      if (issues.length) {
+        const review = await ctx.client.query<{ id: string }>(
+          `INSERT INTO hrms_reviews(workspace_id,membership_id,session_id,action_id,kind,event_id,reason) VALUES($1,$2,$3,$4,'exception',$5,$6) RETURNING id`,
           [
             workspaceId,
             ctx.membershipId,
@@ -424,6 +425,24 @@ export class HrmsAttendanceService {
             input.exceptionReason.trim(),
           ],
         );
+        await this.access.notify(ctx, [
+          {
+            code: "hrms.attendance_to_review",
+            users: await this.access.approvers(ctx, ctx.membershipId),
+            variables: {
+              person: employee.name,
+              when: formatWhen(
+                now,
+                employee.calendar.timezone,
+                await this.access.locale(ctx),
+              ),
+              note: `${issues.join("; ")}: ${input.exceptionReason.trim()}`,
+            },
+            deepLink: `/workspace/hrms/team?review=${review.rows[0].id}`,
+            key: `hrms.attendance_to_review:${review.rows[0].id}`,
+          },
+        ]);
+      }
       await this.access.audit(ctx, `attendance_${input.kind}`, eventId, {
         sessionId,
         membershipId: ctx.membershipId,
@@ -454,7 +473,8 @@ export class HrmsAttendanceService {
       this.historyIn(ctx, input),
     );
   }
-  private async historyIn(ctx: HrmsContext, input: HistoryDto) {
+  /** Days for the people in scope (also used by payroll, inside its own transaction). */
+  async historyIn(ctx: HrmsContext, input: HistoryDto) {
     const dates = dateRange(input.from, input.to);
     let members: string[] = [];
     if (input.scope === "team") {
@@ -513,6 +533,9 @@ export class HrmsAttendanceService {
       rejectedCount: number;
       leaveDays: number;
       leaveStatus: string | null;
+      leaveType: string | null;
+      scheduled: boolean;
+      place: string | null;
       breakdown: Record<
         string,
         { name: string; mode: string; milliseconds: number }
@@ -542,6 +565,9 @@ export class HrmsAttendanceService {
           rejectedCount: 0,
           leaveDays: 0,
           leaveStatus: null,
+          leaveType: null,
+          scheduled: false,
+          place: null,
           breakdown: {},
         });
       return days.get(key)!;
@@ -550,7 +576,10 @@ export class HrmsAttendanceService {
       const e = await this.access.employee(ctx, id);
       for (const date of dates)
         if (date >= e.activeFrom && (!e.activeTo || date <= e.activeTo))
-          get(id, e.name, date, e.calendar.timezone);
+          get(id, e.name, date, e.calendar.timezone).scheduled =
+            e.calendar.workingDays.includes(
+              new Date(`${date}T12:00:00Z`).getUTCDay(),
+            ) && !e.calendar.holidays.includes(date);
     }
     const now = new Date();
     for (const segment of segments.rows) {
@@ -583,10 +612,13 @@ export class HrmsAttendanceService {
         } else {
           day.openMilliseconds += part.milliseconds;
           day.open = true;
+          if (!stale && part.date === localDate(now, tz))
+            day.place = segment.context.location?.name ?? segment.context.name;
         }
         const key = `${segment.mode}:${segment.locationId ?? ""}:${segment.projectId ?? segment.caseId ?? ""}`;
+        // General work (no project or case) is named by its place; with no place the reader shows the way of working.
         day.breakdown[key] ??= {
-          name: segment.context.location?.name ?? segment.context.name,
+          name: segment.context.location?.name ?? (segment.projectId || segment.caseId ? segment.context.name : ""),
           mode: segment.mode,
           milliseconds: 0,
         };
@@ -624,6 +656,7 @@ export class HrmsAttendanceService {
         if (day) {
           if (leave.status !== "pending") day.leaveDays += unit.days;
           day.leaveStatus = leave.status;
+          day.leaveType = leave.name;
         }
       }
     return {
@@ -732,7 +765,7 @@ export class HrmsAttendanceService {
   }
   requestReview(actor: RequestActor, workspaceId: string, input: ReviewDto) {
     return this.access.run(actor, workspaceId, async (ctx) => {
-      await this.access.self(ctx);
+      const employee = await this.access.self(ctx);
       await this.access.lock(ctx);
       if (input.reason.trim().length < 3)
         throw new BadRequestException("Explain the attendance correction.");
@@ -800,6 +833,23 @@ export class HrmsAttendanceService {
       await this.access.audit(ctx, "correction_requested", row.rows[0].id, {
         ...input,
       });
+      await this.access.notify(ctx, [
+        {
+          code: "hrms.attendance_to_review",
+          users: await this.access.approvers(ctx, ctx.membershipId),
+          variables: {
+            person: employee.name,
+            when: formatWhen(
+              requested,
+              employee.calendar.timezone,
+              await this.access.locale(ctx),
+            ),
+            note: input.reason.trim(),
+          },
+          deepLink: `/workspace/hrms/team?review=${row.rows[0].id}`,
+          key: `hrms.attendance_to_review:${row.rows[0].id}`,
+        },
+      ]);
       return row.rows[0];
     });
   }
@@ -850,6 +900,28 @@ export class HrmsAttendanceService {
         },
         review,
       );
+      const subject = await this.access.employee(ctx, review.membership_id);
+      const at = review.requested_at ?? review.created_at;
+      const code =
+        input.decision === "approve"
+          ? "hrms.attendance_approved"
+          : "hrms.attendance_rejected";
+      await this.access.notify(ctx, [
+        {
+          code,
+          users: await this.access.userOf(ctx, review.membership_id),
+          variables: {
+            when: formatWhen(
+              at,
+              subject.calendar.timezone,
+              await this.access.locale(ctx),
+            ),
+            note: input.reason.trim(),
+          },
+          deepLink: `/workspace/hrms?day=${localDate(at, subject.calendar.timezone)}`,
+          key: `${code}:${id}`,
+        },
+      ]);
       return result.rows[0];
     });
   }

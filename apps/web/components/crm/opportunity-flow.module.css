@@ -1,0 +1,19 @@
+/* A refused move: the first need with its action, the rest folded. */
+.blocked { display: grid; gap: var(--wd-space-2); }
+.need { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-2) var(--wd-space-4); margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-md); font-weight: var(--wd-weight-medium); }
+.moreToggle { justify-self: start; padding: 0; border: 0; background: none; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-sm); cursor: pointer; }
+.moreToggle:hover { color: var(--wd-color-text); }
+.moreToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; border-radius: var(--wd-radius-xs); }
+.rest { display: grid; margin: 0; padding: 0; list-style: none; }
+.rest li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+
+/* Furniture sub-path: the shared radio set laid out as option cards. */
+.pathPicker :global(.wd-choice-list) { grid-template-columns: repeat(auto-fill, minmax(calc(var(--wd-space-24) * 2), 1fr)); gap: var(--wd-space-2); }
+.pathPicker :global(.wd-radio) { padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.pathPicker :global(.wd-radio[data-selected]) { border-color: var(--wd-color-action-primary); background: var(--wd-color-action-primary-subtle); }
+/* Each card fills its cell; the lead time sits top-end on the title's first line in every card, however the name wraps. */
+.pathPicker :global(.wd-radio) { display: flex; }
+.pathPicker :global(.wd-radio) > span:last-child { flex: 1 1 auto; }
+.pathTitle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; column-gap: var(--wd-space-1-5); }
+.pathLetter { color: var(--wd-color-action-primary); font-weight: var(--wd-weight-semibold); }
+.pathLead { justify-self: end; white-space: nowrap; }

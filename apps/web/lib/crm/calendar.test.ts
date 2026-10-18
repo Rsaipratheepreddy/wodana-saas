@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarDayKey, calendarRange, localDateTime, moveCalendar, timeEventLayout, eventsForDay, type CalendarEvent } from "./calendar";
+import { calendarDayKey, calendarRange, localDateTime, moveCalendar, timeEventLanes, timeEventLayout, eventsForDay, type CalendarEvent } from "./calendar";
 
 describe("CRM calendar date boundaries", () => {
   it("includes leap day and complete weeks", () => {
@@ -28,6 +28,15 @@ describe('Calendar time layout', () => {
   it('separates overlapping appointments and reuses columns after the overlap ends',()=>{
     const layout=timeEventLayout([event('a',9,0,10),event('b',9,30,11),event('c',10,0,10,30),event('d',11,0,12)],day);
     expect(layout.map(e=>[e.event.id,e.column,e.columns])).toEqual([['a',0,2],['b',1,2],['c',0,2],['d',0,1]]);
+  });
+  it('folds an overlap cluster wider than the lane limit into one "+N" chip',()=>{
+    const cluster=[event('visit',10,30,11,30),...Array.from({length:4},(_,i)=>event(`f${i}`,11,0))];
+    const { lanes, folds }=timeEventLanes(cluster,day,2);
+    expect(lanes.map(e=>[e.event.id,e.column,e.columns,e.folded])).toEqual([['visit',0,1,true]]);
+    expect(folds).toEqual([expect.objectContaining({start:660,end:690,from:630,to:690,hidden:4})]);
+    expect(folds[0].events.map(e=>e.id)).toEqual(['visit','f0','f1','f2','f3']);
+    const pair=timeEventLanes([event('a',9,0,10),event('b',9,0,10)],day,2);
+    expect(pair.folds).toEqual([]); expect(pair.lanes.map(e=>[e.column,e.columns,e.folded])).toEqual([[0,2,false],[1,2,false]]);
   });
   it('clips overnight events and treats all-day end dates as exclusive',()=>{
     const overnight={...event('overnight',23,0),start:new Date(2026,8,6,23),end:new Date(2026,8,7,1)};

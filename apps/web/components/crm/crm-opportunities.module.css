@@ -1,8 +1,62 @@
-.actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-2); }
-.identity { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
-.identity strong, .identity small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.identity strong { color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
-.identity small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
-.stage[data-unplaced="true"] { color: var(--wd-color-warning); }
-.money { color: var(--wd-color-text); font-variant-numeric: tabular-nums; }
-.due { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stage[data-unplaced="true"] { color:var(--wd-color-warning); }
+.money { color:var(--wd-color-text); font-variant-numeric:tabular-nums; }
+.due { display:inline-flex; align-items:center; gap:var(--wd-space-1); color:var(--wd-color-text-secondary); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.srOnly { position:absolute; inline-size:1px; block-size:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+.boardSurface { display:flex; flex:1; flex-direction:column; gap:var(--wd-space-2); min-inline-size:0; min-block-size:0; }
+.boardToolbar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wd-space-2); min-inline-size:0; min-block-size:var(--wd-control-md); }
+.chips { display:flex; flex-wrap:wrap; align-items:center; gap:var(--wd-space-1); min-inline-size:0; }
+.viewSwitch, .toolbarActions { display:flex; align-items:center; gap:var(--wd-space-1); }
+.viewSwitch :global(.wd-button[aria-pressed="true"]) { background:var(--wd-color-surface-muted); color:var(--wd-color-text); font-weight:var(--wd-weight-medium); }
+.toolbarActions { margin-inline-start:auto; }
+
+/* Stages keep a readable width and the board scrolls sideways (quiet scrollbars); each column scrolls its own cards. */
+.salesBoard { --board-track:minmax(14rem,1fr); --board-empty-track:minmax(8rem,.5fr); display:grid; grid-template-columns:var(--stage-template); gap:var(--wd-space-2); flex:1; min-inline-size:0; min-block-size:20rem; overflow:auto; overscroll-behavior-x:contain; padding-block:var(--wd-space-0-5) var(--wd-space-2); }
+.boardColumn { --column-accent:var(--wd-color-text-tertiary); display:flex; flex-direction:column; min-inline-size:0; min-block-size:0; padding:var(--wd-space-1); border-radius:var(--wd-radius-md); background:var(--wd-color-surface-muted); }
+.boardColumn[data-tone="1"] { --column-accent:var(--wd-color-warning); }
+.boardColumn[data-tone="2"] { --column-accent:var(--wd-color-info); }
+.boardColumn[data-tone="3"] { --column-accent:var(--wd-color-action-primary); }
+.boardColumn[data-tone="4"], .boardColumn[data-tone="won"] { --column-accent:var(--wd-color-success); }
+.boardColumn[data-tone="lost"] { --column-accent:var(--wd-color-danger); }
+.boardColumn[data-drop-target] { box-shadow:inset 0 0 0 2px var(--wd-color-focus); }
+.boardColumn > header { display:flex; align-items:center; justify-content:space-between; gap:var(--wd-space-1-5); min-block-size:2.8rem; padding:var(--wd-space-2) var(--wd-space-2); color:var(--wd-color-text); }
+.boardColumn > header h2 { display:flex; align-items:center; gap:var(--wd-space-2); min-inline-size:0; margin:0; overflow-wrap:break-word; hyphens:auto; font-family:var(--wd-font-sans); font-size:var(--wd-text-sm); font-weight:var(--wd-weight-semibold); letter-spacing:0; text-transform:none; }
+.boardColumn > header i { flex:none; inline-size:7px; block-size:7px; border-radius:50%; background:var(--column-accent); }
+.count { display:grid; place-items:center; flex:none; min-inline-size:1.5rem; block-size:1.5rem; padding-inline:var(--wd-space-1-5); border-radius:var(--wd-radius-xs); background:var(--wd-color-surface); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); font-variant-numeric:tabular-nums; }
+/* An empty stage is narrow: its name keeps the room and "0" is said by the empty column itself. */
+.boardColumn[data-empty] > header .count { display:none; }
+.pipelineName { display:block; padding:var(--wd-space-1-5) var(--wd-space-3) 0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
+.cardStack { display:grid; grid-auto-rows:max-content; grid-template-columns:minmax(0, 1fr); align-content:start; gap:var(--wd-space-2); min-block-size:0; overflow-x:hidden; overflow-y:auto; padding:var(--wd-space-0-5); }
+/* Each card is the shared Card; the wrapper only carries dragging, and the title button opens the whole card. */
+.boardCard { position:relative; min-inline-size:0; }
+.boardCard[draggable="true"] { cursor:grab; }
+.boardCard[draggable="true"]:active { cursor:grabbing; }
+.boardCard[data-dragging] { opacity:.55; }
+.boardCard[aria-busy="true"] { opacity:.65; cursor:progress; }
+.cardOpen { padding:0; border:0; background:none; color:inherit; font:inherit; text-align:start; overflow-wrap:anywhere; cursor:inherit; }
+.cardOpen::after { content:""; position:absolute; inset:0; border-radius:var(--wd-radius-md); }
+.cardOpen:focus-visible { outline:none; }
+.cardOpen:focus-visible::after { outline:2px solid var(--wd-color-focus); outline-offset:2px; }
+.cardWarning { color:var(--wd-color-warning); font-size:var(--wd-text-2xs); font-weight:700; }
+/* The footer stacks its rows (follow-up, then owner), so badges and labels never overlap; long text wraps or truncates with a tooltip. */
+.cardMeta { display:flex; align-items:baseline; justify-content:space-between; gap:var(--wd-space-2); min-inline-size:0; color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }
+.cardMeta > span { min-inline-size:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cardMeta > b { flex:none; color:var(--wd-color-text); font-variant-numeric:tabular-nums; font-weight:var(--wd-weight-semibold); }
+.cardNow { color:var(--wd-color-text); font-size:var(--wd-text-xs); font-weight:var(--wd-weight-medium); }
+.cardNow::before { content:""; display:inline-block; inline-size:var(--wd-space-1-5); block-size:var(--wd-space-1-5); margin-inline-end:var(--wd-space-1-5); border-radius:var(--wd-radius-round); background:var(--wd-color-action-primary); vertical-align:middle; }
+.cardDue { margin-inline-end:auto; }
+.cardNoDue { color:var(--wd-color-text-tertiary); font-size:var(--wd-text-2xs); }
+.owner { display:flex; align-items:center; gap:var(--wd-space-1); min-inline-size:0; }
+.emptyColumn { display:grid; place-items:center; flex:1; margin:0; min-block-size:6rem; padding:var(--wd-space-3); color:var(--wd-color-text-tertiary); text-align:center; font-size:var(--wd-text-2xs); }
+.moveNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-2xs); }
+.emptyNotice { margin:0 0 var(--wd-space-2); color:var(--wd-color-text-secondary); font-size:var(--wd-text-xs); }
+
+@media (max-width:1000px) { .salesBoard { --board-track:minmax(13rem,1fr); } }
+/* A phone: Board and List show their icons (their names stay for screen readers), so the tools and the page's action share one line. */
+@media (max-width:40rem) { .viewLabel { position:absolute; inline-size:1px; block-size:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; } }
+@media (max-width:600px) { .toolbarActions { margin-inline-start:0; } .salesBoard { --board-track:minmax(calc(100vw - 4rem),1fr); --board-empty-track:minmax(calc(100vw - 4rem),1fr); scroll-snap-type:inline mandatory; } .boardColumn { scroll-snap-align:start; } }
+.opportunityModal { block-size: min(56rem, calc(100dvh - 4rem)); }
+.opportunityModal :global(.wd-dialog) { position: relative; block-size: 100%; }
+.opportunityModal :global(.wd-dialog-minimal-header) { position: absolute; z-index: 1; inset-block-start: .4rem; inset-inline-end: .4rem; padding: 0; }
+.opportunityModal :global(.wd-dialog-body) { flex: 1; scrollbar-gutter: stable; }
+.opportunityModal :global(.wd-dialog:has(> .wd-dialog-minimal-header) > .wd-dialog-body) { padding-block-start: var(--wd-space-3); }

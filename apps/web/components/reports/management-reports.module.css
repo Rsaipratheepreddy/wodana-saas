@@ -1,0 +1,19 @@
+/* Management dashboards: the one-row toolbar, figures, charts and the attention list, and the print layout (PDF via the browser's print). */
+.report { display: contents; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.toolbar > * { min-inline-size: 0; flex: 0 1 auto; }
+.page { display: grid; gap: var(--wd-phi-2); }
+.loading { padding-block: var(--wd-phi-2); }
+.recordLink { color: var(--wd-color-link); text-decoration: none; font-weight: var(--wd-weight-medium); }
+.recordLink:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.printPeriod { display: none; }
+.ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.askLabel { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
+
+@media print {
+  :global(body):has(.report) * { visibility: hidden; }
+  .report, .report * { visibility: visible; }
+  .report { display: block; position: absolute; inset-block-start: 0; inset-inline: 0; }
+  .noPrint { display: none !important; }
+  .printPeriod { display: block; margin-block: 0 var(--wd-space-4); font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+}

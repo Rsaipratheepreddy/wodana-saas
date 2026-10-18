@@ -1,0 +1,7 @@
+.shortcuts { display:grid; gap:var(--wd-space-1); padding:var(--wd-space-1) 0 var(--wd-space-1-5); min-inline-size:0; }
+.row { display:flex; align-items:center; gap:var(--wd-space-1); min-inline-size:0; border:1px solid var(--wd-color-structural-divider); border-radius:var(--wd-radius-sm); padding-inline:var(--wd-space-2) var(--wd-space-0-5); background:var(--wd-color-surface); }
+.row a { flex:1; min-inline-size:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--wd-color-text-secondary); text-decoration:none; padding-block:var(--wd-space-1-5); font-size:var(--wd-text-xs); }
+.row a[aria-current] { color:var(--wd-color-action-primary); font-weight:600; }
+.row button { display:flex; align-items:center; flex:none; padding:var(--wd-space-1-5); background:transparent; border:0; font:inherit; font-size:var(--wd-text-xs); color:var(--wd-color-text-secondary); cursor:pointer; }
+.row button:hover { color:var(--wd-color-text); }
+.shortcuts :is(a,button):focus-visible { outline:2px solid var(--wd-color-action-primary); outline-offset:2px; border-radius:var(--wd-radius-2xs); }

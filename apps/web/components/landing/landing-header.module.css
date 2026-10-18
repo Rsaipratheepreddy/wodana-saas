@@ -1,0 +1,246 @@
+/*
+ * The public site's header: a sticky bar that turns translucent with a hairline on scroll, three menus that drop
+ * a panel (menus are transient, so they get a border and elevation), and a phone sheet. Tokens and logical
+ * properties only.
+ */
+.header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 50;
+  background: var(--wd-color-canvas);
+  box-shadow: 0 1px 0 transparent;
+  transition: background var(--wd-duration-base) var(--wd-ease-standard), box-shadow var(--wd-duration-base) var(--wd-ease-standard);
+}
+.header[data-scrolled] {
+  background: var(--wd-glass-surface);
+  box-shadow: 0 1px 0 var(--wd-color-structural-divider);
+  backdrop-filter: saturate(1.4) blur(var(--wd-glass-blur));
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--wd-space-6);
+  max-inline-size: var(--landing-max);
+  min-block-size: var(--landing-header);
+  margin-inline: auto;
+  padding-inline: var(--landing-gutter);
+}
+.brand { display: inline-flex; align-items: center; flex: 0 0 auto; color: var(--wd-color-text); text-decoration: none; }
+.brand:focus-visible, .trigger:focus-visible, .signIn:focus-visible, .cta:focus-visible, .menuButton:focus-visible,
+.panelLink:focus-visible, .panelFoot a:focus-visible, .sheetTrigger:focus-visible, .sheetLink:focus-visible, .sheetSignIn:focus-visible {
+  outline: 2px solid var(--wd-color-focus);
+  outline-offset: 2px;
+  border-radius: var(--wd-radius-sm);
+}
+
+/* ── Menus ─────────────────────────────────────────────────────────────────────────────── */
+.nav { flex: 1 1 auto; }
+.groups { display: flex; align-items: center; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.group { position: relative; font-size: var(--wd-text-md); font-weight: var(--wd-weight-medium); }
+/* The design system resets button type to inherit, so the menus set their type on the element around the button. */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-1);
+  min-block-size: 2.5rem;
+  padding-inline: var(--wd-space-3);
+  border: 0;
+  border-radius: var(--wd-radius-pill);
+  background: transparent;
+  color: var(--wd-color-text);
+  font: inherit;
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-medium);
+  cursor: pointer;
+  transition: background var(--wd-duration-fast) var(--wd-ease-standard);
+}
+.trigger:hover, .trigger[aria-expanded="true"] { background: var(--wd-color-surface-hover); }
+.chevron { color: var(--wd-color-text-tertiary); transition: rotate var(--wd-duration-base) var(--wd-ease-standard); }
+.trigger[aria-expanded="true"] .chevron, .sheetTrigger[aria-expanded="true"] .chevron { rotate: 180deg; }
+
+.panel {
+  position: absolute;
+  inset-block-start: calc(100% + var(--wd-space-2));
+  inset-inline-start: calc(var(--wd-space-2) * -1);
+  z-index: 60;
+  display: grid;
+  gap: var(--wd-space-2);
+  inline-size: 22rem;
+  padding: var(--wd-space-2);
+  border: 1px solid var(--wd-color-border);
+  border-radius: var(--wd-radius-lg);
+  background: var(--wd-color-floating-surface);
+  box-shadow: var(--wd-shadow-md);
+  backdrop-filter: blur(var(--wd-glass-blur));
+  opacity: 1;
+  translate: 0 0;
+  transition: opacity var(--wd-duration-base) var(--wd-ease-out), translate var(--wd-duration-base) var(--wd-ease-out);
+}
+.panel[hidden] { display: none; }
+/* An invisible bridge over the gap, so the pointer can travel from the trigger to the panel. */
+.panel::before { content: ""; position: absolute; inset-inline: 0; inset-block-end: 100%; block-size: var(--wd-space-3); }
+@starting-style { .panel { opacity: 0; translate: 0 calc(var(--wd-space-1) * -1); } }
+.panel[data-group="product"] { inline-size: 40rem; }
+.panel[data-group="product"] .panelList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.panelList { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
+.panelLink {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wd-space-3);
+  padding: var(--wd-space-3);
+  border-radius: var(--wd-radius-md);
+  color: var(--wd-color-text);
+  text-decoration: none;
+  transition: background var(--wd-duration-fast) var(--wd-ease-standard);
+}
+.panelLink:hover, .panelLink:focus-visible { background: var(--wd-color-surface-hover); }
+.icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  border-radius: var(--wd-radius-md);
+  background: var(--wd-color-action-primary-subtle);
+  color: var(--wd-color-action-primary);
+}
+.avatar { flex: 0 0 auto; inline-size: 2.5rem; block-size: 2.5rem; border-radius: var(--wd-radius-round); }
+.panelText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; padding-block-start: var(--wd-space-0-5); }
+.panelLabel { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); line-height: 1.3; }
+.panelDescription { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); line-height: 1.4; }
+.panelFoot { padding-block-start: var(--wd-space-2); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.panelFoot a {
+  display: flex;
+  align-items: center;
+  gap: var(--wd-space-2);
+  padding: var(--wd-space-2) var(--wd-space-3);
+  border-radius: var(--wd-radius-md);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-sm);
+  font-weight: var(--wd-weight-semibold);
+  text-decoration: none;
+}
+.panelFoot a:hover { background: var(--wd-color-surface-hover); }
+
+/* ── Actions ───────────────────────────────────────────────────────────────────────────── */
+.actions { display: flex; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }
+.signIn {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.5rem;
+  padding-inline: var(--wd-space-3);
+  border-radius: var(--wd-radius-pill);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-medium);
+  text-decoration: none;
+}
+.signIn:hover { background: var(--wd-color-surface-hover); }
+.cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.5rem;
+  padding-inline: var(--wd-space-5);
+  border-radius: var(--wd-radius-pill);
+  background: var(--wd-color-action-primary);
+  color: var(--wd-color-action-on-primary);
+  font-size: var(--wd-text-md);
+  font-weight: var(--wd-weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--wd-duration-fast) var(--wd-ease-standard);
+}
+.cta:hover { background: var(--wd-color-action-primary-hover); }
+.cta[data-size="large"] { min-block-size: 3rem; font-size: var(--wd-text-lg); }
+.menuButton {
+  display: none;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wd-radius-pill);
+  background: transparent;
+  color: var(--wd-color-text);
+  cursor: pointer;
+}
+.menuButton:hover { background: var(--wd-color-surface-hover); }
+
+/* ── Phone sheet ───────────────────────────────────────────────────────────────────────── */
+.sheet {
+  display: grid;
+  align-content: start;
+  gap: var(--wd-space-1);
+  block-size: calc(100dvh - var(--landing-header));
+  padding: var(--wd-space-2) var(--landing-gutter) var(--wd-space-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-block-start: 1px solid var(--wd-color-structural-divider);
+  background: var(--wd-color-canvas);
+}
+@starting-style { .sheet { opacity: 0; } }
+.sheet { transition: opacity var(--wd-duration-base) var(--wd-ease-out); }
+.sheetGroup { border-block-end: 1px solid var(--wd-color-structural-divider); }
+.sheetHeading { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); }
+.sheetTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  inline-size: 100%;
+  min-block-size: 3.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wd-color-text);
+  font: inherit;
+  font-size: var(--wd-text-xl);
+  font-weight: var(--wd-weight-semibold);
+  text-align: start;
+  cursor: pointer;
+}
+.sheetList { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0 0 var(--wd-space-3); list-style: none; }
+.sheetList[hidden] { display: none; }
+.sheetLink {
+  display: flex;
+  align-items: center;
+  gap: var(--wd-space-3);
+  min-block-size: 3rem;
+  padding: var(--wd-space-1) var(--wd-space-2);
+  border-radius: var(--wd-radius-md);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-lg);
+  font-weight: var(--wd-weight-medium);
+  text-decoration: none;
+}
+.sheetLink:hover { background: var(--wd-color-surface-hover); }
+.sheetLink .icon, .sheetLink .avatar { inline-size: 2.25rem; block-size: 2.25rem; }
+.sheetActions { display: grid; gap: var(--wd-space-2); padding-block-start: var(--wd-space-6); }
+.sheetSignIn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 3rem;
+  border-radius: var(--wd-radius-pill);
+  box-shadow: inset 0 0 0 1px var(--wd-color-border-strong);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-lg);
+  font-weight: var(--wd-weight-semibold);
+  text-decoration: none;
+}
+
+@media (max-width: 60rem) {
+  .nav, .signIn { display: none; }
+  .menuButton { display: inline-grid; }
+  .bar { gap: var(--wd-space-3); }
+}
+@media (max-width: 26rem) {
+  .actions .cta:not([data-size]) { padding-inline: var(--wd-space-4); font-size: var(--wd-text-sm); }
+  .brand svg { block-size: 1.625rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header, .panel, .sheet, .chevron, .trigger, .cta { transition: none; }
+}

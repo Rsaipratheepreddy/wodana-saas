@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import type { ReactNode } from "react";
 import { Badge } from "../components/status";
 
@@ -17,9 +18,10 @@ export function StageHeader({ title, description, metrics = [], action, readOnly
   readOnly?: boolean;
   children?: ReactNode;
 }) {
-  return <section aria-label={`${title} summary`} className="wd-stage">
+  const t = useT();
+  return <section aria-label={t("{title} summary", { title })} className="wd-stage">
     <div className="wd-stage-copy">
-      <div><h2>{title}{readOnly ? <Badge tone="neutral">View only</Badge> : null}</h2>{description ? <p>{description}</p> : null}</div>
+      <div><h2>{title}{readOnly ? <Badge tone="neutral">{t("View only")}</Badge> : null}</h2>{description ? <p>{description}</p> : null}</div>
       {action ? <div className="wd-stage-action">{action}</div> : null}
     </div>
     {metrics.length ? <dl className="wd-stage-metrics">{metrics.map((metric) => <div data-tone={metric.tone} key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl> : null}

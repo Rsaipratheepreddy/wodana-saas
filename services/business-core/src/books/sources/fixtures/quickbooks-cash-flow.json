@@ -1,0 +1,54 @@
+{
+  "Header": {
+    "Time": "2026-11-02T09:20:11-07:00",
+    "ReportName": "CashFlow",
+    "StartPeriod": "2026-09-01",
+    "EndPeriod": "2026-10-31",
+    "SummarizeColumnsBy": "Month",
+    "Currency": "USD"
+  },
+  "Columns": {
+    "Column": [
+      { "ColTitle": "", "ColType": "Account", "MetaData": [{ "Name": "ColKey", "Value": "account" }] },
+      { "ColTitle": "Sep 2026", "ColType": "Money", "MetaData": [{ "Name": "StartDate", "Value": "2026-09-01" }, { "Name": "EndDate", "Value": "2026-09-30" }, { "Name": "ColKey", "Value": "Sep 2026" }] },
+      { "ColTitle": "Oct 2026", "ColType": "Money", "MetaData": [{ "Name": "StartDate", "Value": "2026-10-01" }, { "Name": "EndDate", "Value": "2026-10-31" }, { "Name": "ColKey", "Value": "Oct 2026" }] },
+      { "ColTitle": "Total", "ColType": "Money", "MetaData": [{ "Name": "ColKey", "Value": "total" }] }
+    ]
+  },
+  "Rows": {
+    "Row": [
+      {
+        "type": "Section", "group": "OperatingActivities",
+        "Header": { "ColData": [{ "value": "OPERATING ACTIVITIES" }, { "value": "" }, { "value": "" }, { "value": "" }] },
+        "Rows": { "Row": [
+          { "type": "Data", "ColData": [{ "value": "Net Income" }, { "value": "1000.00" }, { "value": "2270.92" }, { "value": "3270.92" }] },
+          {
+            "type": "Section",
+            "Header": { "ColData": [{ "value": "Adjustments to reconcile Net Income to Net Cash provided by operations:" }, { "value": "" }, { "value": "" }, { "value": "" }] },
+            "Rows": { "Row": [
+              { "type": "Data", "ColData": [{ "value": "Accounts Receivable (A/R)", "id": "84" }, { "value": "-500.00" }, { "value": "-1200.00" }, { "value": "-1700.00" }] },
+              { "type": "Data", "ColData": [{ "value": "Accounts Payable (A/P)", "id": "33" }, { "value": "250.00" }, { "value": "300.00" }, { "value": "550.00" }] }
+            ] },
+            "Summary": { "ColData": [{ "value": "Total Adjustments to reconcile Net Income to Net Cash provided by operations:" }, { "value": "-250.00" }, { "value": "-900.00" }, { "value": "-1150.00" }] }
+          }
+        ] },
+        "Summary": { "ColData": [{ "value": "Net cash provided by operating activities" }, { "value": "750.00" }, { "value": "1370.92" }, { "value": "2120.92" }] }
+      },
+      {
+        "type": "Section", "group": "InvestingActivities",
+        "Header": { "ColData": [{ "value": "INVESTING ACTIVITIES" }, { "value": "" }, { "value": "" }, { "value": "" }] },
+        "Rows": { "Row": [{ "type": "Data", "ColData": [{ "value": "Truck:Original Cost", "id": "39" }, { "value": "" }, { "value": "-1000.00" }, { "value": "-1000.00" }] }] },
+        "Summary": { "ColData": [{ "value": "Net cash provided by investing activities" }, { "value": "" }, { "value": "-1000.00" }, { "value": "-1000.00" }] }
+      },
+      {
+        "type": "Section", "group": "FinancingActivities",
+        "Header": { "ColData": [{ "value": "FINANCING ACTIVITIES" }, { "value": "" }, { "value": "" }, { "value": "" }] },
+        "Rows": { "Row": [{ "type": "Data", "ColData": [{ "value": "Opening Balance Equity", "id": "34" }, { "value": "200.00" }, { "value": "" }, { "value": "200.00" }] }] },
+        "Summary": { "ColData": [{ "value": "Net cash provided by financing activities" }, { "value": "200.00" }, { "value": "" }, { "value": "200.00" }] }
+      },
+      { "type": "Section", "group": "CashIncrease", "Summary": { "ColData": [{ "value": "Net cash increase for period" }, { "value": "950.00" }, { "value": "370.92" }, { "value": "1320.92" }] } },
+      { "type": "Section", "group": "BeginningCash", "Summary": { "ColData": [{ "value": "Cash at beginning of period" }, { "value": "4000.00" }, { "value": "4950.00" }, { "value": "4000.00" }] } },
+      { "type": "Section", "group": "EndingCash", "Summary": { "ColData": [{ "value": "Cash at end of period" }, { "value": "4950.00" }, { "value": "5320.92" }, { "value": "5320.92" }] } }
+    ]
+  }
+}

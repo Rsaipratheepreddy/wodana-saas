@@ -1,9 +1,27 @@
 import { Module } from "@nestjs/common";
+import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
 import { WorkspacesModule } from "../../workspaces/workspaces.module";
+import { AiGatewayModule } from "../../ai-gateway/ai-gateway.module";
 import { CrmNotificationsModule } from "../notifications/crm-notifications.module";
 import { CrmMessageReceiptModule } from "./crm-message-receipt.module";
+import { CrmAttachmentTargetsController, CrmAttachmentsController, InternalCrmAttachmentsController } from "./crm-attachments.controller";
+import { CrmAttachmentsService } from "./crm-attachments.service";
 import { CrmConversationsController, InternalCrmConversationsController } from "./crm-conversations.controller";
 import { CrmConversationsService } from "./crm-conversations.service";
+import { CrmInboxController, InternalCrmInboxController } from "./crm-inbox.controller";
+import { CrmInboxService } from "./crm-inbox.service";
+import { CrmScheduledMessagesService } from "./crm-scheduled-messages.service";
+import { CrmWhatsAppTemplatesService } from "./crm-whatsapp-templates.service";
+import { CrmPaymentRemindersService } from "./crm-payment-reminders.service";
+import { EmailModule } from "../../email/email.module";
+import { CrmInboundEmailAddressController, InboundEmailWebhookController } from "./crm-inbound-email.controller";
+import { CrmInboundEmailService } from "./crm-inbound-email.service";
+import { CrmClosingMessagesService } from "./crm-closing-messages.service";
 
-@Module({ imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule], controllers: [CrmConversationsController, InternalCrmConversationsController], providers: [CrmConversationsService] })
+@Module({
+  imports: [WorkspacesModule, CrmNotificationsModule, CrmMessageReceiptModule, AiGatewayModule, EmailModule],
+  controllers: [CrmInboundEmailAddressController, InboundEmailWebhookController, CrmInboxController, InternalCrmInboxController, CrmConversationsController, InternalCrmConversationsController, CrmAttachmentsController, CrmAttachmentTargetsController, InternalCrmAttachmentsController],
+  providers: [CrmConversationsService, CrmInboxService, CrmWhatsAppTemplatesService, CrmPaymentRemindersService, CrmAttachmentsService, CrmScheduledMessagesService, BrandAssetStorageService, CrmInboundEmailService, CrmClosingMessagesService],
+  exports: [CrmConversationsService, CrmInboxService, CrmScheduledMessagesService],
+})
 export class CrmConversationsModule {}

@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/react';
+import { tKey } from '../i18n/keys';
 import type { CaseAsset, ScopeEntry } from '../pre-project/content';
 
 export type NoteDocument = { version: 1; content: JSONContent };
@@ -22,7 +23,7 @@ export function safeNoteLink(value: string): string {
     const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`);
     if (!raw || raw.length > 2000 || !['https:', 'http:'].includes(u.protocol) || u.username || u.password || !u.hostname.includes('.')) throw new Error();
     return u.href;
-  } catch { throw new Error('Use an http or https website link without login details.'); }
+  } catch { throw new Error(tKey('Use an http or https website link without login details.')); }
 }
 export function videoSource(value: string): { url: string; embed?: string } {
   const url = safeNoteLink(value), u = new URL(url), host = u.hostname.toLowerCase().replace(/^www\./, '');
@@ -31,7 +32,7 @@ export function videoSource(value: string): { url: string; embed?: string } {
   const vimeo = host === 'vimeo.com' ? u.pathname.match(/^\/(\d+)$/)?.[1] : '';
   if (vimeo) return { url: `https://vimeo.com/${vimeo}`, embed: `https://player.vimeo.com/video/${vimeo}` };
   if (u.protocol === 'https:' && /\.(mp4|webm)$/i.test(u.pathname)) return { url };
-  throw new Error('Use a YouTube, Vimeo, or HTTPS MP4/WebM video link.');
+  throw new Error(tKey('Use a YouTube, Vimeo, or HTTPS MP4/WebM video link.'));
 }
 export function noteMedia(asset: CaseAsset): JSONContent {
   return { type: 'noteMedia', attrs: { id: crypto.randomUUID(), assetId: asset.id, kind: asset.mimeType.startsWith('image/') ? 'image' : asset.mimeType.startsWith('video/') ? 'video' : 'file', url: null, caption: '' } };
@@ -61,7 +62,7 @@ export function requirementNoteLinks(note: RequirementNote): string[] {
 
 /** Title-only edits keep existing rich content intact; edited text becomes plain text. */
 export function plainNoteDraft(original: RequirementNote, draft: RequirementNote): RequirementNote {
-  if (draft.note.length > 60000) throw new Error('Keep each note under 60,000 characters.');
+  if (draft.note.length > 60000) throw new Error(tKey('Keep each note under 60,000 characters.'));
   const assetIds = new Set((draft.assets ?? []).map(asset => asset.id));
   const links = new Set(draft.links ?? []);
   const hasLink = (value: unknown) => { try { return typeof value === 'string' && links.has(safeNoteLink(value)); } catch { return false; } };
@@ -78,4 +79,55 @@ export function plainNoteDraft(original: RequirementNote, draft: RequirementNote
     ? { version: 1 as const, content: keep(original.document.content)[0] }
     : textDocument(draft.note);
   return { ...draft, document };
+}
+
+type Mark = { type: string; attrs?: Record<string, unknown> };
+/** Inline markdown (**bold**, *italic* / _italic_, `code`, [label](https://…)) as text nodes with marks. */
+function inlineMarkdown(text: string): JSONContent[] {
+  const nodes: JSONContent[] = [];
+  const pattern = /(\*\*([^*]+)\*\*)|(\*([^*]+)\*|_([^_]+)_)|(`([^`]+)`)|(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
+  let last = 0; let match: RegExpExecArray | null;
+  const push = (value: string, marks?: Mark[]) => { if (value) nodes.push({ type: "text", text: value, ...(marks ? { marks } : {}) }); };
+  while ((match = pattern.exec(text))) {
+    push(text.slice(last, match.index));
+    if (match[2]) push(match[2], [{ type: "bold" }]);
+    else if (match[4] ?? match[5]) push((match[4] ?? match[5])!, [{ type: "italic" }]);
+    else if (match[7]) push(match[7], [{ type: "code" }]);
+    else if (match[9]) push(match[9], [{ type: "link", attrs: { href: match[10] } }]);
+    last = match.index + match[0].length;
+  }
+  push(text.slice(last));
+  return nodes;
+}
+
+/**
+ * Plain-text notes written with markdown habits (# headings, - lists, 1. lists, > quotes, **bold**)
+ * as a document, so they read the same as notes written in the editor.
+ */
+export function markdownDocument(text: string): JSONContent {
+  const blocks: JSONContent[] = [];
+  let list: JSONContent | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const task = line.match(/^\s*[-*]\s+\[( |x|X)\]\s+(.*)$/);
+    const item = task ?? bullet ?? ordered;
+    if (item) {
+      const type = ordered && !bullet ? "orderedList" : "bulletList";
+      if (!list || list.type !== type) { list = { type, content: [] }; blocks.push(list); }
+      const content = task ? task[2] : item[1];
+      list.content!.push({ type: "listItem", attrs: task ? { checked: task[1].toLowerCase() === "x" } : undefined, content: [{ type: "paragraph", content: inlineMarkdown(content) }] });
+      continue;
+    }
+    list = null;
+    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+    if (heading) { blocks.push({ type: "heading", attrs: { level: heading[1].length }, content: inlineMarkdown(heading[2]) }); continue; }
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) { blocks.push({ type: "blockquote", content: [{ type: "paragraph", content: inlineMarkdown(quote[1]) }] }); continue; }
+    if (/^\s*(---|\*\*\*)\s*$/.test(line)) { blocks.push({ type: "horizontalRule" }); continue; }
+    if (!line.trim()) continue;
+    blocks.push({ type: "paragraph", content: inlineMarkdown(line) });
+  }
+  return { type: "doc", content: blocks };
 }

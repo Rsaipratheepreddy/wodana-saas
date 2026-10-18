@@ -1,0 +1,44 @@
+/* Woddy's answers and action cards: the same in the panel, a chat thread and record comments. */
+.answer { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+.answerText { margin: 0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.citation { color: var(--wd-color-link); text-underline-offset: 3px; font-weight: 550; }
+.citation:hover { color: var(--wd-color-link-hover); }
+.sources { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-2); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.sources a { color: var(--wd-color-link); text-underline-offset: 3px; }
+.notice { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); line-height: 1.5; }
+
+.card { display: grid; gap: var(--wd-space-3); padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+.card[data-status="executed"] { border-color: var(--wd-color-success); }
+.card[data-status="failed"] { border-color: var(--wd-color-danger); }
+.card[data-status="expired"], .card[data-status="rejected"] { background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); }
+.cardHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-2); }
+.cardHeader strong { font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.fields { display: grid; gap: var(--wd-space-1-5); margin: 0; }
+.fields > div { display: grid; grid-template-columns: minmax(6rem, 34%) 1fr; gap: var(--wd-space-2); align-items: baseline; }
+.fields dt { color: var(--wd-color-text-secondary); }
+.fields dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); overflow-wrap: anywhere; }
+.before { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+.after { background: var(--wd-color-success-subtle); border-radius: var(--wd-radius-2xs); padding-inline: var(--wd-space-1); }
+.targets { display: grid; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; }
+.targets li { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.targets li > span { display: grid; min-inline-size: 0; }
+.targets small { color: var(--wd-color-text-secondary); }
+.targets a { color: var(--wd-color-link); text-underline-offset: 3px; }
+.quote { margin: 0; padding-block: var(--wd-space-2); padding-inline: var(--wd-space-3); border-inline-start: 2px solid var(--wd-color-border-strong); background: var(--wd-color-surface-muted); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.cardActions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--wd-space-2); }
+.cardActions > p { margin: 0; margin-inline-end: auto; color: var(--wd-color-text-secondary); }
+.failures { margin: 0; padding-inline-start: var(--wd-space-4); color: var(--wd-color-text-secondary); }
+
+/* A private answer in a chat thread or under a comment box: like a team note, for the asker only. */
+.private { display: grid; gap: var(--wd-space-2); margin-block: var(--wd-space-3); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-info-subtle); }
+.privateHeader { display: flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.privateHeader strong { color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+.privateHeader > span:last-child { margin-inline-start: auto; }
+.question { margin: 0; color: var(--wd-color-text-secondary); font-style: italic; overflow-wrap: anywhere; }
+
+/* Woddy writes with paragraphs, lists and bold; they read as such. */
+.answerText { display: grid; gap: var(--wd-space-1-5); }
+.answerText p { margin: 0; }
+.answerText ul, .answerText ol { display: grid; gap: var(--wd-space-1); margin: 0; padding-inline-start: var(--wd-space-5); }
+.answerText li[data-nested] { margin-inline-start: var(--wd-space-4); }
+.answerText strong { font-weight: var(--wd-weight-semibold); }

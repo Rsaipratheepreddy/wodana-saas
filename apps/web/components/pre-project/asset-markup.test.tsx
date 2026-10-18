@@ -32,3 +32,20 @@ describe('web photo drawing', () => {
     expect(vi.mocked(caseRequest).mock.calls[1]).toMatchObject(['workspace', 'case', 'assets/original/markup', 'POST', { strokes: [{ color: '#46705a', width: 0.004, points: [{ x: 0.2, y: 0.3 }, { x: 0.8, y: 0.9 }] }] }]);
   });
 });
+
+it('saves a marked CRM attachment through its own upload endpoint',async()=>{
+ vi.mocked(caseRequest).mockClear();
+ const context={drawImage:vi.fn(),beginPath:vi.fn(),arc:vi.fn(),fill:vi.fn(),moveTo:vi.fn(),lineTo:vi.fn(),stroke:vi.fn()};
+ const getContext=vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(context as any);
+ const toBlob=vi.spyOn(HTMLCanvasElement.prototype,'toBlob').mockImplementation(callback=>callback(new Blob(['marked'],{type:'image/png'})));
+ const saved={id:'copy',name:'Photo marked.png',mimeType:'image/png',byteSize:6,hasPreview:true};const uploadFile=vi.fn().mockResolvedValue(saved),onSaved=vi.fn();
+ render(<AssetMarkup workspaceId="workspace" caseId="case" asset={{...saved,id:'crm-photo',name:'Photo.png'}} assetUrl={()=>'/api/crm/photo'} uploadFile={uploadFile} onClose={vi.fn()} onSaved={onSaved}/>);
+ const photo=screen.getByRole('img',{name:'Photo.png'});expect(photo).toHaveAttribute('src','/api/crm/photo');
+ Object.defineProperties(photo,{naturalWidth:{value:100,configurable:true},naturalHeight:{value:100,configurable:true}});fireEvent.load(photo);
+ const canvas=screen.getByRole('img',{name:'Drawing canvas'});Object.assign(canvas,{setPointerCapture:vi.fn(),getBoundingClientRect:()=>({left:0,top:0,width:100,height:100})});
+ fireEvent.pointerDown(canvas,{pointerId:1,clientX:30,clientY:40});fireEvent.pointerUp(canvas,{pointerId:1});
+ fireEvent.click(screen.getByRole('button',{name:'Save marked copy'}));
+ await waitFor(()=>expect(onSaved).toHaveBeenCalledWith(saved));
+ expect(uploadFile.mock.calls[0][0]).toMatchObject({name:'Photo marked.png',type:'image/png'});expect(caseRequest).not.toHaveBeenCalled();
+ getContext.mockRestore();toBlob.mockRestore();
+});

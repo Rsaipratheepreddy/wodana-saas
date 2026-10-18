@@ -52,7 +52,7 @@ export function projectScheduleItems(
       ownerId: ownerId || work?.ownerId || null,
       date,
       allDay: true,
-      title: [project.dealReference, project.clientName, title].filter(Boolean).join(" — "),
+      title: [project.dealReference, project.clientName, title].filter(Boolean).join(" · "),
       status,
     });
   };

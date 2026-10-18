@@ -1,18 +1,16 @@
 import type { Metadata } from "next";
-import { InternalPortal } from "./portal";
-import { getInternalPortalData } from "@/lib/internal/server";
+import { AccountsPage } from "@/components/control-plane/accounts-page";
+import { OperatorShell } from "@/components/control-plane/operator-shell";
+import { consoleT, requireOperator } from "@/lib/internal/server";
 
-export const metadata: Metadata = {
-  title: "Tenants · Wodana Control",
-  description: "Manage Wodana tenants and their subscriptions.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await consoleT();
+  return { title: `${t("Accounts")} · ${t("Wodana Control")}` };
+}
 
-export default async function InternalPage() {
-  const { operator, tenants } = await getInternalPortalData();
-  return <InternalPortal initialTenants={tenants} user={{
-    email: operator.email,
-    name: operator.displayName,
-    role: operator.role,
-    permissions: operator.permissions,
-  }} />;
+export default async function InternalAccountsPage() {
+  const operator = await requireOperator();
+  return <OperatorShell operator={operator}>
+    <AccountsPage canProvision={operator.permissions.includes("tenants.provision")} />
+  </OperatorShell>;
 }

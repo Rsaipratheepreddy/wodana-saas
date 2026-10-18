@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
-export const DEFAULT_WORKSPACE_PRIMARY_COLOR = "#46705A";
+// The neutral default every workspace starts with (matches --wd-color-action-primary in tokens.css).
+export const DEFAULT_WORKSPACE_PRIMARY_COLOR = "#292D32";
 export const WORKSPACE_PRIMARY_COLOR_EVENT = "wodana:workspace-primary-color";
 
 type Rgb = { red: number; green: number; blue: number };
@@ -158,15 +159,21 @@ export function workspacePrimaryColorStyle(value: string | null | undefined | Wo
     darkStep(0.46, 0.65), darkStep(0.56, 0.78), darkStep(0.65, 0.9),
   ];
 
-  if (surfaceColor && brand.secondaryColor) {
-    const surface = parseHex(surfaceColor);
+  // With an accent (secondary) set, the primary is the tenant's surface colour rather than their action colour.
+  const surface = surfaceColor && brand.secondaryColor ? parseHex(surfaceColor) : null;
+  if (surface) {
     lightPalette[0] = toHex(mixRgb(surface, WHITE, 0.3));
     lightPalette[1] = toHex(mixRgb(surface, WHITE, 0.55));
     lightPalette[2] = toHex(surface);
   }
+  // The brand surface (the client portal's header and foot) always carries ink text and a dark logo: the tenant's
+  // own surface when it is pale enough, else a light tint of it; without a separate surface, a light tint of the brand.
+  const lightSurface = surface ? (contrast(surface, INK) >= 4.5 ? toHex(surface) : toHex(mixRgb(surface, WHITE, 0.25))) : lightPalette[1];
 
   return {
     ...fontStyle,
+    "--wd-workspace-brand-surface-light": lightSurface,
+    "--wd-workspace-brand-surface-dark": darkPalette[0],
     "--wd-workspace-brand-light-50": lightPalette[0],
     "--wd-workspace-brand-light-100": lightPalette[1],
     "--wd-workspace-brand-light-200": lightPalette[2],
@@ -191,6 +198,16 @@ export function workspacePrimaryColorStyle(value: string | null | undefined | Wo
     "--wd-workspace-brand-dark-900": darkStep(0.92, 0.48),
     "--wd-workspace-brand-dark-950": darkStep(0.96, 0.32),
     "--wd-workspace-brand-dark-on": toHex(readableForeground(darkPrimary)),
+    // Actions (buttons, links, focus, selection) follow the tenant brand; without one they stay neutral.
+    "--wd-workspace-action-light-primary": toHex(lightPrimary),
+    "--wd-workspace-action-light-hover": toHex(colorAt(Math.max(0, primaryLightness - 0.07), chroma * 0.9, source.hue)),
+    "--wd-workspace-action-light-pressed": toHex(colorAt(Math.max(0, primaryLightness - 0.13), chroma * 0.8, source.hue)),
+    "--wd-workspace-action-light-subtle": lightPalette[0],
+    "--wd-workspace-action-dark-primary": toHex(darkPrimary),
+    "--wd-workspace-action-dark-hover": darkStep(0.81, 0.78),
+    "--wd-workspace-action-dark-pressed": darkStep(0.68, 0.85),
+    "--wd-workspace-action-dark-subtle": darkPalette[1],
+    "--wd-workspace-action-dark-on": toHex(readableForeground(darkPrimary)),
   };
 }
 

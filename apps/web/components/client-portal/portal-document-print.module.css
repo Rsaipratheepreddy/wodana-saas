@@ -1,0 +1,7 @@
+/* What a client's tax invoice or receipt adds to the shared printed document: its notes and a "for" line. */
+.facts { display: grid; gap: var(--wd-space-1); margin: 0; font-size: var(--wd-text-sm); }
+.facts > div { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.facts dt { color: var(--wd-color-text-tertiary); }
+.facts dd { margin: 0; }
+.notes { display: grid; gap: var(--wd-space-1); padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.notes p { margin: 0; }

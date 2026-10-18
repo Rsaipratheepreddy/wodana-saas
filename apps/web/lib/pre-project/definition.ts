@@ -1,5 +1,5 @@
 export type DefinitionIssue = { code: string; detail: string; scopeItemId?: string };
-export type DefinitionItem = { id: string; title: string; roomName: string | null; scopeStatus: string; quantity: number | null; unit: string; specification: null | { refinedRequirement: string } };
+export type DefinitionItem = { requirement?: string; id: string; title: string; roomName: string | null; scopeStatus: string; quantity: number | null; unit: string; specification: null | { refinedRequirement: string } };
 export type DefinitionBaseline = {
   id: string;
   number: number;
@@ -13,7 +13,7 @@ export type DefinitionBaseline = {
 };
 export type DefinitionState = {
   caseStatus: string;
-  draft: { sourceHash: string; readyToPublish: boolean; issues: DefinitionIssue[]; changes?:null|{briefChanged:boolean;rooms:{added:string[];removed:string[];changed:string[]};items:{added:string[];removed:string[];changed:string[]};total:number} };
+  draft: { sourceHash: string; readyToPublish: boolean; issues: DefinitionIssue[]; items?: Array<Pick<DefinitionItem, "id" | "title" | "roomName" | "scopeStatus" | "quantity" | "unit">>; changes?:null|{briefChanged:boolean;rooms:{added:string[];removed:string[];changed:string[]};items:{added:string[];removed:string[];changed:string[]};total:number} };
   current: DefinitionBaseline | null;
   history: DefinitionBaseline[];
   confirmed: boolean;

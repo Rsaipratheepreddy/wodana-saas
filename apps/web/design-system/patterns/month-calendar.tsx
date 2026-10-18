@@ -1,8 +1,10 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button, IconButton } from "../components/actions";
+import { useDesignSystem } from "../foundations/provider";
 
 export type MonthCalendarTone = "neutral" | "brand" | "info" | "success" | "warning" | "danger";
 export type MonthCalendarEvent = {
@@ -30,10 +32,10 @@ export function shiftMonth(month: string, amount: number) {
   const [year, index] = month.split("-").map(Number);
   return isoDay(new Date(Date.UTC(year, index - 1 + amount, 1))).slice(0, 7);
 }
-export function monthLabel(month: string, locale = "en-GB") {
+export function monthLabel(month: string, locale: string) {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${month}-01T00:00:00Z`));
 }
-export function dayLabel(day: string, locale = "en-GB") {
+export function dayLabel(day: string, locale: string) {
   return new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
 }
 
@@ -54,27 +56,31 @@ export function eventsOn(events: MonthCalendarEvent[], day: string) {
  * Month view: one grid, a few chips per day and a "+N more" overflow. Selecting a day
  * hands the full list to the caller, which renders the agenda beside the grid.
  */
-export function MonthCalendar({ month, events, today, selected, onSelect, onMonthChange, weekStartsOn = 1, nonWorkingWeekdays = [], maxPerDay = 3, locale = "en-GB" }: {
+export function MonthCalendar({ month, events, today, selected, onSelect, onMonthChange, weekStartsOn = 1, nonWorkingWeekdays = [], maxPerDay = 3, locale: localeProp }: {
   month: string;
   events: MonthCalendarEvent[];
   today?: string;
   selected?: string;
   onSelect?: (day: string) => void;
   onMonthChange: (month: string) => void;
-  weekStartsOn?: 0 | 1;
+  /** The first day of the week (0 Sunday … 6 Saturday), from the workspace's region. */
+  weekStartsOn?: number;
   nonWorkingWeekdays?: number[];
   maxPerDay?: number;
   locale?: string;
 }) {
+  const t = useT();
+  const region = useDesignSystem();
+  const locale = localeProp ?? region.locale;
   const days = useMemo(() => monthGrid(month, weekStartsOn), [month, weekStartsOn]);
   const weekdays = useMemo(() => days.slice(0, 7).map((day) => new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))), [days, locale]);
-  return <div className="wd-month" role="group" aria-label={`Calendar · ${monthLabel(month, locale)}`}>
+  return <div className="wd-month" role="group" aria-label={t("Calendar · {month}", { month: monthLabel(month, locale) })}>
     <header className="wd-month-head">
       <h3>{monthLabel(month, locale)}</h3>
       <div className="wd-month-nav">
-        {today ? <Button onPress={() => { onMonthChange(monthOf(today)); onSelect?.(today); }} size="compact" variant="quiet">Today</Button> : null}
-        <IconButton aria-label="Previous month" onPress={() => onMonthChange(shiftMonth(month, -1))} size="compact"><ChevronLeft size={16} /></IconButton>
-        <IconButton aria-label="Next month" onPress={() => onMonthChange(shiftMonth(month, 1))} size="compact"><ChevronRight size={16} /></IconButton>
+        {today ? <Button onPress={() => { onMonthChange(monthOf(today)); onSelect?.(today); }} size="compact" variant="quiet">{t("Today")}</Button> : null}
+        <IconButton aria-label={t("Previous month")} onPress={() => onMonthChange(shiftMonth(month, -1))} size="compact"><ChevronLeft size={16} /></IconButton>
+        <IconButton aria-label={t("Next month")} onPress={() => onMonthChange(shiftMonth(month, 1))} size="compact"><ChevronRight size={16} /></IconButton>
       </div>
     </header>
     <div className="wd-month-weekdays" aria-hidden="true">{weekdays.map((name) => <span key={name}>{name}</span>)}</div>
@@ -84,7 +90,7 @@ export function MonthCalendar({ month, events, today, selected, onSelect, onMont
         const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
         const outside = !day.startsWith(month);
         return <button
-          aria-label={`${dayLabel(day, locale)}${list.length ? ` · ${list.length} item${list.length === 1 ? "" : "s"}` : ""}`}
+          aria-label={`${dayLabel(day, locale)}${list.length ? ` · ${list.length === 1 ? t("1 item") : t("{count} items", { count: list.length })}` : ""}`}
           aria-pressed={selected === day || undefined}
           className="wd-month-day"
           data-outside={outside || undefined}
@@ -98,7 +104,7 @@ export function MonthCalendar({ month, events, today, selected, onSelect, onMont
           <span className="wd-month-date">{Number(day.slice(8))}</span>
           <span className="wd-month-chips">
             {list.slice(0, maxPerDay).map((event) => <span className="wd-month-chip" data-continues={event.date !== day || undefined} data-tone={event.tone ?? "neutral"} key={event.id} title={event.title}>{event.title}</span>)}
-            {list.length > maxPerDay ? <span className="wd-month-more">+{list.length - maxPerDay} more</span> : null}
+            {list.length > maxPerDay ? <span className="wd-month-more">{t("+{count} more", { count: list.length - maxPerDay })}</span> : null}
           </span>
         </button>;
       })}
@@ -107,16 +113,19 @@ export function MonthCalendar({ month, events, today, selected, onSelect, onMont
 }
 
 /** Agenda for one selected day, rendered beside the month grid. */
-export function DayAgenda({ day, events, locale = "en-GB", onOpen, empty = "Nothing scheduled" }: {
+export function DayAgenda({ day, events, locale: localeProp, onOpen, empty }: {
   day: string;
   events: MonthCalendarEvent[];
   locale?: string;
   onOpen?: (event: MonthCalendarEvent) => void;
   empty?: string;
 }) {
+  const t = useT();
+  const region = useDesignSystem();
+  const locale = localeProp ?? region.locale;
   const list = eventsOn(events, day);
-  return <section aria-label={`Agenda · ${dayLabel(day, locale)}`} className="wd-day-agenda">
-    <header><strong>{dayLabel(day, locale)}</strong><span>{list.length ? `${list.length} item${list.length === 1 ? "" : "s"}` : empty}</span></header>
+  return <section aria-label={t("Agenda · {day}", { day: dayLabel(day, locale) })} className="wd-day-agenda">
+    <header><strong>{dayLabel(day, locale)}</strong><span>{list.length ? (list.length === 1 ? t("1 item") : t("{count} items", { count: list.length })) : empty ?? t("Nothing scheduled")}</span></header>
     <ol>
       {list.map((event) => {
         const body = <><span className="wd-agenda-dot" data-tone={event.tone ?? "neutral"} /><span><strong>{event.title}</strong>{event.detail ? <small>{event.detail}</small> : null}</span>{event.kind ? <em>{event.kind}</em> : null}</>;

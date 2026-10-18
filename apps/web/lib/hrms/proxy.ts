@@ -10,7 +10,7 @@ import {
   isSameOrigin,
   UUID,
 } from "@/lib/workspace/workspace-api";
-import { allowedHrmsRoute, allowedProjectsRoute } from "./routes";
+import { allowedHrmsRoute, allowedProjectsRoute, hrmsUpload, streamedHrmsRoute } from "./routes";
 export async function hrmsProxy(
   request: Request,
   path: string[],
@@ -42,18 +42,18 @@ export async function hrmsProxy(
       .get("content-type")
       ?.startsWith("multipart/form-data");
     if (multipart) {
-      if (!/^captures\/[0-9a-f-]{36}\/photo$/.test(resource))
-        return invalidRequest("Unexpected photo upload.");
-      if (Number(request.headers.get("content-length")) > 7 * 1024 * 1024)
-        return invalidRequest("Photo is too large.");
+      const upload = area === "hrms" ? hrmsUpload(resource) : null;
+      if (!upload) return invalidRequest("Unexpected file upload.");
+      if (Number(request.headers.get("content-length")) > upload.maxBytes + 1024 * 1024)
+        return invalidRequest("The file is too large.");
       try {
         body = await request.formData();
       } catch {
-        return invalidRequest("Invalid photo upload.");
+        return invalidRequest("Invalid file upload.");
       }
-      const file = body.get("photo");
-      if (!(file instanceof File) || file.size > 6 * 1024 * 1024)
-        return invalidRequest("Capture an image up to 6 MB.");
+      const file = body.get(upload.field);
+      if (!(file instanceof File) || file.size > upload.maxBytes)
+        return invalidRequest(upload.field === "photo" ? "Capture an image up to 6 MB." : "Attach a PDF or an image up to 10 MB.");
     } else {
       const text = await request.text();
       if (text.length > 32000) return invalidRequest("Request is too large.");
@@ -86,8 +86,9 @@ export async function hrmsProxy(
     );
   else if (
     result.upstream.ok &&
-    ((resource.endsWith("/photo") && request.method === "GET") ||
-      resource === "attendance/export")
+    request.method === "GET" &&
+    area === "hrms" &&
+    streamedHrmsRoute(resource)
   )
     response = new NextResponse(result.upstream.body, {
       status: result.upstream.status,

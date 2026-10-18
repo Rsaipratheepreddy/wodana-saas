@@ -1,8 +1,14 @@
 import { UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 
-type Option = { id: string; label: string };
+type Option = { id: string; label: string; flow?: string; color?: number };
 const options = (entries: [string, string][]): Option[] => entries.map(([id, label]) => ({ id, label }));
+export const UNRESOLVED_ENQUIRY_TYPE = "not_sure";
+/** The region choice for anywhere outside the workspace's listed regions. */
+export const REGION_OTHER = "other";
+export function hasResolvedEnquiryType(value: string | null | undefined): boolean {
+  return Boolean(value?.trim() && value.trim() !== UNRESOLVED_ENQUIRY_TYPE);
+}
 export const DEFAULT_LEAD_OPTIONS = {
   sources: options([["self_generated", "Self generated"], ["company", "Company"], ["third_party", "Third party"], ["digital_marketing", "Digital marketing"], ["referral", "Referral"]]),
   channels: {
@@ -14,14 +20,16 @@ export const DEFAULT_LEAD_OPTIONS = {
   } as Record<string, Option[]>,
   // Enquiry types describe a workspace's own services. Keep the global fallback
   // neutral; workspace administrators add their approved choices in Lead options.
-  enquiryTypes: options([["not_sure", "Not Sure Yet"]]),
+  enquiryTypes: options([[UNRESOLVED_ENQUIRY_TYPE, "Not Sure Yet"]]),
   budgetRanges: options([["not_sure", "Not sure yet"]]),
   customerTypes: [] as Option[],
+  // Regions are each workspace's own (Settings → Fields → Region); none are assumed.
+  emirates: [] as Option[],
 };
 
 export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
   const result = await client.query<{ code: string; options: Option[] }>(`SELECT taxonomy.code,
-    COALESCE(jsonb_agg(jsonb_build_object('id', choice.code, 'label', choice.label)
+    COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', choice.code, 'label', choice.label, 'allowedRoles', choice.allowed_role_codes, 'flow', choice.flow, 'color', choice.color))
       ORDER BY choice.position, choice.label) FILTER (WHERE choice.id IS NOT NULL), '[]'::jsonb) AS options
     FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options choice ON choice.taxonomy_id=taxonomy.id
       AND choice.workspace_id=taxonomy.workspace_id AND choice.status='active'
@@ -30,18 +38,25 @@ export async function loadLeadOptions(client: PoolClient, workspaceId: string) {
   const configured = new Map(result.rows.map(row => [row.code, row.options]));
   const pick = (key: string, fallback: Option[]) => configured.get(key) ?? fallback;
   const sources = pick("lead_source", DEFAULT_LEAD_OPTIONS.sources);
+  // Once a workspace lists its regions, "Other" is always offered for anywhere else (area is then typed).
+  const emirates = configured.get("emirate") ?? await regionPackRegions(client, workspaceId);
+  const locationChoices = !emirates.length || emirates.some(option => option.id === REGION_OTHER) ? emirates : [...emirates, { id: REGION_OTHER, label: "Other" }];
   return {
     sources,
     channels: Object.fromEntries(sources.map(source => [source.id, pick(`lead_channel_${source.id}`, DEFAULT_LEAD_OPTIONS.channels[source.id] ?? [])])),
     enquiryTypes: pick("enquiry_type", DEFAULT_LEAD_OPTIONS.enquiryTypes),
     budgetRanges: pick("budget_range", DEFAULT_LEAD_OPTIONS.budgetRanges),
     customerTypes: pick("customer_type", []),
+    emirates: locationChoices,
+    areas: Object.fromEntries(locationChoices.map(emirate => [emirate.id, pick(`lead_area_${emirate.id}`, [])])),
+    referralBrokers: pick("referral_broker", []),
+    referralPartners: pick("referral_partner", []),
   };
 }
 
 export async function validateLeadOptions(client: PoolClient, workspaceId: string, input: {
- source?: string; channel?: string; serviceType?: string; details?: { budgetRange?: string; customerType?: string };
-}, previous?: { serviceType?: string; details?: { budgetRange?: string; customerType?: string } }) {
+ source?: string; channel?: string; serviceType?: string; details?: { budgetRange?: string; customerType?: string; emirate?: string };
+}, previous?: { serviceType?: string; details?: { budgetRange?: string; customerType?: string; emirate?: string } }, options: { requireEmirate?: boolean } = {}) {
   const choices = await loadLeadOptions(client, workspaceId);
   const check = (value: string | undefined, entries: Option[], label: string, required = false) => {
     if ((required || value) && !entries.some(item => item.id === value)) throw new UnprocessableEntityException(`Select a valid ${label}`);
@@ -53,4 +68,16 @@ export async function validateLeadOptions(client: PoolClient, workspaceId: strin
   if (!previous || previous.serviceType !== input.serviceType) check(input.serviceType, choices.enquiryTypes, "enquiry type", true);
   if (!previous || previous.details?.budgetRange !== input.details?.budgetRange) check(input.details?.budgetRange, choices.budgetRanges, "budget range");
   if (!previous || previous.details?.customerType !== input.details?.customerType) check(input.details?.customerType, choices.customerTypes, "customer type");
+  // Regions are checked against the workspace's list (its own, or its country's); with no list the value is kept as typed.
+  if (choices.emirates.length) check(input.details?.emirate, choices.emirates, "region", options.requireEmirate !== false);
+}
+
+/** The first address level of the workspace's country (region pack), e.g. a country's states or emirates. */
+async function regionPackRegions(client: PoolClient, workspaceId: string): Promise<Option[]> {
+  const result = await client.query<{ options: unknown }>(`SELECT profile.configuration->'address'->'levels'->0->'options' AS options
+    FROM workspaces workspace JOIN tenant_setup_profiles profile ON profile.kind='region' AND profile.code=upper(split_part(workspace.default_locale, '-', 2))
+    WHERE workspace.id=$1 ORDER BY profile.version DESC LIMIT 1`, [workspaceId]);
+  const names = result.rows[0]?.options;
+  return Array.isArray(names) ? names.filter((name): name is string => typeof name === "string" && Boolean(name.trim()))
+    .map(label => ({ id: label.trim().toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""), label: label.trim() })) : [];
 }

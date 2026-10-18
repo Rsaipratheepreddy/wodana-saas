@@ -59,5 +59,23 @@ describe('site survey boundaries',()=>{
   expect(recorded).toMatchObject({evidenceConsent:{confirmedBy:'actor',confirmedAt:at.toISOString()}});expect(recorded).not.toHaveProperty('evidenceConsentConfirmed');
   expect(applyEvidenceConsent({...content,evidenceConsentConfirmed:false},recorded,'another',()=>new Date())).toMatchObject({evidenceConsent:{confirmedBy:'actor',confirmedAt:at.toISOString()}});
  });
+ it('completes a visit only once what it captured is measured with photos (PLM-128); a visit already done stays editable',async()=>{
+  const service=(evidence:Array<{title:string;status:string;files:number}>,previous:unknown=null)=>{
+   const query=vi.fn(async(sql:string)=>sql.includes('UNION ALL')?{rows:evidence}:sql.startsWith('SELECT content')?{rowCount:previous?1:0,rows:previous?[{content:previous}]:[]}:{rows:[],rowCount:0});
+   const site=new SiteService({} as WorkspaceAccessService,{edit:async(_a:unknown,_w:unknown,_c:unknown,work:(client:unknown,userId:string)=>unknown)=>work({query},'user'),version:()=>undefined} as unknown as BriefService,{} as CrmEventsService);
+   return {site,query};
+  };
+  const done={...visit,status:'completed',outcome:'Measured the kitchen'};
+  await expect(service([]).site.saveVisit({} as RequestActor,'workspace','case',done)).rejects.toThrow('Record the measurements and photos from the visit first');
+  await expect(service([{title:'Kitchen',status:'not_measured',files:0}]).site.saveVisit({} as RequestActor,'workspace','case',done)).rejects.toThrow('Finish the measurements for Kitchen');
+  await expect(service([{title:'Kitchen',status:'measured',files:0}]).site.saveVisit({} as RequestActor,'workspace','case',done)).rejects.toThrow('Add a photo for Kitchen');
+  // A planned visit, or one already recorded as done, is not checked again.
+  const planned=service([]);
+  await planned.site.saveVisit({} as RequestActor,'workspace','case',visit).catch(()=>undefined);
+  expect(planned.query.mock.calls.some(([sql])=>String(sql).includes('UNION ALL'))).toBe(false);
+  const recorded=service([],{...done,kind:'visit',version:1});
+  await recorded.site.saveVisit({} as RequestActor,'workspace','case',{...done,version:1}).catch(()=>undefined);
+  expect(recorded.query.mock.calls.some(([sql])=>String(sql).includes('UNION ALL'))).toBe(false);
+ });
  it('validates positive visit duration',async()=>expect(await validate(plainToInstance(SaveSiteVisitDto,{...visit,durationMinutes:0}))).not.toHaveLength(0));
 });

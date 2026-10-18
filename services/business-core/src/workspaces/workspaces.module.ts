@@ -1,3 +1,5 @@
+import { MemberProfileController } from "./member-profile.controller";
+import { MemberProfileService } from "./member-profile.service";
 import { Module } from "@nestjs/common";
 import { WorkspacesController } from "./workspaces.controller";
 import { WorkspaceAccessService } from "./workspace-access.service";
@@ -7,6 +9,7 @@ import { InternalTenantsController } from "./internal-tenants.controller";
 import { BrandAssetStorageService } from "./brand-asset-storage.service";
 import { PublicBrandingController } from "./public-branding.controller";
 import { EmailModule } from "../email/email.module";
+import { ControlPlaneModule } from "../control-plane/control-plane.module";
 import { TenantManagementService } from "./tenant-management.service";
 import { WorkspaceBillingController } from "./workspace-billing.controller";
 import { CustomerAccountsController } from "./customer-accounts.controller";
@@ -20,10 +23,18 @@ import { TenantProvisioningDraftsService } from "./tenant-provisioning-drafts.se
 import { TenantDomainsService } from "./tenant-domains.service";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
 import { TenantOperationsService } from "./tenant-operations.service";
+import { TaxNumberingController } from "./tax-numbering.controller";
+import { EntityImagesController, EntityLetterheadController, PublicEntityImagesController } from "./entity-images.controller";
+import { EntityImagesService } from "./entity-images.service";
+import { TaxNumberingService } from "./tax-numbering.service";
+import { MemberOffboardingController, MemberOffboardingService } from "./member-offboarding.service";
+import { WorkspaceClearRecordsService } from "./workspace-clear-records.service";
+import { WorkspaceObjectCleanupService } from "./workspace-object-cleanup.service";
 
 @Module({
-  imports: [EmailModule],
+  imports: [EmailModule, ControlPlaneModule],
   controllers: [
+    MemberProfileController,
     WorkspacesController,
     WorkspaceBillingController,
     CustomerAccountsController,
@@ -32,8 +43,14 @@ import { TenantOperationsService } from "./tenant-operations.service";
     OperatorTenantDraftsController,
     InternalOrganizationAccountsController,
     PublicBrandingController,
+    TaxNumberingController,
+    MemberOffboardingController,
+    EntityImagesController,
+    EntityLetterheadController,
+    PublicEntityImagesController,
   ],
   providers: [
+    MemberProfileService,
     WorkspaceAccessService,
     WorkspacesService,
     CustomerAccountsService,
@@ -46,6 +63,11 @@ import { TenantOperationsService } from "./tenant-operations.service";
     BrandAssetStorageService,
     ConfigurationRevisionsService,
     TenantOperationsService,
+    TaxNumberingService,
+    MemberOffboardingService,
+    EntityImagesService,
+    WorkspaceClearRecordsService,
+    WorkspaceObjectCleanupService,
   ],
   exports: [WorkspaceAccessService, WorkspacesService, ConfigurationRevisionsService],
 })

@@ -5,15 +5,15 @@
   color: var(--wd-color-text);
 }
 .content { max-inline-size: var(--wd-workspace-page-width, 76rem); margin-inline: auto; }
-.backLink { display: inline-flex; align-items: center; gap: .45rem; min-block-size: 2.2rem; margin-block-end: .8rem; padding: .4rem .65rem; border-radius: .6rem; background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-size: .8rem; font-weight: 500; text-decoration: none; }
+.backLink { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-block-size: 2.2rem; margin-block-end: var(--wd-space-3); padding: var(--wd-space-1-5) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-action-primary-subtle); color: var(--wd-color-action-primary); font-size: var(--wd-text-sm); font-weight: 500; text-decoration: none; }
 .backLink:hover { background: color-mix(in srgb, var(--wd-color-action-primary) 18%, var(--wd-color-surface)); }
 .backLink:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
-.eyebrow { margin: 0 0 .65rem; font-size: .7rem; font-weight: 600; letter-spacing: .12em; color: var(--wd-color-action-primary); }
+.eyebrow { margin: 0 0 var(--wd-space-3); font-size: var(--wd-text-2xs); font-weight: 600; letter-spacing: .12em; color: var(--wd-color-action-primary); }
 .heading { margin: 0; font-size: clamp(1.6rem, 2.3vw, 2.15rem); letter-spacing: -.035em; font-weight: 600; }
-.description, .notice p { font-size: .875rem; color: var(--wd-color-text-secondary); line-height: 1.6; }
-.notice { margin-block-start: 2.5rem; max-inline-size: 38rem; }
-.notice h2 { font-size: 1.1rem; font-weight: 600; }
-.link { display: inline-flex; gap: .5rem; align-items: center; margin-block-start: .65rem; color: var(--wd-color-action-primary); font-size: .875rem; text-decoration: none; }
+.description, .notice p { font-size: var(--wd-text-md); color: var(--wd-color-text-secondary); line-height: 1.6; }
+.notice { margin-block-start: var(--wd-space-10); max-inline-size: 38rem; }
+.notice h2 { font-size: var(--wd-text-lg); font-weight: 600; }
+.link { display: inline-flex; gap: var(--wd-space-2); align-items: center; margin-block-start: var(--wd-space-3); color: var(--wd-color-action-primary); font-size: var(--wd-text-md); text-decoration: none; }
 .link:hover { text-decoration: underline; }
 .link:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
-@media (max-width: 48rem) { .page { padding: 1.25rem 1rem 2.5rem; } }
+@media (max-width: 48rem) { .page { padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10); } }

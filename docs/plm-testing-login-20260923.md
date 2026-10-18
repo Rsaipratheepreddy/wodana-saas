@@ -1,0 +1,19 @@
+# PLM testing login
+
+Requested: unlimited simultaneous testing devices for PLM, clear the current demo-account lockout, and make sign-in feedback clearly visible.
+
+- Resolve current active PLM memberships and merge their exact user UUIDs into the existing backend test-account allowlist. Preserve all previous entries; no global wildcard or authentication bypass. New accounts need explicit inclusion.
+- Clear failed attempts and the lock deadline only for `demo@palmliving.ae` after checking its active PLM membership. Do not change its password, MFA, token expiry or other users' lockouts.
+- Back up the backend environment before updating it; recreate only the dedicated PLM backend service and verify readiness and effective policies.
+- Login errors use a high-contrast danger banner, icon, readable text and assertive announcement. Progress/success/instructions use a neutral status presentation, not an error. Preserve the same form, APIs, keyboard behavior and responsive/RTL layout; do not expose password details or automatically retry login.
+- Verify device policy tests, login error/progress tests, web typecheck, production build and deployed health. No other module or quotation behavior changes.
+
+Follow-up: align the login with the internal portal. Replace the framed illustration/marketing layout with a full-bleed white workspace header, restrained primary-tinted context panel and compact sign-in form. Use existing brand tokens/body typography, 44px bordered controls, a primary action with readable foreground, and sentence-case headings. Preserve login, recovery, invitation and MFA journeys. The context panel is descriptive, not a mock interactive dashboard; hide it on small screens and retain clear error announcements and keyboard focus.
+
+Backend applied and verified: both active PLM identities have unlimited devices; unrelated identities retain the two-device default. Demo failed attempts are zero and lock deadline is null. Existing exemptions were preserved. Config backup: `/opt/wodana/releases/20260922-palm-project-rollback-r1/core.env.before-plm-devices-1790182485147`. Only the dedicated PLM business-core container was recreated; readiness checks passed.
+
+UI status: user requested preview before deployment. Redesigned login is running locally at `http://127.0.0.1:3001/login?tenant=plm`, not deployed. All 16 login tests and web typecheck pass. Desktop preview inspected; remaining responsive/RTL verification and final production build/deployment await design approval. An earlier error-banner-only image build was started remotely but no traffic switch or web deployment was performed.
+
+Preview revision 2 follows the requested centered-card direction: a generated, muted luxury-interior masonry backdrop with a grey overlay; a smaller white card; client logo and name; all credential, recovery and MFA stages inside the same card; compact portal-style controls; and a small Wodana credit. The project-bound background is `apps/web/public/images/palm-login-interiors-v1.png`, generated with the built-in image tool from a photorealistic architectural-editorial prompt (warm grey/limestone/walnut interiors, no people, text, logos or UI). Background rendering and card size were visually verified locally. This revision remains undeployed pending approval.
+
+Local end-to-end preview is connected to the production PLM API through the existing Next.js server-side proxy. Verified: local login page 200, production tenant logo through the local proxy 200, unauthenticated local session proxy correctly returns 401, and production readiness 200. Production currently has two active password-backed PLM identities (`demo@palmliving.ae` and `operations@palmlivingae.com`). No password was reset. The demo identity is the recommended UI-test account because its lockout was explicitly cleared and its unlimited-device policy was verified. Actions after local sign-in affect production Palm Living data.

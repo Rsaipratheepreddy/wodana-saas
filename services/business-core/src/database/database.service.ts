@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { viewAsReadOnly } from "../auth/view-as/view-as.context";
+import { commandDryRun, currentCommandOrigin } from "./command-origin";
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
@@ -34,15 +36,26 @@ export class DatabaseService implements OnModuleDestroy {
     text: string,
     values: unknown[] = [],
   ): Promise<QueryResult<Row>> {
+    // While someone views as another person, even a single statement runs in a transaction that is discarded.
+    // So does an operator CLI dry run.
+    if (viewAsReadOnly() || commandDryRun()) return this.transaction((client) => client.query<Row>(text, values));
     return this.pool.query<Row>(text, values);
   }
 
   async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    // View as changes nothing, down to the database: its transactions run and are then rolled back, so a read
+    // that also writes (a default row made on first use, a "last seen", an audit of a download) leaves no trace.
+    // An operator CLI dry run is discarded the same way.
+    const discard = viewAsReadOnly() || commandDryRun();
     try {
       await client.query("BEGIN");
+      // A command confirmed through Woddy (or run by the operator CLI): its audit rows record where it came from (0162),
+      // in a tenant transaction or not (provisioning, accepting an invitation).
+      const origin = currentCommandOrigin();
+      if (origin) await client.query("SELECT set_config('app.command_via', $1, true), set_config('app.ai_run_id', $2, true)", [origin.via, origin.runId ?? ""]);
       const result = await work(client);
-      await client.query("COMMIT");
+      await client.query(discard ? "ROLLBACK" : "COMMIT");
       return result;
     } catch (error) {
       await client.query("ROLLBACK");

@@ -94,7 +94,7 @@ async function main() {
       [caseId, workspaceA, derivedOpportunity, actorId],
     );
     await client.query(
-      `INSERT INTO commercial_cases(workspace_id,case_id,content) VALUES($1,$2,$3::jsonb)`,
+      `SELECT commercial_case_save($1,$2,coalesce(($3::jsonb->>'revision')::int,0),$3::jsonb)`,
       [workspaceA, caseId, JSON.stringify({ quotes: [{ id: "quote-1" }] })],
     );
     await client.query(
@@ -159,7 +159,7 @@ async function main() {
 
     await client.query("RESET ROLE");
     await client.query(
-      `UPDATE commercial_cases SET content=$3::jsonb WHERE workspace_id=$1 AND case_id=$2`,
+      `SELECT commercial_case_save($1,$2,coalesce(($3::jsonb->>'revision')::int,0),$3::jsonb)`,
       [workspaceA, caseId, JSON.stringify({ quotes: [{ id: "quote-1" }, { id: "quote-2" }] })],
     );
     await client.query("SET LOCAL ROLE wodana_app");
@@ -197,7 +197,7 @@ async function main() {
       [workspaceA, quoteLink.rows[0].id, first.id, actorId],
     );
     await client.query(
-      `UPDATE commercial_cases SET content=$3::jsonb WHERE workspace_id=$1 AND case_id=$2`,
+      `SELECT commercial_case_save($1,$2,coalesce(($3::jsonb->>'revision')::int,0),$3::jsonb)`,
       [workspaceA, caseId, JSON.stringify({ quotes: [{ id: "quote-1" }] })],
     );
     await client.query("SET LOCAL ROLE wodana_app");
@@ -211,7 +211,7 @@ async function main() {
     );
     await client.query("RESET ROLE");
     await client.query(
-      `UPDATE commercial_cases SET content=$3::jsonb WHERE workspace_id=$1 AND case_id=$2`,
+      `SELECT commercial_case_save($1,$2,coalesce(($3::jsonb->>'revision')::int,0),$3::jsonb)`,
       [workspaceA, caseId, JSON.stringify({ quotes: [{ id: "quote-1" }, { id: "quote-2" }] })],
     );
     await client.query("SET LOCAL ROLE wodana_app");
@@ -252,7 +252,7 @@ async function main() {
     await client.query("SELECT set_config('app.current_workspace_id',$1,true)", [workspaceA]);
     await client.query("RESET ROLE");
     await client.query(
-      `UPDATE commercial_cases SET content=$3::jsonb WHERE workspace_id=$1 AND case_id=$2`,
+      `SELECT commercial_case_save($1,$2,coalesce(($3::jsonb->>'revision')::int,0),$3::jsonb)`,
       [workspaceA, caseId, JSON.stringify({ quotes: [{ id: "quote-1" }] })],
     );
     await client.query("SET LOCAL ROLE wodana_app");

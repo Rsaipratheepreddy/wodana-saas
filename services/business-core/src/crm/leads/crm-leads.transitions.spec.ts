@@ -3,13 +3,14 @@ import { CrmLeadsService } from "./crm-leads.service";
 
 const statuses = ["new", "attempting_contact", "connected", "nurturing", "qualified", "paused", "disqualified"];
 
-function setup(status: string, options: { converted?: boolean; unassigned?: boolean; noAction?: boolean } = {}) {
+function setup(status: string, options: { converted?: boolean; otherWork?: boolean; unassigned?: boolean; noAction?: boolean; serviceType?: string | null } = {}) {
   const before = { id: "lead", party_id: "party", owner_membership_id: options.unassigned ? null : "owner", queue_id: null, status, version: 5, next_action_at: options.noAction ? null : "2026-09-20T09:30:00Z" };
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
     if (sql.includes("SELECT lead.*")) return { rows: [before], rowCount: 1 };
-    if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: null }], rowCount: 1 };
+    if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: options.serviceType === undefined ? "interior_design" : options.serviceType }], rowCount: 1 };
     if (sql.includes("FROM crm_qualification_forms")) return { rows: [], rowCount: 0 };
     if (sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
+    if (sql.includes("SELECT 1 FROM crm_opportunities WHERE workspace_id = $1 AND party_id")) return { rows: options.otherWork ? [{}] : [], rowCount: options.otherWork ? 1 : 0 };
     if (sql.includes("SELECT 1 FROM crm_opportunities")) return { rows: options.converted ? [{}] : [], rowCount: options.converted ? 1 : 0 };
     if (sql.includes("UPDATE crm_leads")) return { rows: [{ ...before, status: params[0], next_action_at: params[2], qualification_evidence: params[6], qualification_evidence_hash: params[7], qualified_by: params[8], version: 6 }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
@@ -61,6 +62,14 @@ describe("CRM lead status moves", () => {
     expect(events.record).not.toHaveBeenCalled();
   });
 
+  it.each([null, "not_sure"])("does not qualify a lead with unresolved enquiry type %s", async serviceType => {
+    const { service, query, events } = setup("connected", { serviceType });
+    await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "qualified" }))
+      .rejects.toThrow("Choose a specific enquiry type");
+    expect(query.mock.calls.some(([sql]) => /^\s*UPDATE\b/.test(sql))).toBe(false);
+    expect(events.record).not.toHaveBeenCalled();
+  });
+
   it("prevents moving converted leads even if their status is inconsistent", async () => {
     const { service, events } = setup("connected", { converted: true });
     await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "new" })).rejects.toThrow("This lead has been converted");
@@ -81,8 +90,8 @@ describe("CRM lead status moves", () => {
 
   it("requires and accepts a next action for an unassigned reopened lead", async () => {
     const { service } = setup("disqualified", { unassigned: true, noAction: true });
-    await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "connected" })).rejects.toThrow("requires a next action or assignment");
-    expect(await service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", nextActionAt: "2026-09-20T09:30:00Z" })).toMatchObject({ status: "connected", nextActionAt: new Date("2026-09-20T09:30:00Z") });
+    await expect(service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", reason: "Client called back" })).rejects.toThrow("requires a next action or assignment");
+    expect(await service.transition({} as never, "workspace", "lead", { version: 5, status: "connected", reason: "Client called back", nextActionAt: "2026-09-20T09:30:00Z" })).toMatchObject({ status: "connected", nextActionAt: new Date("2026-09-20T09:30:00Z") });
   });
 
   it("pauses and resumes the existing first-response clock", async () => {
@@ -106,7 +115,7 @@ describe("CRM lead status moves", () => {
     }));
 
     const reopened = setup("disqualified");
-    await reopened.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" });
+    await reopened.service.transition({} as never, "workspace", "lead", { version: 5, status: "new", reason: "Client came back" });
     expect(reopened.slas.startFirstResponse).toHaveBeenCalledWith(expect.anything(), "workspace", "lead", expect.objectContaining({ newCycle: true }));
   });
 
@@ -126,4 +135,40 @@ describe("CRM lead status moves", () => {
     await stopped.service.transition({} as never, "workspace", "lead", { version: 5, status: "disqualified", reason: "Not a fit" });
     expect(stopped.query.mock.calls.some(([sql, params]) => sql.includes("sla_instance_id=$2") && sql.includes("completion_outcome") && params?.[2] === "cancelled")).toBe(true);
   });
+
+  it("marks junk as spam: closed with the reason, out of reports, its contact flagged as spam, audited (S-13, PLM-138)", async () => {
+    const { service, query, events } = setup("new");
+    await service.markSpam({} as never, "workspace", "lead", { version: 5 });
+    const statusUpdate = query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_leads SET status"));
+    expect(statusUpdate?.[1]?.slice(0, 2)).toEqual(["disqualified", "Spam"]);
+    expect(query.mock.calls.some(([sql, params]) => sql.includes("SET spam_at = now()") && params?.[2] === "user")).toBe(true);
+    expect(query.mock.calls.some(([sql, params]) => sql.includes("UPDATE crm_parties SET spam_at = now()") && params?.[1] === "party")).toBe(true);
+    // PLM-138: the contact's chats become Spam too.
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_conversations SET status = 'spam'"))).toBe(true);
+    expect(events.record.mock.calls.map(([, event]) => event.action)).toEqual(["crm.lead.disqualified.v1", "crm.party.marked_spam.v1", "crm.lead.marked_spam.v1"]);
+  });
+
+  it("does not flag a client who has other real work with the firm", async () => {
+    const { service, query } = setup("connected", { otherWork: true });
+    await service.markSpam({} as never, "workspace", "lead", { version: 5 });
+    expect(query.mock.calls.some(([sql]) => sql.includes("SET spam_at = now()"))).toBe(true);
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_parties"))).toBe(false);
+  });
+
+  it.each(["disqualified", "qualified"])("QA-018: reopening a %s enquiry needs a reason, and the history keeps who reopened it and why", async (from) => {
+    const refused = setup(from);
+    await expect(refused.service.transition({} as never, "workspace", "lead", { version: 5, status: "new" })).rejects.toThrow("Say why the enquiry is reopened");
+    expect(refused.query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_leads"))).toBe(false);
+    const { service, events } = setup(from);
+    await service.transition({} as never, "workspace", "lead", { version: 5, status: "new", reason: "Client came back with a new budget" });
+    expect(events.record.mock.calls.map(([, event]) => [event.action, event.after.reason])).toEqual([["crm.lead.reopened.v1", "Client came back with a new budget"]]);
+  });
+
+  it("QA-017: refuses to mark a converted enquiry as spam, like every other move of a converted lead", async () => {
+    const { service, query, events } = setup("qualified", { converted: true });
+    await expect(service.markSpam({} as never, "workspace", "lead", { version: 5 })).rejects.toThrow("This lead has been converted. Continue work in its opportunity or create a new enquiry.");
+    expect(query.mock.calls.some(([sql]) => sql.includes("SET spam_at = now()") || sql.includes("UPDATE crm_parties"))).toBe(false);
+    expect(events.record).not.toHaveBeenCalled();
+  });
 });
+

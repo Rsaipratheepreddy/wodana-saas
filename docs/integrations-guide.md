@@ -127,6 +127,55 @@ record first. Partial payments must keep a nonzero balance.
 9. Review the workspace audit log. Do not repeatedly submit a timed-out send or invoice: an
    unconfirmed operation remains blocked for review to avoid duplicate external actions.
 
+## Platform connections in Wodana Control
+
+Wodana's own app for each provider is set in **Wodana Control → Platform connections** (operators with
+`platform.integrations.manage`: the administrator and platform security owner roles). No env edit,
+rebuild or restart: the intelligence service reads the saved values through Business Core with a
+60-second cache, so a change applies within a minute. The `WHATSAPP_*`, `QUICKBOOKS_*`, `ZOHO_*` and
+`GOOGLE_*` env vars below are now only the fallback for a field left empty. Secrets are write-only
+(shown as "set · last 4"), sealed with `INTEGRATIONS_ENCRYPTION_KEY` before they reach the database.
+
+1. **Public API address**: the public origin of the integration API, for example
+   `https://api.wodana.ai` (no path). Every callback and webhook URL is built from it and shown on the
+   provider's card with a copy button. One callback per provider serves every firm: the firm and
+   connection travel in the OAuth `state`, never in the URL.
+2. **Meta (WhatsApp)**. Wodana is the Meta tech partner and owns the app.
+   - App ID and app secret: App Dashboard → App settings → Basic.
+   - Embedded Signup configuration ID: App Dashboard → Facebook Login for Business → Configurations.
+     Create one with the WhatsApp Embedded Signup login variation and the
+     `whatsapp_business_management` and `whatsapp_business_messaging` permissions; the ID is at the top
+     of the configuration.
+   - Webhook verify token: choose a long random string (`openssl rand -hex 24`) and save it here first.
+     Then App Dashboard → WhatsApp → Configuration: paste the card's Webhook URL and the same token, and
+     subscribe to `messages`, `message_template_status_update` and `phone_number_quality_update`.
+   - Facebook Login for Business → Settings: add the web app's origin (and any firm's custom domain)
+     to Allowed Domains for the JavaScript SDK.
+   - Graph API version: keep v23.0 unless moving versions.
+3. **Intuit (QuickBooks)**: Intuit Developer → the app → Keys and credentials. Development keys go
+   with Sandbox, production keys with Production. Add the card's Callback URL under Redirect URIs for
+   the same environment. For webhooks, set the card's Webhook URL as the endpoint and save the verifier
+   token here. Production keys need Intuit's production review (app details, EULA and privacy links,
+   the security questionnaire); switch the environment to Production only after approval, then Test.
+4. **Zoho (Zoho Books)**: api-console.zoho.com in the data center the app is registered in → the
+   server-based client → Authorized Redirect URIs: the card's Callback URL. Save the client ID and
+   secret and choose that data center. To serve firms in other data centers, turn on multi-DC in the
+   API console; firms still pick their own data center when they connect.
+5. **Google (Workspace)**: Google Cloud Console → APIs & Services → Credentials → the Web application
+   OAuth client → Authorized redirect URIs: the card's Callback URL. Enable the Calendar, Gmail and
+   Drive APIs; external rollout needs the OAuth consent screen verified for these scopes.
+
+**Test** runs a safe live check and never sends anything: Meta issues the app's own access token and
+confirms it with `debug_token`; Intuit and Google read their discovery document, then probe the token
+endpoint with an impossible grant (a known app is told "bad grant", an unknown one "bad client"); Zoho
+probes its token endpoint in the chosen data center. The card shows Not set, Set, Tested OK or Test
+failed with the reason; any change resets it. Other operators with the permission get an in-app notice
+when credentials change.
+
+Firms see **Connect** in Settings → Connections only for providers whose app is set up; otherwise the
+card says "Not available yet — Wodana is setting this up". WhatsApp Embedded Signup uses the saved
+configuration ID.
+
 ## Provider setup and deployment
 
 Store client secrets only in an untracked environment file or secret manager. Never put them in
@@ -225,3 +274,18 @@ these integrations as end-to-end verified or ready for customer rollout.
 
 Verified in this session: 115 Business Core tests, 57 Python service tests, 7 targeted web tests,
 TypeScript checks for web and core, Python type checking, and lint for the integration changes.
+
+## AI apps (MCP): connect Claude Desktop
+
+Wodana is an MCP server. An AI app acts as the person who connects it: their own permissions, the
+scopes they allow (read; write means changes they confirm) and only in a workspace whose owner turned
+on **Settings → Connections → AI apps** (AI assistance must be on too).
+
+1. In Claude Desktop: **Settings → Connectors → Add custom connector**, URL
+   `https://<tenant>.wodana.ai/api/v1/mcp` (Settings → AI apps shows the exact address).
+2. Claude opens Wodana: sign in, choose the workspace and the access, then **Allow**.
+3. Reads answer at once, with links to the records. A change waits for your OK: Claude asks when it
+   can, otherwise it appears in **Approvals → Waiting for you** (the link is in Claude's answer).
+
+Revoke an app in Settings → AI apps (owners can revoke anyone's). Tokens last an hour and refresh
+tokens rotate on every use; no AI credits are charged for MCP calls.

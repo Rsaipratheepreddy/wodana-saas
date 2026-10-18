@@ -1,20 +1,20 @@
 import "server-only";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { businessApiUrl } from "@/lib/auth/server";
+import { LANGUAGE_COOKIE, resolveLanguage } from "@/lib/i18n/languages";
+import { translator } from "@/lib/i18n/messages";
 import { getOperatorSession } from "./auth";
-import type { ManagedTenant } from "./types";
 
-export async function getInternalPortalData() {
+/** The signed-in Wodana operator for a console page; anyone else goes to the operator sign-in. */
+export async function requireOperator() {
   const session = await getOperatorSession();
   if (!session) redirect("/internal/sign-in");
-  const token = process.env.BUSINESS_CORE_INTERNAL_TOKEN;
-  if (!token) throw new Error("Internal client management is not configured.");
-  const response = await fetch(businessApiUrl("/internal/operator/tenants"), {
-    headers: { "x-wodana-internal-token": token, "x-wodana-operator-session": session.token },
-    cache: "no-store",
-  }).catch(() => null);
-  if (!response) throw new Error("The client management service is unavailable.");
-  if (!response.ok) throw new Error("Clients could not be loaded.");
-  return { operator: session.operator, tenants: await response.json() as ManagedTenant[] };
+  const { operator } = session;
+  return { userId: operator.userId, name: operator.displayName, email: operator.email, role: operator.role, permissions: operator.permissions };
+}
+
+/** Labels for console page metadata, in the operator's chosen language. */
+export async function consoleT() {
+  return translator(resolveLanguage((await cookies()).get(LANGUAGE_COOKIE)?.value));
 }

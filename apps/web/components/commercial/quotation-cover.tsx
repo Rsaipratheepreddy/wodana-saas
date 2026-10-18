@@ -1,8 +1,11 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
+import { useDesignSystem } from "@/design-system";
 import type { Quote, PortalBrand } from "@/lib/commercial/types";
+import { quoteCurrencyChoices } from "@/lib/commercial/client";
 import type { CSSProperties } from "react";
-import { BrandLogo } from "./portal-settings";
+import { BrandLogo } from "./brand-logo";
 import s from "./quotation-cover.module.css";
 
 type CoverQuote = Pick<
@@ -16,6 +19,7 @@ type CoverQuote = Pick<
   | "createdAt"
   | "issuedAt"
   | "brand"
+  | "letterhead"
 >;
 
 /** The same document cover is used in the editor, client preview and printed quotation. */
@@ -34,12 +38,15 @@ export function QuotationCover({
   customerName?: string;
   onChange?: (patch: Partial<Quote>) => void;
 }) {
+  const t = useT();
+  const { locale, currency: workspaceCurrency } = useDesignSystem();
   const cover = quote.cover ?? {
     preparedFor: customerName,
     location: "",
-    subtitle: "Interior design & fit-out proposal",
+    subtitle: t("Interior design & fit-out proposal"),
   };
-  const reference = `QT-${quote.id.slice(0, 8).toUpperCase()}`;
+  // The same quote number the team uses (Q-1), never a derived id.
+  const reference = t("Q-{number}", { number: quote.number });
   const coverStyle = {
     "--quotation-cover-color": brand?.primaryColor || "#E4E3DE",
     ...(cover.banner
@@ -49,22 +56,24 @@ export function QuotationCover({
   return (
     <section
       className={s.cover}
-      aria-label="Quotation cover"
+      aria-label={t("Quotation cover")}
       data-editable={Boolean(onChange)}
       data-canvas={canvas || undefined}
       data-compact={compact || undefined}
       style={coverStyle}
     >
       <header className={s.top}>
-        {cover.logo ? <div className={s.customLogo}><img src={cover.logo} alt={brand?.name || 'Company logo'}/>{brand?.name && <strong>{brand.name}</strong>}</div> : brand ? (
+        {cover.logo ? <div className={s.customLogo}><img src={cover.logo} alt={brand?.name || t('Company logo')}/>{brand?.name && <strong>{brand.name}</strong>}</div>
+          // The issuing business's own logo and name (PLM-112), when it has a logo.
+          : quote.letterhead?.logoUrl ? <div className={s.customLogo}><img src={quote.letterhead.logoUrl} alt={quote.letterhead.legalName}/><strong>{quote.letterhead.legalName}</strong></div> : brand ? (
           <BrandLogo brand={brand} />
         ) : (
-          <strong>Interior design studio</strong>
+          <strong>{t("Interior design studio")}</strong>
         )}
         <span>
-          Estimate proposal{" "}
+          {t("Estimate proposal")}{" "}
           <b>
-            V{quote.number} · {quote.currency}
+            {t("V{number} · {currency}", { number: quote.number, currency: quote.currency })}
           </b>
         </span>
       </header>
@@ -74,7 +83,7 @@ export function QuotationCover({
           <textarea
             className={s.title}
             rows={3}
-            aria-label="Quotation title"
+            aria-label={t("Quotation title")}
             maxLength={240}
             value={quote.title}
             onChange={(e) => onChange({ title: e.target.value })}
@@ -86,7 +95,7 @@ export function QuotationCover({
           <textarea
             className={s.subtitle}
             rows={2}
-            aria-label="Cover subtitle"
+            aria-label={t("Cover subtitle")}
             maxLength={500}
             value={cover.subtitle}
             onChange={(e) =>
@@ -98,12 +107,12 @@ export function QuotationCover({
         )}
       </div>
       <div className={s.prepared}>
-        <span className={s.label}>Prepared for</span>
+        <span className={s.label}>{t("Prepared for")}</span>
         {onChange ? (
           <>
             <input
               className={s.clientName}
-              aria-label="Prepared for"
+              aria-label={t("Prepared for")}
               maxLength={160}
               value={cover.preparedFor}
               placeholder={customerName}
@@ -113,10 +122,10 @@ export function QuotationCover({
             />
             <input
               className={s.location}
-              aria-label="Project location"
+              aria-label={t("Project location")}
               maxLength={300}
               value={cover.location}
-              placeholder="Project location"
+              placeholder={t("Project location")}
               onChange={(e) =>
                 onChange({ cover: { ...cover, location: e.target.value } })
               }
@@ -133,15 +142,15 @@ export function QuotationCover({
       </div>
       <footer className={s.meta}>
         <div>
-          <span className={s.label}>Quotation no.</span>
+          <span className={s.label}>{t("Quotation no.")}</span>
           <strong>{reference}</strong>
         </div>
         <div>
           <span className={s.label}>
-            {quote.issuedAt ? "Issue date" : "Prepared on"}
+            {t(quote.issuedAt ? "Issue date" : "Prepared on")}
           </span>
           <strong>
-            {new Intl.DateTimeFormat("en-GB", {
+            {new Intl.DateTimeFormat(locale, {
               day: "2-digit",
               month: "short",
               year: "numeric",
@@ -150,27 +159,29 @@ export function QuotationCover({
           </strong>
         </div>
         <label>
-          <span className={s.label}>Valid until</span>
+          <span className={s.label}>{t("Valid until")}</span>
           {onChange ? (
             <input
               type="date"
-              aria-label="Quotation valid until"
+              aria-label={t("Quotation valid until")}
               value={quote.validUntil}
               onChange={(e) => onChange({ validUntil: e.target.value })}
             />
           ) : (
-            <strong>{quote.validUntil}</strong>
+            <strong>{/^\d{4}-\d{2}-\d{2}$/.test(quote.validUntil ?? "")
+              ? new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${quote.validUntil}T00:00:00Z`))
+              : quote.validUntil}</strong>
           )}
         </label>
         {onChange && (
           <label>
-            <span className={s.label}>Currency</span>
+            <span className={s.label}>{t("Currency")}</span>
             <select
-              aria-label="Quotation currency"
+              aria-label={t("Quotation currency")}
               value={quote.currency}
               onChange={(e) => onChange({ currency: e.target.value })}
             >
-              {["AED", "INR", "USD", "EUR", "GBP", "SAR", "QAR"].map((c) => (
+              {quoteCurrencyChoices(workspaceCurrency).map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>

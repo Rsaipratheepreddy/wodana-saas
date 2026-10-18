@@ -7,6 +7,7 @@ import type {
   CreateTenantProvisioningDraftDto, TenantContractContactDto, TenantSetupSelectionsDto,
 } from "./dto/tenant-provisioning-draft.dto";
 import { assertValidIdempotencyKey, provisioningRequestHash } from "./provisioning-idempotency";
+import { RESERVED_SLUGS } from "./reserved-slugs";
 import { WorkspacesService } from "./workspaces.service";
 
 type DraftStatus = "draft" | "provisioning" | "provisioned" | "failed" | "expired";
@@ -31,7 +32,6 @@ type DraftRow = {
 };
 
 type SetupProfile = { kind: "region" | "firm_kit" | "plan"; code: string; version: number; configuration: Record<string, unknown> };
-const RESERVED_SLUGS = new Set(["admin", "api", "app", "auth", "internal", "login", "mail", "status", "support", "www", "workspace"]);
 
 function slugFor(input: CreateTenantProvisioningDraftDto["organization"]): string {
   const slug = input.slug ?? input.name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
@@ -52,7 +52,7 @@ export class TenantProvisioningDraftsService {
   async listProfiles(): Promise<SetupProfile[]> {
     const result = await this.database.query<SetupProfile>(
       `SELECT kind, code, version, configuration FROM tenant_setup_profiles
-       WHERE selectable = true ORDER BY kind, code, version DESC`,
+       WHERE selectable = true AND kind IN ('region', 'firm_kit', 'plan') ORDER BY kind, code, version DESC`,
     );
     return result.rows;
   }

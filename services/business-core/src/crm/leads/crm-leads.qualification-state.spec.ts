@@ -31,6 +31,8 @@ describe("CRM lead qualification presentation", () => {
       if (sql.includes("FROM crm_sla_instances")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry", externalEventId: "lead-ad-42", correlationId: "correlation-42" }], rowCount: 1 };
       if (sql.includes("FROM crm_attribution_touches")) return { rows: [{ id: "touch", source: "instagram", medium: "shared_link", campaign: "summer" }], rowCount: 1 };
+      if (sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
+      if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = {
@@ -57,11 +59,11 @@ describe("CRM lead qualification presentation", () => {
     expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
   });
 
-  it("preserves a frozen no-form decision instead of dereferencing absent live state", async () => {
+  it("preserves a frozen no-form decision for a resolved enquiry type", async () => {
     const evidence = {
       version: 1,
       leadId: "lead",
-      serviceType: null,
+      serviceType: "interior_design",
       selection: "none",
       form: null,
       answers: [],
@@ -71,13 +73,15 @@ describe("CRM lead qualification presentation", () => {
     const query = vi.fn(async (sql: string) => {
       if (sql.includes("SELECT lead.*")) return { rows: [{
         id: "lead", enquiry_id: "enquiry", party_id: "party", owner_membership_id: null, queue_id: null,
-        status: "qualified", version: 2, source: "shared_link", channel: "website", service_type: null,
+        status: "qualified", version: 2, source: "shared_link", channel: "website", service_type: "interior_design",
         business_unit_id: null, preferred_locale: "en-AE", party_owner_membership_id: null,
         qualification_evidence: evidence, qualification_evidence_hash: "b".repeat(64),
       }], rowCount: 1 };
       if (sql.includes("FROM crm_lead_qualification_values") || sql.includes("FROM crm_assignment_history")
-        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")) return { rows: [], rowCount: 0 };
+        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")
+        || sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
       if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
       throw new Error(`Unexpected query: ${sql}`);
     });
     const access = {
@@ -90,5 +94,27 @@ describe("CRM lead qualification presentation", () => {
       qualificationState: { ready: true, missingRequired: [], selection: "none", form: null, frozen: true },
     });
     expect(query.mock.calls.some(([sql]) => sql.trim().startsWith("SELECT enquiry.service_type"))).toBe(false);
+  });
+  it("names the owner on a single enquiry, so a role without the team list still sees who owns it", async () => {
+    const evidence = { version: 1, leadId: "lead", serviceType: "interior_design", selection: "none", form: null, answers: [], requiredKeys: [], evaluatedAt: "2026-09-18T08:00:00.000Z" };
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT lead.*")) return { rows: [{
+        id: "lead", enquiry_id: "enquiry", party_id: "party", owner_membership_id: "membership", queue_id: null,
+        status: "qualified", version: 2, source: "company", channel: "call", service_type: "interior_design",
+        business_unit_id: null, preferred_locale: "en-AE", party_owner_membership_id: null,
+        qualification_evidence: evidence, qualification_evidence_hash: "c".repeat(64),
+      }], rowCount: 1 };
+      if (sql.includes("person.display_name AS \"ownerName\"")) return { rows: [{ ownerName: "Sara Sales" }], rowCount: 1 };
+      if (sql.includes("FROM crm_lead_qualification_values") || sql.includes("FROM crm_assignment_history")
+        || sql.includes("FROM crm_sla_instances") || sql.includes("FROM crm_attribution_touches")
+        || sql.includes("FROM crm_identity_candidates candidate")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT enquiry.id")) return { rows: [{ id: "enquiry" }], rowCount: 1 };
+      if (/workspace_sales_settings|crm_lead_team|crm_taxonomy_options|AND user_id = \$2 AND status = 'active' LIMIT 1/.test(sql)) return { rows: [], rowCount: 0 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })), hasPermission: vi.fn().mockResolvedValue(false) };
+    const service = new CrmLeadsService({} as never, access as never, {} as never, {} as never);
+    const result = await service.get({} as never, "workspace", "lead");
+    expect(result).toMatchObject({ ownerMembershipId: "membership", ownerName: "Sara Sales" });
   });
 });

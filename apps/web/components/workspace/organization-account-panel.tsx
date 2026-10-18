@@ -2,10 +2,12 @@
 
 import { Building2, CheckCircle2, Plus, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, TextInput } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, FormDialog, TextInput } from "@/design-system";
 import type { CompanyProfileData } from "@/lib/workspace/company-profile";
 import type { CustomerAccount, OrganizationRequest } from "@/lib/workspace/customer-account";
 import styles from "./company-profile.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 
 type RequestDraft = {
   name: string;
@@ -23,15 +25,15 @@ function emptyDraft(): RequestDraft {
   return { name: "", registeredName: "", entityCode: "", reason: "" };
 }
 
+const STATUS_LABELS: Record<string, MessageKey> = {
+  active: tKey("Active"), suspended: tKey("Suspended"), pending: tKey("Pending"), approved: tKey("Approved"), rejected: tKey("Rejected"), cancelled: tKey("Cancelled"),
+};
+
 function requestStatusTone(status: OrganizationRequest["status"]) {
+  if (status === "pending") return "warning" as const;
   if (status === "approved") return "success" as const;
   if (status === "rejected") return "danger" as const;
   return "neutral" as const;
-}
-
-async function responseMessage(response: Response, fallback: string) {
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
-  return payload?.message ?? fallback;
 }
 
 export function OrganizationAccountPanel({
@@ -49,6 +51,8 @@ export function OrganizationAccountPanel({
   standalone?: boolean;
   unavailable?: boolean;
 }) {
+  const t = useT();
+  const statusLabel = (status: string) => STATUS_LABELS[status] ? t(STATUS_LABELS[status]) : status;
   const [requests, setRequests] = useState(initialRequests);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [draft, setDraft] = useState<RequestDraft>(emptyDraft);
@@ -61,8 +65,10 @@ export function OrganizationAccountPanel({
   const entity = profile.legalEntities[0];
   const accountSummary = useMemo(() => {
     if (!account) return null;
-    return `${account.organizationCount} of ${account.organizationLimit} ${account.organizationLimit === 1 ? "company" : "companies"}`;
-  }, [account]);
+    return account.organizationLimit === 1
+      ? t("{count} of {limit} company", { count: account.organizationCount, limit: account.organizationLimit })
+      : t("{count} of {limit} companies", { count: account.organizationCount, limit: account.organizationLimit });
+  }, [account, t]);
 
   const openRequest = () => {
     setDraft(emptyDraft());
@@ -87,9 +93,9 @@ export function OrganizationAccountPanel({
     const name = draft.name.trim();
     const registeredName = draft.registeredName.trim();
     const entityCode = draft.entityCode.trim().toUpperCase();
-    if (name.length < 2) { setError("Enter a company name."); return; }
-    if (registeredName.length < 2) { setError("Enter the registered company name."); return; }
-    if (!/^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(entityCode)) { setError("Entity code must be 2–24 letters, numbers, hyphens, or underscores."); return; }
+    if (name.length < 2) { setError(t("Enter a company name.")); return; }
+    if (registeredName.length < 2) { setError(t("Enter the registered company name.")); return; }
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,23}$/.test(entityCode)) { setError(t("Entity code must be 2–24 letters, numbers, hyphens, or underscores.")); return; }
     setSaving(true); setError(""); setNotice("");
     const idempotencyKey = requestKey ?? crypto.randomUUID();
     setRequestKey(idempotencyKey);
@@ -113,11 +119,11 @@ export function OrganizationAccountPanel({
         }),
       });
       const payload = await response.json().catch(() => null) as OrganizationRequest & { message?: string } | null;
-      if (!response.ok || !payload?.id) throw new Error(payload?.message ?? "The organization request could not be sent.");
+      if (!response.ok || !payload?.id) throw new Error(payload?.message ?? t("The organization request could not be sent."));
       setRequests((current) => [payload, ...current.filter((item) => item.id !== payload.id)]);
-      setDialogOpen(false); setRequestKey(null); setNotice(`${payload.name} was sent to Wodana for review.`);
+      setDialogOpen(false); setRequestKey(null); setNotice(t("{name} was sent to Wodana for review.", { name: payload.name }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The organization request could not be sent.");
+      setError(failure instanceof Error ? failure.message : t("The organization request could not be sent."));
     } finally { setSaving(false); }
   };
 
@@ -131,11 +137,11 @@ export function OrganizationAccountPanel({
         body: JSON.stringify({ workspaceId: profile.workspace.id, expectedVersion: cancelTarget.version }),
       });
       const payload = await response.json().catch(() => null) as OrganizationRequest & { message?: string } | null;
-      if (!response.ok || !payload?.id) throw new Error(payload?.message ?? "The organization request could not be cancelled.");
+      if (!response.ok || !payload?.id) throw new Error(payload?.message ?? t("The organization request could not be cancelled."));
       setRequests((current) => current.map((item) => item.id === payload.id ? payload : item));
-      setNotice(`${payload.name} request cancelled.`); setCancelTarget(null);
+      setNotice(t("{name} request cancelled.", { name: payload.name })); setCancelTarget(null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The organization request could not be cancelled.");
+      setError(failure instanceof Error ? failure.message : t("The organization request could not be cancelled."));
       setCancelTarget(null);
     } finally { setCancelling(false); }
   };
@@ -143,32 +149,32 @@ export function OrganizationAccountPanel({
   if (!canManage || (!account && !unavailable)) return null;
 
   return <>
-    <section aria-label={standalone ? "Manage workspaces" : undefined} aria-labelledby={standalone ? undefined : "organizations-heading"} className={`${styles.detailSection} ${styles.organizationAccountSection}`}>
+    <section aria-label={standalone ? t("Manage workspaces") : undefined} aria-labelledby={standalone ? undefined : "organizations-heading"} className={`${styles.detailSection} ${styles.organizationAccountSection}`}>
       <header>
-        <div>{standalone ? <p className={styles.standaloneSectionHint}>Each workspace is a separate company with its own people, data, client portal and integrations.</p> : <><h2 id="organizations-heading">Other workspaces</h2><p className={styles.sectionHint}>Each workspace is a separate company with its own people, data and settings.</p></>}</div>
-        {account?.canRequestOrganization ? <Button onPress={openRequest} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />Add workspace</Button> : null}
+        <div>{standalone ? <p className={styles.standaloneSectionHint}>{t("Each workspace is a separate company with its own people, data, client portal and integrations.")}</p> : <><h2 id="organizations-heading">{t("Other workspaces")}</h2><p className={styles.sectionHint}>{t("Each workspace is a separate company with its own people, data and settings.")}</p></>}</div>
+        {account?.canRequestOrganization ? <Button onPress={openRequest} size="compact" variant="secondary"><Plus aria-hidden="true" size={15} />{t("Add workspace")}</Button> : null}
       </header>
       {notice ? <p aria-live="polite" className={styles.organizationNotice}><CheckCircle2 aria-hidden="true" size={14} />{notice}</p> : null}
-      {unavailable ? <Callout title="Organization account unavailable" tone="warning">Your current workspace is still available. Refresh this page to try loading organization requests again.</Callout> : null}
+      {error && !dialogOpen ? <Callout title={t("Workspace request could not be updated")} tone="danger">{error}</Callout> : null}
+      {unavailable ? <Callout title={t("Organization account unavailable")} tone="warning">{t("Your current workspace is still available. Refresh this page to try loading organization requests again.")}</Callout> : null}
       {account ? <>
-        <div className={styles.organizationSummary}><div><strong>{accountSummary}</strong><small>{account.availableOrganizationSlots > 0 ? `${account.availableOrganizationSlots} available in your current account limit.` : "Additional companies require Wodana approval."}</small></div><Badge tone="neutral">{account.status}</Badge></div>
-        <ul aria-label="Workspaces in this account" className={styles.organizationList}>
-          {account.organizations.map((organization) => <li key={organization.id}><span className={styles.organizationIcon}><Building2 aria-hidden="true" size={15} /></span><span><strong>{organization.name}</strong><small>{organization.slug}{organization.isDefault ? " · Main company" : ""}</small></span><Badge tone={organization.status === "active" ? "success" : "neutral"}>{organization.status}</Badge></li>)}
+        <div className={styles.organizationSummary}><div><strong>{accountSummary}</strong><small>{account.availableOrganizationSlots > 0 ? t("{count} available in your current account limit.", { count: account.availableOrganizationSlots }) : t("Additional companies require Wodana approval.")}</small></div><Badge tone="neutral">{statusLabel(account.status)}</Badge></div>
+        <ul aria-label={t("Workspaces in this account")} className={styles.organizationList}>
+          {account.organizations.map((organization) => <li key={organization.id}><span className={styles.organizationIcon}><Building2 aria-hidden="true" size={15} /></span><span><strong>{organization.name}</strong><small>{organization.isDefault ? t("{slug} · Main company", { slug: organization.slug }) : organization.slug}</small></span><Badge tone={organization.status === "active" ? "success" : "neutral"}>{statusLabel(organization.status)}</Badge></li>)}
         </ul>
       </> : null}
-      {requests.length ? <div className={styles.requestList}><h3>Requests</h3>{requests.map((item) => <div className={styles.requestRow} key={item.id}><div><strong>{item.name}</strong><small>{item.reason || "Additional independent organization"}</small>{item.decisionReason ? <small>{item.decisionReason}</small> : null}</div><div className={styles.requestActions}><Badge tone={requestStatusTone(item.status)}>{item.status}</Badge>{item.status === "pending" ? <Button aria-label={`Cancel ${item.name} request`} onPress={() => setCancelTarget(item)} size="compact" variant="quiet"><X aria-hidden="true" size={14} />Cancel</Button> : null}</div></div>)}</div> : null}
+      {requests.length ? <div className={styles.requestList}><h3>{t("Requests")}</h3>{requests.map((item) => <div className={styles.requestRow} key={item.id}><div><strong>{item.name}</strong><small>{item.reason || t("Additional independent organization")}</small>{item.decisionReason ? <small>{item.decisionReason}</small> : null}</div><div className={styles.requestActions}><Badge tone={requestStatusTone(item.status)}>{statusLabel(item.status)}</Badge>{item.status === "pending" ? <Button aria-label={t("Cancel {name} request", { name: item.name })} onPress={() => setCancelTarget(item)} size="compact" variant="quiet"><X aria-hidden="true" size={14} />{t("Cancel")}</Button> : null}</div></div>)}</div> : null}
     </section>
 
-    <ControlledModalDialog description="This creates a request only. Wodana reviews it before the new workspace is provisioned." footer={<div className="wd-dialog-actions"><Button isDisabled={saving} onPress={() => setDialogOpen(false)}>Cancel</Button><Button form="organization-request-form" isLoading={saving} type="submit" variant="primary">Send request</Button></div>} isOpen={dialogOpen} onOpenChange={(open) => { if (!saving) setDialogOpen(open); }} title="Add a workspace">
-      <form className={styles.organizationRequestForm} id="organization-request-form" noValidate onSubmit={submit}>
-        {error ? <Callout title="Could not send request" tone="danger">{error}</Callout> : null}
-        <TextInput isRequired label="Company name" onChange={updateName} value={draft.name} />
-        <TextInput isRequired label="Registered company name" onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} />
-        <TextInput description="Used on official documents. You can set it before approval." isRequired label="Entity code" onChange={(entityCode) => { setDraft((current) => ({ ...current, entityCode: entityCode.toUpperCase() })); setError(""); }} value={draft.entityCode} />
-        <TextInput description={`Regional settings will start from ${profile.workspace.name} and can be changed after approval.`} label="Reason (optional)" onChange={(reason) => { setDraft((current) => ({ ...current, reason })); setError(""); }} value={draft.reason} />
-      </form>
-    </ControlledModalDialog>
+    <FormDialog description={t("This creates a request only. Wodana reviews it before the new workspace is provisioned.")} isOpen={dialogOpen} onClose={() => setDialogOpen(false)}
+      isSubmitting={saving} isDirty={Boolean(draft.name.trim() || draft.registeredName.trim())} submitLabel={t("Send request")} onSubmit={submit} formClassName={styles.organizationRequestForm} title={t("Add a workspace")}>
+        {error ? <Callout title={t("Could not send request")} tone="danger">{error}</Callout> : null}
+        <TextInput isRequired label={t("Company name")} onChange={updateName} value={draft.name} />
+        <TextInput isRequired label={t("Registered company name")} onChange={(registeredName) => { setDraft((current) => ({ ...current, registeredName })); setError(""); }} value={draft.registeredName} />
+        <TextInput isRequired label={t("Entity code")} onChange={(entityCode) => { setDraft((current) => ({ ...current, entityCode: entityCode.toUpperCase() })); setError(""); }} value={draft.entityCode} />
+        <TextInput label={t("Reason")} onChange={(reason) => { setDraft((current) => ({ ...current, reason })); setError(""); }} value={draft.reason} />
+    </FormDialog>
 
-    <ConfirmationDialog body={cancelTarget ? <>Cancel the request for <strong>{cancelTarget.name}</strong>? It will not create an organization.</> : null} confirmLabel={cancelling ? "Cancelling…" : "Cancel request"} isOpen={Boolean(cancelTarget)} onConfirm={() => void cancelRequest()} onOpenChange={(open) => { if (!open && !cancelling) setCancelTarget(null); }} title="Cancel organization request?" />
+    <ConfirmationDialog body={cancelTarget ? t("Cancel the request for {name}? It will not create an organization.", { name: cancelTarget.name }) : null} confirmLabel={cancelling ? t("Cancelling…") : t("Cancel request")} isOpen={Boolean(cancelTarget)} onConfirm={() => void cancelRequest()} onOpenChange={(open) => { if (!open && !cancelling) setCancelTarget(null); }} title={t("Cancel organization request?")} />
   </>;
 }

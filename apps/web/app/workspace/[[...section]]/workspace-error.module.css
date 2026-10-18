@@ -1,31 +1,6 @@
 .root {
-  min-block-size: 100%;
-  background: var(--wd-color-surface);
-}
-
-.error {
   display: grid;
-  inline-size: min(100%, 34rem);
-  min-block-size: 24rem;
+  min-block-size: 100%;
   align-content: center;
-  justify-items: start;
-  gap: 0.75rem;
-  padding: 2rem;
-  margin-inline: auto;
-}
-
-.error svg {
-  color: var(--wd-color-danger);
-}
-
-.error h1 {
-  margin: 0;
-  color: var(--wd-color-text);
-  font-size: var(--wd-text-xl);
-}
-
-.error p {
-  margin: 0 0 0.5rem;
-  color: var(--wd-color-text-secondary);
-  font-size: var(--wd-text-sm);
+  background: var(--wd-color-surface);
 }

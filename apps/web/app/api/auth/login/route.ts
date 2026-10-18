@@ -12,6 +12,7 @@ import {
   businessApiUrl,
   safeBackendMessage,
 } from "@/lib/auth/server";
+import { getServerT } from "@/lib/i18n/server";
 
 type LoginResponse = {
   accessToken: string;
@@ -34,19 +35,20 @@ type LoginChallengeResponse = {
 };
 
 export async function POST(request: Request) {
+  const t = await getServerT();
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   let resolvedHost: Awaited<ReturnType<typeof resolveTenantHost>>;
   try { resolvedHost = await resolveTenantHost(request.headers.get("host") ?? new URL(request.url).host); }
-  catch { return NextResponse.json({ message: "The sign-in service is temporarily unavailable." }, { status: 503 }); }
-  if (!resolvedHost) return NextResponse.json({ message: "This login address is not active." }, { status: 404 });
+  catch { return NextResponse.json({ message: t("The sign-in service is temporarily unavailable.") }, { status: 503 }); }
+  if (!resolvedHost) return NextResponse.json({ message: t("This login address is not active.") }, { status: 404 });
   const requestedSlug = typeof body?.tenantSlug === "string" ? body.tenantSlug : "";
   if (requestedSlug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(requestedSlug)) {
-    return NextResponse.json({ message: "Choose a valid organization." }, { status: 400 });
+    return NextResponse.json({ message: t("Choose a valid organization.") }, { status: 400 });
   }
   const tenantSlug = resolvedHost.kind === "tenant" ? resolvedHost.branding.loginSlug
     : requestedSlug || process.env.LOGIN_TENANT_SLUG || "";
   if (resolvedHost.kind === "tenant" && requestedSlug && requestedSlug !== tenantSlug) {
-    return NextResponse.json({ message: "This organization does not match the login address." }, { status: 400 });
+    return NextResponse.json({ message: t("This organization does not match the login address.") }, { status: 400 });
   }
   const upstream = await fetch(businessApiUrl("/auth/login"), {
     method: "POST",
@@ -63,12 +65,12 @@ export async function POST(request: Request) {
   }).catch(() => null);
 
   if (!upstream) {
-    return NextResponse.json({ message: "Authentication service is unavailable." }, { status: 503 });
+    return NextResponse.json({ message: t("Authentication service is unavailable.") }, { status: 503 });
   }
   const payload = await upstream.json().catch(() => null);
   if (!upstream.ok) {
     return NextResponse.json(
-      { message: safeBackendMessage(payload, "Unable to sign in."),
+      { message: safeBackendMessage(payload, t("Unable to sign in.")),
         ...(upstream.status === 409 && payload?.code === "DEVICE_LIMIT_REACHED"
           ? { code: payload.code, sessions: payload.sessions, maxActiveDevices: payload.maxActiveDevices } : {}),
       },
@@ -76,11 +78,23 @@ export async function POST(request: Request) {
     );
   }
 
+  if (payload?.workspaceSelectionRequired === true && Array.isArray(payload.workspaces)) {
+    // Email-first sign-in: no session exists yet; the browser resubmits with the chosen slug.
+    return NextResponse.json({
+      workspaceSelectionRequired: true,
+      workspaces: payload.workspaces.map((workspace: Record<string, unknown>) => ({
+        name: String(workspace.name ?? ""),
+        loginSlug: String(workspace.loginSlug ?? ""),
+        logoUrl: typeof workspace.logoUrl === "string" ? workspace.logoUrl : null,
+      })),
+    });
+  }
+
   if (payload?.mfaRequired === true) {
     if (typeof payload.challengeToken !== "string" || !payload.challengeToken
       || !Number.isFinite(payload.challengeExpiresIn) || payload.challengeExpiresIn <= 0
       || !Array.isArray(payload.methods)) {
-      return NextResponse.json({ message: "The sign-in service returned an incomplete MFA challenge. Please try again." }, { status: 502 });
+      return NextResponse.json({ message: t("The sign-in service returned an incomplete MFA challenge. Please try again.") }, { status: 502 });
     }
     const challenge = payload as LoginChallengeResponse;
     const response = NextResponse.json({
@@ -115,7 +129,7 @@ export async function POST(request: Request) {
     || !Number.isFinite(payload.accessTokenExpiresIn) || payload.accessTokenExpiresIn <= 0
     || !Number.isFinite(payload.refreshTokenExpiresIn) || payload.refreshTokenExpiresIn <= 0
     || typeof payload.profile?.nextAction !== "string") {
-    return NextResponse.json({ message: "The sign-in service returned an incomplete session. Please try again." }, { status: 502 });
+    return NextResponse.json({ message: t("The sign-in service returned an incomplete session. Please try again.") }, { status: 502 });
   }
   const session = payload as LoginResponse;
   const response = NextResponse.json({

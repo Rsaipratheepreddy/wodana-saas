@@ -1,6 +1,8 @@
 import { Type } from "class-transformer";
 import {
   IsArray,
+  ArrayMaxSize,
+  Matches,
   IsBoolean,
   IsIn,
   IsInt,
@@ -14,12 +16,17 @@ import {
   Min,
   ValidateNested,
 } from "class-validator";
+import { QUEUE_ASSIGNMENT_MODES, type QueueAssignmentMode } from "../round-robin";
 
 export class ListLeadsQueryDto {
-  @IsOptional() @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused"])
+  @IsOptional() @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused", "duplicate"])
   status?: string;
   @IsOptional() @IsUUID() ownerMembershipId?: string;
   @IsOptional() @IsUUID() queueId?: string;
+  /** A salesperson's lists (PLM-042): new, contacted (being worked) or come back to (booked follow-up). */
+  @IsOptional() @IsIn(["new", "contacted", "come_back"]) funnel?: "new" | "contacted" | "come_back";
+  /** Only enquiries owned by the signed-in member. */
+  @IsOptional() @IsIn(["true", "false"]) mine?: string;
   @IsOptional() @IsString() @MaxLength(240) search?: string;
   @IsOptional() @IsString() cursor?: string;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit = 25;
@@ -31,6 +38,10 @@ export class CreateQueueDto {
   @IsOptional() @IsUUID() businessUnitId?: string;
   @IsOptional() @IsBoolean() isFallback?: boolean;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number;
+  /** Working hours for the takeover countdown (same shape as an SLA schedule); omit for elapsed time. */
+  @IsOptional() @IsObject() takeoverSchedule?: Record<string, unknown>;
+  /** How the queue shares enquiries: the lightest load first (balanced, the default) or strict turns (round_robin). */
+  @IsOptional() @IsIn(QUEUE_ASSIGNMENT_MODES) assignmentMode?: QueueAssignmentMode;
 }
 
 export class UpdateQueueDto {
@@ -39,6 +50,8 @@ export class UpdateQueueDto {
   @IsOptional() @IsUUID() businessUnitId?: string | null;
   @IsOptional() @IsBoolean() isFallback?: boolean;
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(10080) takeoverAfterMinutes?: number | null;
+  @IsOptional() @IsObject() takeoverSchedule?: Record<string, unknown> | null;
+  @IsOptional() @IsIn(QUEUE_ASSIGNMENT_MODES) assignmentMode?: QueueAssignmentMode;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
 }
 
@@ -105,6 +118,10 @@ export class AssignLeadDto {
   @IsString() @IsNotEmpty() @MaxLength(500) reason!: string;
 }
 
+export class LeadVersionDto {
+  @IsInt() @Min(1) version!: number;
+}
+
 export class TransitionLeadDto {
   @IsInt() @Min(1) version!: number;
   @IsIn(["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified", "paused"])
@@ -122,4 +139,54 @@ export class UpsertQualificationDto {
 
 export class ProcessSlaDto {
   @Type(() => Number) @IsOptional() @IsInt() @Min(1) @Max(100) limit?: number;
+}
+
+/** LF-1: who already has this mobile or email. */
+export class ContactMatchQueryDto {
+  @IsOptional() @IsString() @MaxLength(40) mobile?: string;
+  @IsOptional() @IsString() @MaxLength(3) countryCode?: string;
+  @IsOptional() @IsString() @MaxLength(320) email?: string;
+}
+
+/** S-3: confirm a form enquiry's client: the suggested existing client, or a different person. */
+export class ConfirmClientDto {
+  @IsInt() @Min(1) version!: number;
+  @IsIn(["same", "different"]) decision!: "same" | "different";
+  @IsOptional() @IsUUID() partyId?: string;
+  @IsOptional() @IsString() @MaxLength(240) reason?: string;
+}
+
+/** S-10: "Not a duplicate — open as new", with the reason. */
+export class ReopenDuplicateDto {
+  @IsInt() @Min(1) version!: number;
+  @IsString() @IsNotEmpty() @MaxLength(240) reason!: string;
+}
+
+export class UpdateSalesSettingsDto {
+  @IsInt() @Min(0) version!: number;
+  @IsOptional() @IsInt() @Min(0) @Max(10) takeoverCap?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(1440) unownedEscalationMinutes?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(1440) clientReviewMinutes?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(730) duplicateWindowDays?: number;
+  /** Days an open opportunity may keep its stage before Reports lists it as stuck. */
+  @IsOptional() @IsInt() @Min(1) @Max(365) stuckDealDays?: number;
+  /** PLM-155: the team or role codes whose people answer timeline questions (empty: anyone). */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @Matches(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/, { each: true }) timelineCheckRoles?: string[];
+  @IsOptional() @IsUUID() salesAdminMembershipId?: string | null;
+  /** PLM-024: who reads internal notes. */
+  @IsOptional() @IsIn(["team", "sales"]) internalNotesVisibility?: "team" | "sales";
+  /** PLM-180: hand-offs without a cap; unpicked after a working day, the enquiry is unassigned and the Owners told. */
+  @IsOptional() @IsBoolean() unassignAfterWorkingDay?: boolean;
+  /** PLM-099: the prefix new opportunity references take, for example O- (existing references keep theirs). */
+  @IsOptional() @IsString() @Matches(/^[A-Z][A-Z0-9]{0,5}-?$/) opportunityReferencePrefix?: string;
+}
+
+export class LogContactDto {
+  @IsInt() @Min(1) version!: number;
+  @IsIn(["call", "whatsapp", "email", "meeting", "sms"]) channel!: "call" | "whatsapp" | "email" | "meeting" | "sms";
+  @IsIn(["no_answer", "message_sent_no_reply", "willing_to_talk", "come_back_later", "not_interested", "unreachable"])
+  outcome!: "no_answer" | "message_sent_no_reply" | "willing_to_talk" | "come_back_later" | "not_interested" | "unreachable";
+  @IsOptional() @IsString() @MaxLength(4000) note?: string;
+  @IsOptional() @IsString() @MaxLength(160) reason?: string;
+  @IsOptional() @IsString() nextActionAt?: string;
 }

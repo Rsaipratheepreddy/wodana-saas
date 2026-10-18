@@ -6,6 +6,11 @@ import {
 
 const supportedCurrencies = new Set(Intl.supportedValuesOf("currency"));
 
+/** A three-letter ISO 4217 code the runtime knows (upper case), for services outside DTO validation. */
+export function isCurrencyCode(value: string) {
+  return supportedCurrencies.has(value);
+}
+
 function decorator(
   name: string,
   predicate: (value: string) => boolean,
@@ -30,7 +35,7 @@ function decorator(
 
 export const IsCurrencyCode = decorator(
   "isCurrencyCode",
-  (value) => supportedCurrencies.has(value),
+  (value) => isCurrencyCode(value),
   (args) => `${args.property} must be a three-letter ISO 4217 currency code`,
 );
 

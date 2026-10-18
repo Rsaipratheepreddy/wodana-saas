@@ -1,4 +1,12 @@
-import { commercialExecutionReady } from "./project-readiness";
+import { DEAL_FIRST_WORKFLOW_CODE } from "./deal-first-workflow";
+import { readTaskBoard } from "./project-task-board";
+import { projectRepository } from "./project-repository";
+import { approvalQueueQuery, approvalQueuePage, type ApprovalQueueSource } from "./project-approval-queue";
+import {readWorkQueue} from './project-work-queue';
+import {readSupplyQueue} from './project-supply-queue';
+import {projectMemberRecipientsSql} from './project-member-access';
+import { projectInventory, materialInventory } from "./project-inventory";
+import { assertServicePathStageReady, assertManufacturingPaymentReady, commercialExecutionReady } from "./project-readiness";
 import { paymentIsVerified } from "../commercial/accounting-invoice";
 import {
   financeGatePaymentsReady,
@@ -54,9 +62,11 @@ import { capacityConfiguration, exceedsPooledCapacity } from "./project-schedule
 import { projectScheduleItems } from "./project-schedule-items";
 import type { PortfolioCalendarQueryDto } from "./projects.dto";
 import { releasedScopeLine } from "./released-scope-line";
-import { adoptProjectWorkflow, ensureProjectWorkflow } from "./project-workflow";
+import { adoptProjectWorkflow, ensureProjectWorkflow, projectWorkflowSummary } from "./project-workflow";
 import { resolvedProjectWorkflowTemplate } from "./project-workflow.repository";
 import { blockWorkPackagesForDeduction, syncScopeWorkPackages } from "./project-work-packages";
+import { projectItemPipeline } from "./project-item-pipeline";
+import { projectItemRegister, projectItemImages } from "./project-item-register";
 import { projectExecutionPulse } from "./project-execution-pulse";
 import { projectConnectedPlan } from "./project-connected-plan";
 import {
@@ -80,7 +90,7 @@ export class ExecutionService {
   ) {}
   async row(ctx: HrmsContext, id: string, lock = false) {
     const r = await ctx.client.query(
-      `SELECT p.id,p.case_id AS "caseId",p.name,p.status,party.display_name AS customer,cc.content AS commercial,(SELECT default_timezone FROM workspaces WHERE id=p.workspace_id) AS timezone FROM delivery_projects p JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id LEFT JOIN commercial_cases cc ON cc.workspace_id=p.workspace_id AND cc.case_id=p.case_id WHERE p.workspace_id=$1 AND p.id=$2 ${lock ? "FOR UPDATE OF p" : ""}`,
+      `SELECT p.id,p.case_id AS "caseId",p.name,p.status,party.display_name AS customer,cc.content AS commercial,(SELECT default_timezone FROM workspaces WHERE id=p.workspace_id) AS timezone FROM delivery_projects p JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id LEFT JOIN commercial_cases_view cc ON cc.workspace_id=p.workspace_id AND cc.case_id=p.case_id WHERE p.workspace_id=$1 AND p.id=$2 ${lock ? "FOR UPDATE OF p" : ""}`,
       [ctx.workspaceId, id],
     );
     if (!r.rowCount) throw new NotFoundException("Project not found.");
@@ -95,11 +105,7 @@ export class ExecutionService {
     return r.rows[0];
   }
   async load(ctx: HrmsContext, id: string): Promise<ProjectData> {
-    const r = await ctx.client.query(
-      "SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2",
-      [ctx.workspaceId, id],
-    );
-    const stored = r.rows[0]?.content as Partial<ProjectData> | undefined;
+    const stored = (await projectRepository.load(ctx.client, ctx.workspaceId, id))?.content;
     if (!stored) return emptyProject();
     const blank = emptyProject();
     const data = {
@@ -125,20 +131,70 @@ export class ExecutionService {
   }
   async store(ctx: HrmsContext, id: string, d: ProjectData) {
     d.revision++;
-    await ctx.client.query(
-      "INSERT INTO project_execution(project_id,workspace_id,revision,content) VALUES($1,$2,$3,$4) ON CONFLICT(project_id) DO UPDATE SET revision=$3,content=$4,updated_at=now() WHERE project_execution.workspace_id=$2",
-      [id, ctx.workspaceId, d.revision, JSON.stringify(d)],
-    );
+    await projectRepository.save(ctx.client, ctx.workspaceId, id, d);
+  }
+  approvalQueue(actor: RequestActor, w: string, input: Record<string,unknown>) {
+    const query=approvalQueueQuery(input);
+    return this.access.run(actor,w,async ctx=>{
+      this.access.require(ctx,"projects.view","projects.manage");
+      const rows=await ctx.client.query<ApprovalQueueSource>(`
+        SELECT p.id AS "projectId",p.name AS "projectName",request.value AS request,request.kind,request.order_id AS "orderId",
+          jsonb_build_object('title',coalesce(request.order_title,document.value->>'title'),'revision',CASE WHEN request.kind='order_amendment' THEN 'Amendment' ELSE document.value->>'revision' END) AS document,
+          u.display_name AS "ownerName",coalesce(nullif(request.value->>'dueDate',''),'9999-12-31') AS "sortDue"
+        FROM delivery_projects p
+        JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
+        CROSS JOIN LATERAL (
+          SELECT r.value,'rfa'::text AS kind,NULL::text AS order_id,NULL::text AS order_title
+          FROM jsonb_array_elements(coalesce(e.content->'rfas','[]'::jsonb)) r(value)
+          UNION ALL
+          SELECT amendment.value || jsonb_build_object('id','amendment:' || (amendment.value->>'id')),
+            'order_amendment',orders.value->>'id',concat(orders.value->>'number',' · ',orders.value->>'title')
+          FROM jsonb_array_elements(coalesce(e.content->'orders','[]'::jsonb)) orders(value)
+          CROSS JOIN LATERAL jsonb_array_elements(coalesce(orders.value->'amendments','[]'::jsonb)) amendment(value)
+        ) request
+        LEFT JOIN LATERAL (SELECT value FROM jsonb_array_elements(coalesce(e.content->'documents','[]'::jsonb)) d(value) WHERE d.value->>'id'=request.value->>'documentId' LIMIT 1) document ON true
+        LEFT JOIN workspace_memberships m ON m.workspace_id=p.workspace_id AND m.id::text=CASE WHEN request.value->>'status' IN ('submitted','in_review') THEN request.value->>'reviewerId' ELSE request.value->>'createdBy' END AND m.status='active'
+        LEFT JOIN users u ON u.id=m.user_id
+        WHERE p.workspace_id=$1 AND p.status<>'archived'
+          AND ($3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=p.workspace_id AND a.project_id=p.id AND a.membership_id=$2 AND a.active))
+          AND (request.kind<>'rfa' OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(e.content->'rfas','[]'::jsonb)) newer WHERE newer->>'revisionOf'=request.value->>'id'))
+          AND ($4='all' OR (request.kind='order_amendment' AND request.value->>'status'='submitted') OR (request.kind='rfa' AND request.value->>'status' NOT IN ('approved','withdrawn')))
+          AND ($4<>'mine' OR CASE WHEN request.value->>'status' IN ('submitted','in_review') THEN request.value->>'reviewerId' ELSE request.value->>'createdBy' END=$2::text)
+          AND ($5='' OR strpos(lower(concat(p.name,' ',coalesce(request.order_title,request.value->'snapshot'->'document'->>'title',document.value->>'title'))),lower($5))>0)
+          AND ($6::text IS NULL OR (coalesce(nullif(request.value->>'dueDate',''),'9999-12-31'),p.id::text,request.value->>'id')>($6::text,$7::text,$8::text))
+        ORDER BY "sortDue",p.id::text,request.value->>'id' LIMIT 101`,
+        [w,ctx.membershipId,ctx.permissions.has("projects.manage"),query.view,query.q,...(query.after??[null,null,null])]);
+      return approvalQueuePage(rows.rows,ctx.membershipId,ctx.permissions.has("projects.review"));
+    });
+  }
+  taskBoard(actor:RequestActor,w:string,input:Record<string,unknown>) {
+    return this.access.run(actor,w,async ctx=>{
+      this.access.require(ctx,'projects.view','projects.manage');
+      return readTaskBoard(ctx,input);
+    });
+  }
+  workQueue(actor:RequestActor,w:string,input:Record<string,unknown>) {
+    return this.access.run(actor,w,async ctx=>{
+      this.access.require(ctx,'projects.view','projects.manage');
+      return readWorkQueue(ctx,input);
+    });
+  }
+  supplyQueue(actor:RequestActor,w:string) {
+    return this.access.run(actor,w,async ctx=>{
+      this.access.require(ctx,'projects.view','projects.manage','projects.buy');
+      return readSupplyQueue(ctx);
+    });
   }
   list(actor: RequestActor, w: string) {
     return this.access.run(actor, w, async (ctx) => {
       this.access.require(ctx, "projects.view", "projects.manage");
       const rows = (
         await ctx.client.query(
-          `SELECT p.id,p.case_id AS "caseId",p.name,party.display_name AS customer,
+          `SELECT p.id,p.case_id AS "caseId",p.name,o.description,party.display_name AS customer,
                   coalesce(e.content->>'phase','planning') AS phase,
                   coalesce(e.content->'scope'->>'value','0') AS value,
                   (SELECT string_agg(u.display_name,', ') FROM project_assignments a JOIN workspace_memberships m ON m.id=a.membership_id JOIN users u ON u.id=m.user_id WHERE a.workspace_id=p.workspace_id AND a.project_id=p.id AND a.active AND a.is_manager) AS manager,
+                  coalesce((SELECT array_agg(u.display_name ORDER BY u.display_name) FROM project_assignments a JOIN workspace_memberships m ON m.id=a.membership_id JOIN users u ON u.id=m.user_id WHERE a.workspace_id=p.workspace_id AND a.project_id=p.id AND a.active),ARRAY[]::text[]) AS team,
                   coalesce(e.content->'controls'->>'reference','') AS reference,
                   coalesce(e.content->'controls'->>'priority','normal') AS priority,
                   coalesce(e.content->'controls'->>'risk','on_track') AS risk,
@@ -152,7 +208,7 @@ export class ExecutionService {
            JOIN pre_project_cases c ON c.workspace_id=p.workspace_id AND c.id=p.case_id
            JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id
            JOIN crm_parties party ON party.workspace_id=o.workspace_id AND party.id=o.party_id
-           LEFT JOIN project_execution e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
+           LEFT JOIN project_execution_view e ON e.workspace_id=p.workspace_id AND e.project_id=p.id
            WHERE p.workspace_id=$1 AND p.status<>'archived'
              AND ($3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=p.workspace_id AND a.project_id=p.id AND a.membership_id=$2 AND a.active))
            ORDER BY p.created_at DESC`,
@@ -201,7 +257,7 @@ export class ExecutionService {
          JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
          JOIN project_resources resource ON resource.workspace_id=booking.workspace_id AND resource.id=booking.resource_id
          LEFT JOIN business_units unit ON unit.workspace_id=resource.workspace_id AND unit.id=resource.business_unit_id
-         LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+         LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
          WHERE booking.workspace_id=$1
            AND (($7::text='active' AND booking.status IN ('tentative','confirmed')) OR booking.status=$7::varchar)
            AND project.status<>'archived'
@@ -268,7 +324,7 @@ export class ExecutionService {
            JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
            JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
            JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
-           JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+           JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
            WHERE project.workspace_id=$1 AND project.status<>'archived'
              AND ($2 OR project.id=ANY($3::uuid[]) OR cardinality($4::uuid[])>0)`,
           [w, canSeeAll, managedProjects, ledDepartments],
@@ -293,7 +349,7 @@ export class ExecutionService {
              JOIN pre_project_cases pre_project ON pre_project.workspace_id=project.workspace_id AND pre_project.id=project.case_id
              JOIN crm_opportunities opportunity ON opportunity.workspace_id=pre_project.workspace_id AND opportunity.id=pre_project.opportunity_id
              JOIN crm_parties party ON party.workspace_id=opportunity.workspace_id AND party.id=opportunity.party_id
-             LEFT JOIN project_execution execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
+             LEFT JOIN project_execution_view execution ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
              WHERE visit.workspace_id=$1 AND visit.kind='visit' AND visit.status<>'cancelled'
                AND visit.content->>'scheduledAt' IS NOT NULL
                AND ((visit.content->>'scheduledAt')::timestamptz AT TIME ZONE workspace.default_timezone)::date BETWEEN $2::date AND $3::date
@@ -302,7 +358,7 @@ export class ExecutionService {
           )).rows.map((visit) => ({
             ...visit,
             allDay: false,
-            title: [visit.dealReference, visit.clientName, visit.title].filter(Boolean).join(" — "),
+            title: [visit.dealReference, visit.clientName, visit.title].filter(Boolean).join(" · "),
           }));
           items.push(...visits);
         }
@@ -428,10 +484,14 @@ export class ExecutionService {
       data = await this.load(ctx, id);
     const members = (
       await ctx.client.query(
-        `SELECT m.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active' ORDER BY u.display_name`,
-        [ctx.workspaceId],
+        `SELECT m.id,u.display_name AS name,EXISTS(SELECT 1 FROM effective_member_roles assigned JOIN role_permissions granted ON granted.role_id=assigned.role_id JOIN permissions permission ON permission.id=granted.permission_id WHERE assigned.membership_id=m.id AND permission.code='projects.review') AND (EXISTS(SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id=m.workspace_id AND assignment.project_id=$2 AND assignment.membership_id=m.id AND assignment.active) OR EXISTS(SELECT 1 FROM effective_member_roles manager_role JOIN role_permissions manager_grant ON manager_grant.role_id=manager_role.role_id JOIN permissions manager_permission ON manager_permission.id=manager_grant.permission_id WHERE manager_role.membership_id=m.id AND manager_permission.code='projects.manage')) AS "canReview" FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active'  ORDER BY u.display_name`,
+        [ctx.workspaceId, id],
       )
     ).rows;
+    const mentionMembers=new Set((await ctx.client.query<{id:string}>(projectMemberRecipientsSql,[ctx.workspaceId,id,members.map(member=>member.id)])).rows.map(member=>member.id));
+    const stockTransfers = (await ctx.client.query<{content:import("./project-stock.types").StockTransfer}>(
+      "SELECT content FROM project_stock_transfers WHERE workspace_id=$1 AND content->'destination'->>'id'=$2",[ctx.workspaceId,id]
+    )).rows.map(row=>row.content);
     const clientApprovers = (
       await ctx.client.query<{ id: string; name: string }>(
         `SELECT portal_grant.id,portal_grant.name
@@ -462,7 +522,7 @@ export class ExecutionService {
     ).rows;
     const bookings = (
       await ctx.client.query(
-        `SELECT b.id,b.project_id AS "projectId",p.name AS "projectName",b.task_id AS "taskId",coalesce((SELECT t->>'title' FROM project_execution e, jsonb_array_elements(e.content->'tasks') t WHERE e.project_id=b.project_id AND t->>'id'=b.task_id),'Booked work') AS "taskTitle",b.resource_id AS "resourceId",b.starts_on::text AS start,b.ends_on::text AS end,b.status,b.acknowledgement,b.slots,b.units::float8 AS units,b.timezone,b.version,b.cancellation_reason AS "cancellationReason",b.slots->0->>'startTime' AS "startTime",b.slots->0->>'endTime' AS "endTime" FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status IN ('draft','tentative','confirmed') ORDER BY b.starts_on`,
+        `SELECT b.id,b.project_id AS "projectId",p.name AS "projectName",b.task_id AS "taskId",coalesce((SELECT t->>'title' FROM project_execution_view e, jsonb_array_elements(e.content->'tasks') t WHERE e.project_id=b.project_id AND t->>'id'=b.task_id),'Booked work') AS "taskTitle",b.resource_id AS "resourceId",b.starts_on::text AS start,b.ends_on::text AS end,b.status,b.acknowledgement,b.slots,b.units::float8 AS units,b.timezone,b.version,b.cancellation_reason AS "cancellationReason",b.slots->0->>'startTime' AS "startTime",b.slots->0->>'endTime' AS "endTime" FROM project_bookings b JOIN delivery_projects p ON p.id=b.project_id WHERE b.workspace_id=$1 AND b.status IN ('draft','tentative','confirmed') ORDER BY b.starts_on`,
         [ctx.workspaceId],
       )
     ).rows;
@@ -482,13 +542,34 @@ export class ExecutionService {
       name: r.name,
       customer: r.customer,
       data,
+      workflowSummary: (() => {
+        const summary = projectWorkflowSummary(data);
+        if (summary?.nextStage && data.workflow?.template.code === DEAL_FIRST_WORKFLOW_CODE) {
+          try {
+            assertServicePathStageReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
+            assertManufacturingPaymentReady(data.workflow.template.code, summary.nextStage.key, r.commercial);
+          } catch (error) {
+            if (error instanceof ConflictException)
+              return { ...summary, nextBlocker: error.message };
+            throw error;
+          }
+        }
+        return summary;
+      })(),
+      stockTransfers,
+      inventory: projectInventory(data,stockTransfers),
+      itemPipeline: projectItemPipeline(data, localDate(new Date(), r.timezone ?? "UTC")),
+      itemImages: projectItemImages(data,r.commercial as CommercialData),
+      itemRegister: projectItemRegister(data, localDate(new Date(), r.timezone ?? "UTC"), stockTransfers,projectItemImages(data,r.commercial as CommercialData)),
       pulse: projectExecutionPulse(
         data,
         localDate(new Date(), r.timezone ?? "UTC"),
         resources,
         visibleBookings.filter((booking) => booking.projectId === id),
+        stockTransfers,
+        { canBuy: ctx.permissions.has("projects.buy"), canReview: ctx.permissions.has("projects.review"), memberId: ctx.membershipId },
       ),
-      members,
+      members:members.map(member=>({...member,canMention:mentionMembers.has(member.id)})),
       sites,
       clientApprovers,
       resources,
@@ -519,6 +600,12 @@ export class ExecutionService {
         retry = str(b.requestId, 80, true);
       if (!/^[\w-]{16,80}$/.test(retry))
         throw new BadRequestException("Use a stable request identifier.");
+      // Match transfer lock ordering before taking project rows.
+      if(action==="order_status") await ctx.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`project-stock:${w}`]);
+      // Schedule commands take capacity before project rows. Use the same order
+      // here so a concurrent task edit and booking cannot deadlock.
+      if (["reschedule", "booking", "cancel_booking", "resource", "task", "task_status", "complete_project"].includes(action))
+        await ctx.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`project-capacity:${w}`]);
       const row = await this.row(ctx, id, true),
         d = await this.load(ctx, id);
       const previousTaskStatuses = new Map(
@@ -530,6 +617,27 @@ export class ExecutionService {
         throw new ConflictException(
           "This project changed. Refresh and review before saving.",
         );
+      // Resolve supplier identity server-side; never trust names or phone numbers from the form.
+      if (["request_supplier_quotes", "request_item_quotes"].includes(action) || action === "replace_enquiry" || ((action === "order" || action === "enquiry") && obj(b.order).vendorId)) {
+        this.access.require(ctx, "projects.buy");
+        const vendorIds = ["request_supplier_quotes", "request_item_quotes"].includes(action) ? ids(b.vendorIds) : [action === "replace_enquiry" ? str(get(d.orders, b.id).vendorId, 80) : str(obj(b.order).vendorId, 80)];
+        if (!vendorIds.length || vendorIds.length > 25 || vendorIds.some(v => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)))
+          throw new BadRequestException("Select between 1 and 25 suppliers.");
+        const suppliers = (await ctx.client.query(`SELECT v.id, v.display_name AS name, s.id AS "siteId", s.phone, s.email
+          FROM workspace_vendors v LEFT JOIN LATERAL (SELECT id,phone,email FROM workspace_vendor_sites
+            WHERE workspace_id=v.workspace_id AND vendor_id=v.id AND status='active' ORDER BY is_primary DESC,created_at,id LIMIT 1) s ON true
+          WHERE v.workspace_id=$1 AND v.id=ANY($2::uuid[]) AND v.status='active' FOR SHARE OF v`, [w,vendorIds])).rows;
+        if (suppliers.length !== vendorIds.length) throw new BadRequestException("Select active suppliers from this workspace.");
+        if (["request_supplier_quotes", "request_item_quotes"].includes(action)) b.suppliers = suppliers;
+        else if (action === "replace_enquiry") {
+          const supplier = suppliers[0];
+          b.supplier = {vendor: supplier.name, vendorSiteId: supplier.siteId ?? "", vendorPhone: supplier.phone ?? "", vendorContact: supplier.email ?? supplier.phone ?? ""};
+        }
+        else {
+          const supplier = suppliers[0];
+          b.order = {...obj(b.order), vendor: supplier.name, vendorSiteId: supplier.siteId ?? "", vendorPhone: supplier.phone ?? "", vendorContact: supplier.email ?? supplier.phone ?? ""};
+        }
+      }
       if (
         d.phase === "completed" &&
         ![
@@ -546,31 +654,20 @@ export class ExecutionService {
           "publish_report",
           "unpublish_report",
           "publish_document",
+          "client_update_save",
+          "client_update_submit",
+          "client_update_publish",
+          "client_update_withdraw",
+          "client_sections_save",
         ].includes(action)
       )
         throw new ConflictException(
           "Reopen the completed project with a reason before changing it.",
         );
-      // Workspace lock serializes allocations across all projects and membership overlaps.
-      if (
-        [
-          "reschedule",
-          "booking",
-          "cancel_booking",
-          "resource",
-          "task",
-          "task_status",
-          "complete_project",
-        ].includes(action)
-      )
-        await ctx.client.query(
-          "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-          [`project-capacity:${w}`],
-        );
       const members = (
         await ctx.client.query(
-          `SELECT m.id,u.display_name AS name FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active'`,
-          [w],
+          `SELECT m.id,u.display_name AS name,EXISTS(SELECT 1 FROM effective_member_roles assigned JOIN role_permissions granted ON granted.role_id=assigned.role_id JOIN permissions permission ON permission.id=granted.permission_id WHERE assigned.membership_id=m.id AND permission.code='projects.review') AND (EXISTS(SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id=m.workspace_id AND assignment.project_id=$2 AND assignment.membership_id=m.id AND assignment.active) OR EXISTS(SELECT 1 FROM effective_member_roles manager_role JOIN role_permissions manager_grant ON manager_grant.role_id=manager_role.role_id JOIN permissions manager_permission ON manager_permission.id=manager_grant.permission_id WHERE manager_role.membership_id=m.id AND manager_permission.code='projects.manage')) AS "canReview" FROM workspace_memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1 AND m.status='active' `,
+          [w, id],
         )
       ).rows;
       const resources = (
@@ -1233,6 +1330,31 @@ export class ExecutionService {
           note: str(b.note, 3000),
         });
       } else {
+        let designOnlySignedOff = false;
+        if (action === "complete_project" && row.commercial?.servicePath && !row.commercial.servicePath.scope.mainQuotation) {
+          const signoff = (await ctx.client.query<{ total: number; approved: number }>(
+            `SELECT count(*)::int AS total,
+                    count(*) FILTER (WHERE version.status='approved' AND NOT EXISTS (
+                      SELECT 1 FROM pre_project_design_threads thread
+                      WHERE thread.workspace_id=version.workspace_id AND thread.version_id=version.id
+                        AND thread.blocking AND thread.status='open'))::int AS approved
+             FROM pre_project_designs design
+             JOIN LATERAL (
+               SELECT id,workspace_id,status FROM pre_project_design_versions
+               WHERE workspace_id=design.workspace_id AND case_id=design.case_id AND design_id=design.id
+               ORDER BY number DESC LIMIT 1
+             ) version ON true
+             WHERE design.workspace_id=$1 AND design.case_id=$2 AND design.archived_at IS NULL`,
+            [w, row.caseId],
+          )).rows[0];
+          if (!signoff?.total || signoff.approved !== signoff.total)
+            throw new ConflictException("Get client approval for the latest design or moodboard revisions before completing this project.");
+          designOnlySignedOff = true;
+        }
+        if (action === "workflow_transition") {
+          assertServicePathStageReady(d.workflow?.template.code, b.toStageKey, row.commercial);
+          assertManufacturingPaymentReady(d.workflow?.template.code, b.toStageKey, row.commercial);
+        }
         if (
           action === "complete_project" &&
           (
@@ -1269,13 +1391,13 @@ export class ExecutionService {
         if (action === "comment" && ids(b.mentions).length) {
           const allowed = (
             await ctx.client.query(
-              "SELECT membership_id FROM project_assignments WHERE workspace_id=$1 AND project_id=$2 AND active AND membership_id=ANY($3::uuid[])",
+              projectMemberRecipientsSql,
               [w, id, ids(b.mentions)],
             )
           ).rows;
           if (allowed.length !== ids(b.mentions).length)
             throw new BadRequestException(
-              "Mention only people assigned to this project. Assign their project work first.",
+              "Mention only people who have access to this project. Assign their project work first.",
             );
         }
         if (action === "material") {
@@ -1390,6 +1512,14 @@ export class ExecutionService {
               "Assign and confirm a current resource booking before starting work.",
             );
         }
+        if(action==="order_status"&&["submitted","approved"].includes(String(b.status))) {
+          const order=d.orders.find(o=>o.id===b.id), material=d.materials.find(m=>m.id===order?.materialId);
+          if(order&&material) {
+            const transfers=(await ctx.client.query<{content:import("./project-stock.types").StockTransfer}>("SELECT content FROM project_stock_transfers WHERE workspace_id=$1 AND content->'destination'->>'id'=$2",[w,id])).rows.map(row=>row.content);
+            if(order.quantity>materialInventory(material,d.orders.filter(o=>o.id!==order.id),transfers,d.supplierReturns).shortfall+0.000001)
+              throw new ConflictException("Existing stock, orders or incoming transfers already cover this quantity. Review Materials & stock before ordering more.");
+          }
+        }
         changedRecordId = applyExecution(d, action, b, {
           id: ctx.membershipId,
           userId: ctx.userId,
@@ -1399,6 +1529,7 @@ export class ExecutionService {
           report: ctx.permissions.has("projects.report"),
           buy: ctx.permissions.has("projects.buy"),
           memberIds: members.map((m) => m.id),
+          reviewerIds: members.filter((m) => m.canReview).map((m) => m.id),
           resourceIds: resources.filter((r) => r.active).map((r) => r.id),
           resourceKinds: Object.fromEntries(
             resources
@@ -1408,6 +1539,7 @@ export class ExecutionService {
           siteIds: initiationSiteIds,
           now: new Date().toISOString(),
           released: commercialExecutionReady(row.commercial),
+          designOnlySignedOff,
           today: localDate(new Date(), row.timezone ?? "UTC"),
         });
         if (
@@ -1590,13 +1722,13 @@ export class ExecutionService {
             }), ctx.userId],
           );
         await ctx.client.query(
-          "UPDATE delivery_projects SET status='completed',version=version+1 WHERE workspace_id=$1 AND id=$2",
-          [w, id],
+          "UPDATE delivery_projects SET status='completed',completed_at=now(),completed_by=$3,version=version+1 WHERE workspace_id=$1 AND id=$2",
+          [w, id, ctx.userId],
         );
       }
       if (action === "reopen_project")
         await ctx.client.query(
-          "UPDATE delivery_projects SET status='active',version=version+1 WHERE workspace_id=$1 AND id=$2",
+          "UPDATE delivery_projects SET status='active',completed_at=NULL,completed_by=NULL,version=version+1 WHERE workspace_id=$1 AND id=$2 AND status='completed'",
           [w, id],
         );
       await this.projectNotifications.notify(
@@ -1636,44 +1768,6 @@ export class ExecutionService {
         revision: d.revision,
       });
       return { data: d };
-    });
-  }
-  planning(actor: RequestActor, w: string, input: unknown) {
-    return this.access.run(actor, w, async (ctx) => {
-      this.access.require(ctx, "projects.manage");
-      const caseId = str(obj(input).caseId, 80, true);
-      const r = await ctx.client.query(
-        `SELECT c.id,c.status,o.title,(SELECT display_name FROM users WHERE id=$3) AS planner FROM pre_project_cases c JOIN crm_opportunities o ON o.workspace_id=c.workspace_id AND o.id=c.opportunity_id WHERE c.workspace_id=$1 AND c.id=$2 FOR UPDATE OF c`,
-        [w, caseId, ctx.userId],
-      );
-      if (!r.rowCount) throw new NotFoundException("Pre-execution not found.");
-      const existing = await ctx.client.query(
-        "SELECT id FROM delivery_projects WHERE workspace_id=$1 AND case_id=$2",
-        [w, caseId],
-      );
-      if (existing.rowCount) return existing.rows[0];
-      if (r.rows[0].status !== "active")
-        throw new ConflictException("Choose an active pre-execution.");
-      const p = (
-        await ctx.client.query(
-          "INSERT INTO delivery_projects(workspace_id,case_id,name,created_by) VALUES($1,$2,$3,$4) RETURNING id",
-          [w, caseId, r.rows[0].title, ctx.userId],
-        )
-      ).rows[0];
-      await ctx.client.query(
-        "INSERT INTO project_assignments(workspace_id,project_id,membership_id,is_manager) VALUES($1,$2,$3,true)",
-        [w, p.id, ctx.membershipId],
-      );
-      const project = emptyProject();
-      project.controls!.reference = `PRJ-PLAN-${new Date().getUTCFullYear()}-${p.id.slice(0, 8).toUpperCase()}`;
-      project.workflow = adoptProjectWorkflow(
-        await resolvedProjectWorkflowTemplate(ctx.client, w),
-        new Date().toISOString(),
-        ctx.userId,
-        r.rows[0].planner ?? "Project planner",
-      );
-      await this.store(ctx, p.id, project);
-      return p;
     });
   }
 }

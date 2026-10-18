@@ -14,7 +14,7 @@ export type CatalogRecord = {
  primaryAsset?:{id:string;recordId:string;name:string;mimeType:string;hasPreview:boolean}|null;
  configuration?:Record<string,string|number>;
 };
-export type CatalogPageData = {workspaceId:string;overview?:boolean;componentCounts?:{id:string;count:number}[];currency?:string;legalEntities?:{id:string;name:string;baseCurrency:string}[];canManage:boolean;canViewCosts?:boolean;priceVisibility?:"selling_only"|"selling_and_cost";items:CatalogRecord[];starter:{version:string;count:number;market:string};error?:string};
+export type CatalogPageData = {workspaceId:string;overview?:boolean;catalogCounts?:{catalogId:string;kind:string;count:number}[];componentCounts?:{id:string;count:number}[];currency?:string;legalEntities?:{id:string;name:string;baseCurrency:string}[];canManage:boolean;canViewCosts?:boolean;priceVisibility?:"selling_only"|"selling_and_cost";items:CatalogRecord[];starter:{version:string;count:number;market:string};error?:string};
 export const statusLabels:Record<string,string> = {reference:"Reference",needs_specification:"To specify",workspace_verified:"Workspace verified"};
 export function filterCatalog(items:CatalogRecord[],kind:CatalogKind,search:string,category:string,status:string,archived:boolean) {
  const q=search.trim().toLowerCase(); const names=new Map(items.map(r=>[r.id,r.name]));

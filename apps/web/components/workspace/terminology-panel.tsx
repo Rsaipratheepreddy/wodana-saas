@@ -2,7 +2,8 @@
 
 import { CheckCircle2, History, Pencil, RotateCcw } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { Badge, Button, Callout, ConfirmationDialog, ControlledModalDialog, InspectorSheet, TextInput } from "@/design-system";
+import { Badge, Button, Callout, ConfirmationDialog, InspectorSheet, TextInput, Skeleton, useDesignSystem, FormDialog } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import type { WorkspaceConfigurationRevision, WorkspaceTerminologyData, WorkspaceTerminologyItem } from "@/lib/workspace/company-profile";
 import styles from "./company-profile.module.css";
 
@@ -39,6 +40,8 @@ export function TerminologyPanel({
   workspaceId: string;
   onChange: (data: WorkspaceTerminologyData) => void;
 }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const [editing, setEditing] = useState<WorkspaceTerminologyItem | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<WorkspaceTerminologyItem | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -66,7 +69,7 @@ export function TerminologyPanel({
     const visibleName = draft.visibleName.trim();
     const visibleNamePlural = draft.visibleNamePlural.trim();
     if (!visibleName || !visibleNamePlural) {
-      setError("Enter both the singular and plural names.");
+      setError(t("Enter both the singular and plural names."));
       return;
     }
     setSaving(true);
@@ -78,7 +81,7 @@ export function TerminologyPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId, version: editing.version, visibleName, visibleNamePlural }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The workspace language could not be saved."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The workspace language could not be saved.")));
       const saved = await response.json() as WorkspaceTerminologyItem;
       const next = {
         items: items.map((item) => item.key === saved.key ? saved : item),
@@ -86,9 +89,9 @@ export function TerminologyPanel({
       };
       onChange(next);
       setEditing(null);
-      setNotice(`${saved.visibleName} language saved.`);
+      setNotice(t("{name} language saved.", { name: saved.visibleName }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The workspace language could not be saved.");
+      setError(failure instanceof Error ? failure.message : t("The workspace language could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -105,16 +108,16 @@ export function TerminologyPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId, version: restoreTarget.version }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The workspace language could not be restored."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The workspace language could not be restored.")));
       const restored = await response.json() as WorkspaceTerminologyItem;
       onChange({
         items: items.map((item) => item.key === restored.key ? restored : item),
         map: { ...(data?.map ?? {}), [restored.key]: { visibleName: restored.visibleName, visibleNamePlural: restored.visibleNamePlural } },
       });
       setRestoreTarget(null);
-      setNotice(`${restored.defaultVisibleName} restored to the Wodana default.`);
+      setNotice(t("{name} restored to the Wodana default.", { name: restored.defaultVisibleName }));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The workspace language could not be restored.");
+      setError(failure instanceof Error ? failure.message : t("The workspace language could not be restored."));
       setRestoreTarget(null);
     } finally {
       setRestoring(false);
@@ -128,11 +131,11 @@ export function TerminologyPanel({
     setHistoryError("");
     try {
       const response = await fetch(`/api/workspace/terminology/${item.key}/history?workspaceId=${encodeURIComponent(workspaceId)}`);
-      if (!response.ok) throw new Error(await responseMessage(response, "Workspace language history could not be loaded."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("Workspace language history could not be loaded.")));
       setRevisions(await response.json() as WorkspaceConfigurationRevision[]);
     } catch (failure) {
       setRevisions([]);
-      setHistoryError(failure instanceof Error ? failure.message : "Workspace language history could not be loaded.");
+      setHistoryError(failure instanceof Error ? failure.message : t("Workspace language history could not be loaded."));
     } finally {
       setHistoryLoading(false);
     }
@@ -149,7 +152,7 @@ export function TerminologyPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId, revisionId: rollbackTarget.id, version: current.version }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "Workspace language could not be restored."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("Workspace language could not be restored.")));
       const restored = await response.json() as WorkspaceTerminologyItem;
       onChange({
         items: items.map((item) => item.key === restored.key ? restored : item),
@@ -157,10 +160,10 @@ export function TerminologyPanel({
       });
       setHistoryTarget(restored);
       setRollbackTarget(null);
-      setNotice(`${restored.visibleName} restored from history.`);
+      setNotice(t("{name} restored from history.", { name: restored.visibleName }));
       await loadHistory(restored);
     } catch (failure) {
-      setHistoryError(failure instanceof Error ? failure.message : "Workspace language could not be restored.");
+      setHistoryError(failure instanceof Error ? failure.message : t("Workspace language could not be restored."));
       setRollbackTarget(null);
     } finally {
       setRollingBack(false);
@@ -168,7 +171,7 @@ export function TerminologyPanel({
   };
 
   const revisionLabel = (revision: WorkspaceConfigurationRevision) => {
-    const name = typeof revision.snapshot.visibleName === "string" ? revision.snapshot.visibleName : "Wodana default";
+    const name = typeof revision.snapshot.visibleName === "string" ? revision.snapshot.visibleName : t("Wodana default");
     const plural = typeof revision.snapshot.visibleNamePlural === "string" ? revision.snapshot.visibleNamePlural : "";
     return plural && plural !== name ? `${name} / ${plural}` : name;
   };
@@ -176,61 +179,47 @@ export function TerminologyPanel({
   if (!data && !unavailable) return null;
 
   return <>
-    <section aria-label={standalone ? "Workspace terminology" : undefined} aria-labelledby={standalone ? undefined : "terminology-heading"} className={`${styles.detailSection} ${styles.terminologySection}`}>
+    <section aria-label={standalone ? t("Workspace terminology") : undefined} aria-labelledby={standalone ? undefined : "terminology-heading"} className={`${styles.detailSection} ${styles.terminologySection}`}>
       <header>
         <div>
-          {standalone ? <p className={styles.standaloneSectionHint}>Use the words your team and clients already use. Existing records keep their data.</p> : <><h2 id="terminology-heading">Workspace language</h2><p className={styles.sectionHint}>Use the words your team and clients already use. Existing records keep their data.</p></>}
+          {standalone ? null : <><h2 id="terminology-heading">{t("Workspace language")}</h2><p className={styles.sectionHint}>{t("Use the words your team and clients already use. Existing records keep their data.")}</p></>}
         </div>
       </header>
-      {unavailable ? <Callout title="Workspace language unavailable" tone="warning">Refresh this page to load terminology settings.</Callout> : null}
+      {unavailable ? <Callout title={t("Workspace language unavailable")} tone="warning">{t("Refresh this page to load terminology settings.")}</Callout> : null}
       {notice ? <p aria-live="polite" className={styles.organizationNotice}><CheckCircle2 aria-hidden="true" size={14} />{notice}</p> : null}
-      {error ? <Callout title="Could not update workspace language" tone="danger">{error}</Callout> : null}
-      {data ? <ul aria-label="Workspace terminology" className={styles.terminologyList}>
+      {error ? <Callout title={t("Could not update workspace language")} tone="danger">{error}</Callout> : null}
+      {data ? <ul aria-label={t("Workspace terminology")} className={styles.terminologyList}>
         {items.map((item) => <li key={item.key}>
           <div>
             <strong>{item.visibleName}</strong>
-            <small>{item.visibleNamePlural} · {item.overridden ? `standard: ${itemLabel(item)}` : "Wodana default"}</small>
+            <small>{item.visibleNamePlural} · {item.overridden ? t("standard: {name}", { name: itemLabel(item) }) : t("Wodana default")}</small>
           </div>
           <div className={styles.terminologyActions}>
-            {item.overridden ? <Badge tone="neutral">Custom</Badge> : null}
-            {canManage ? <Button aria-label={`Edit ${item.defaultVisibleName} language`} onPress={() => openEdit(item)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />Edit</Button> : null}
+            {item.overridden ? <Badge tone="neutral">{t("Custom")}</Badge> : null}
+            {canManage ? <Button aria-label={t("Edit {name} language", { name: item.defaultVisibleName })} onPress={() => openEdit(item)} size="compact" variant="quiet"><Pencil aria-hidden="true" size={14} />{t("Edit")}</Button> : null}
           </div>
         </li>)}
       </ul> : null}
-      {!canManage && data ? <p className={styles.permissionNote}>Only workspace owners and administrators can change workspace language.</p> : null}
+      {!canManage && data ? <p className={styles.permissionNote}>{t("Only workspace owners and administrators can change workspace language.")}</p> : null}
     </section>
 
-    <ControlledModalDialog
-      description={editing ? `Choose how ${itemLabel(editing)} appears across this workspace.` : undefined}
-      footer={<div className="wd-dialog-actions">
-        {editing ? <Button isDisabled={saving} onPress={() => void loadHistory(editing)} variant="quiet"><History aria-hidden="true" size={14} />History</Button> : null}
-        {editing?.overridden ? <Button isDisabled={saving} onPress={() => { setEditing(null); setRestoreTarget(editing); }} variant="quiet"><RotateCcw aria-hidden="true" size={14} />Restore default</Button> : null}
-        <span />
-        <Button isDisabled={saving} onPress={() => setEditing(null)}>Cancel</Button>
-        <Button form="terminology-form" isLoading={saving} type="submit" variant="primary">Save language</Button>
-      </div>}
-      isDismissable={!saving}
-      isOpen={Boolean(editing)}
-      onOpenChange={(open) => { if (!open && !saving) setEditing(null); }}
-      title={editing ? `Edit ${editing.defaultVisibleName}` : "Edit workspace language"}
-    >
-      <form className={styles.terminologyForm} id="terminology-form" noValidate onSubmit={save}>
-        {error ? <Callout title="Could not update workspace language" tone="danger">{error}</Callout> : null}
-        <TextInput description="Used when referring to one record." isRequired label="Singular" onChange={(visibleName) => { setDraft((current) => current ? { ...current, visibleName } : current); setError(""); }} value={draft?.visibleName ?? ""} />
-        <TextInput description="Used in navigation, lists, and counts." isRequired label="Plural" onChange={(visibleNamePlural) => { setDraft((current) => current ? { ...current, visibleNamePlural } : current); setError(""); }} value={draft?.visibleNamePlural ?? ""} />
-      </form>
-    </ControlledModalDialog>
+    <FormDialog isOpen={Boolean(editing)} title={editing ? t("Edit {name}", { name: editing.defaultVisibleName }) : t("Edit workspace language")} onClose={() => { setEditing(null); }} isSubmitting={saving} submitLabel={t("Save language")} onSubmit={save} formClassName={styles.terminologyForm} secondaryAction={<>{editing ? <Button isDisabled={saving} onPress={() => void loadHistory(editing)} variant="quiet"><History aria-hidden="true" size={14} />{t("History")}</Button> : null}{editing?.overridden ? <Button isDisabled={saving} onPress={() => { setEditing(null); setRestoreTarget(editing); }} variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore default")}</Button> : null}<span /></>}>
+
+        {error ? <Callout title={t("Could not update workspace language")} tone="danger">{error}</Callout> : null}
+        <TextInput isRequired label={t("Singular")} onChange={(visibleName) => { setDraft((current) => current ? { ...current, visibleName } : current); setError(""); }} value={draft?.visibleName ?? ""} />
+        <TextInput isRequired label={t("Plural")} onChange={(visibleNamePlural) => { setDraft((current) => current ? { ...current, visibleNamePlural } : current); setError(""); }} value={draft?.visibleNamePlural ?? ""} />
+      
+</FormDialog>
 
     <InspectorSheet
-      description={historyTarget ? `Review changes to ${itemLabel(historyTarget)}. Restoring a revision creates a new revision; it never erases history.` : undefined}
       isOpen={Boolean(historyTarget)}
       onOpenChange={(open) => { if (!open && !rollingBack) setHistoryTarget(null); }}
       size="sm"
-      title={historyTarget ? `${historyTarget.defaultVisibleName} history` : "Workspace language history"}
+      title={historyTarget ? t("{name} history", { name: historyTarget.defaultVisibleName }) : t("Workspace language history")}
     >
-      {historyLoading ? <p className={styles.historyStatus}>Loading history…</p> : null}
-      {historyError ? <Callout title="History unavailable" tone="danger">{historyError}</Callout> : null}
-      {!historyLoading && !historyError && !revisions.length ? <p className={styles.historyStatus}>No changes have been saved yet.</p> : null}
+      {historyLoading ? <Skeleton lines={3} /> : null}
+      {historyError ? <Callout title={t("History unavailable")} tone="danger">{historyError}</Callout> : null}
+      {!historyLoading && !historyError && !revisions.length ? <p className={styles.historyStatus}>{t("No changes have been saved yet.")}</p> : null}
       {revisions.length ? <ol className={styles.revisionList}>
         {revisions.map((revision) => {
           const current = items.find((item) => item.key === historyTarget?.key) ?? historyTarget;
@@ -240,31 +229,31 @@ export function TerminologyPanel({
           return <li key={revision.id}>
             <div className={styles.revisionHeading}>
               <strong>{revisionLabel(revision)}</strong>
-              {isCurrent ? <Badge tone="neutral">Current</Badge> : null}
+              {isCurrent ? <Badge tone="neutral">{t("Current")}</Badge> : null}
             </div>
-            <small>Revision {revision.revisionNumber} · {new Date(revision.createdAt).toLocaleString()}</small>
-            <p>{revision.changes.length ? `${revision.changes.length} changed ${revision.changes.length === 1 ? "field" : "fields"}` : "No visible field changes"}</p>
-            {canManage && !isCurrent ? <Button isDisabled={rollingBack} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet"><RotateCcw aria-hidden="true" size={14} />Restore this revision</Button> : null}
+            <small>{t("Revision {number}", { number: revision.revisionNumber })} · {new Date(revision.createdAt).toLocaleString(locale, { timeZone })}</small>
+            <p>{revision.changes.length ? (revision.changes.length === 1 ? t("1 changed field") : t("{count} changed fields", { count: revision.changes.length })) : t("No visible field changes")}</p>
+            {canManage && !isCurrent ? <Button isDisabled={rollingBack} onPress={() => setRollbackTarget(revision)} size="compact" variant="quiet"><RotateCcw aria-hidden="true" size={14} />{t("Restore this revision")}</Button> : null}
           </li>;
         })}
       </ol> : null}
     </InspectorSheet>
 
     <ConfirmationDialog
-      body={restoreTarget ? <>Restore <strong>{itemLabel(restoreTarget)}</strong> to the Wodana default? This changes the labels shown in this workspace.</> : null}
-      confirmLabel={restoring ? "Restoring…" : "Restore default"}
+      body={restoreTarget ? t("Restore {name} to the Wodana default? This changes the labels shown in this workspace.", { name: itemLabel(restoreTarget) }) : null}
+      confirmLabel={restoring ? t("Restoring…") : t("Restore default")}
       isOpen={Boolean(restoreTarget)}
       onConfirm={() => void restore()}
       onOpenChange={(open) => { if (!open && !restoring) setRestoreTarget(null); }}
-      title="Restore default language?"
+      title={t("Restore default language?")}
     />
     <ConfirmationDialog
-      body={rollbackTarget ? <>Restore <strong>{revisionLabel(rollbackTarget)}</strong>? The current value stays in history and can be restored later.</> : null}
-      confirmLabel={rollingBack ? "Restoring…" : "Restore revision"}
+      body={rollbackTarget ? t("Restore {name}? The current value stays in history and can be restored later.", { name: revisionLabel(rollbackTarget) }) : null}
+      confirmLabel={rollingBack ? t("Restoring…") : t("Restore revision")}
       isOpen={Boolean(rollbackTarget)}
       onConfirm={() => void rollback()}
       onOpenChange={(open) => { if (!open && !rollingBack) setRollbackTarget(null); }}
-      title="Restore this language revision?"
+      title={t("Restore this language revision?")}
     />
   </>;
 }

@@ -1,0 +1,281 @@
+import { Dec } from "../catalog-core/decimal";
+import type { ReportFilters } from "./report-scope";
+import { href } from "./report-scope";
+
+/**
+ * The shape every management KPI is built from. A KPI query returns *facts* — one row per record behind the figure
+ * (a won proposal, a receipt, a lead…) with the dimensions its chart groups by — and the figure, the chart and the
+ * drill-down list are all read from the same facts, so a bar always reconciles with the records it opens.
+ */
+export type RecordKind = "lead" | "opportunity" | "case" | "project" | "quote" | "approval" | "invoice" | "receipt" | "refund"
+  | "project_money" | "handover" | "work_order" | "finance_request" | "bill" | "supplier_payment" | "petty_cash" | "stock_item" | "purchase_order" | "snag";
+
+export type Fact = {
+  id: string;
+  kind: RecordKind;
+  /** The case or project the link opens (cases and quotes link through their case). */
+  parentId: string | null;
+  reference: string | null;
+  title: string;
+  client: string | null;
+  owner: string | null;
+  ownerId: string | null;
+  /** The moment that places the record in the period (ISO), or its due date. */
+  at: string | null;
+  /** Money in the workspace's base currency (decimal text), already net of tax unless the KPI says otherwise. */
+  amount: string | null;
+  /** A KPI-specific measure (hours, days, a margin %), decimal text. */
+  measure: string | null;
+  /** A short status or reason, shown as written (stage names, reasons, statuses). */
+  detail: string | null;
+  /** What the charts group by. `period` = "1" when the record falls in the chosen period. */
+  dims: Record<string, string>;
+};
+
+export type Unit = "count" | "money" | "percent" | "hours" | "days";
+
+export type ChartSeries = { id: string; label: string };
+export type ChartCategory = { key: string; label: string };
+export type Chart =
+  | { type: "columns"; dimension: string; seriesDimension?: string; categories: ChartCategory[]; series: ChartSeries[]; values: string[][]; unit: Unit;
+      /** A line over the columns in the same unit (e.g. invoiced over cash collected), one value per category; its points open `series=<id>`. */
+      line?: { id: string; label: string; values: Array<string | null> } }
+  | { type: "lines"; dimension: string; categories: ChartCategory[]; series: ChartSeries[]; values: Array<Array<string | null>>; unit: Unit }
+  | { type: "bars"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount?: string | null; target?: TargetResult | null;
+      /** Figures shown beside the bar (e.g. a source's step rates), keyed by name. */
+      extra?: Record<string, string | number | null> }>; unit: Unit }
+  | { type: "donut"; dimension: string; items: Array<{ key: string; label: string; value: string; count: number; amount: string | null }>; unit: Unit }
+  | { type: "funnel"; dimension: string; items: Array<{ key: string; label: string; value: string; rate: string | null }> }
+  | { type: "gauge"; percent: string | null; target: string | null }
+  /** A month calendar (the logistics calendar): how many records fall on each day, per series; a day opens `day=<YYYY-MM-DD>`. */
+  | { type: "calendar"; dimension: string; seriesDimension: string; month: string; weekStart: number; entries: Array<{ day: string; series: string; count: number }> }
+  | { type: "list"; bucket: string };
+
+export type TargetResult = {
+  /** The target for the period (decimal text, the KPI's unit). */
+  target: string;
+  /** Actual ÷ target × 100 (target ÷ actual when lower is better), one decimal; null when it can't be divided. */
+  percent: string | null;
+  /** Target − actual (actual − target when lower is better). */
+  gap: string;
+  tone: "success" | "warning" | "danger";
+};
+
+export type Kpi = {
+  code: string;
+  unit: Unit;
+  /** The figure (decimal text); null when the data it needs isn't recorded yet ("Not enough data yet"). */
+  value: string | null;
+  count: number;
+  /** Money next to a count (e.g. Won: count and value). */
+  amount?: string | null;
+  /** The KPI has a target in Settings. */
+  targetable: boolean;
+  /** undefined: not targetable or no target set; null with targetHidden: a filter other than period and Account Manager is on. */
+  target?: TargetResult | null;
+  targetHidden?: boolean;
+  chart?: Chart;
+  /**
+   * Records left out of money because they are in another currency, and money whose tax could not be separated;
+   * `basis` says what a figure is read from (the Ledger's journals, or Wodana's own records).
+   */
+  notes?: { otherCurrency?: number; taxIncluded?: number; amountsIncludeTax?: boolean; target?: string; basis?: "ledger" | "records" | "mixed";
+    /** Part of what the figure is about that isn't recorded in Wodana yet (e.g. commission payments), so it isn't shown as zero. */
+    notRecorded?: string };
+  /** Extra figures shown with the main one (e.g. average deal size), decimal text keyed by name. */
+  extra?: Record<string, string | number | null>;
+  /**
+   * The same figure for the span just before the period (`previousPeriod`), and the change: (now − before) ÷ |before|
+   * × 100, one decimal; null when there was nothing before. `better` says which way is good news.
+   */
+  previous?: { from: string; to: string; value: string | null; change: string | null; better: Better };
+};
+
+/** Which way a figure is good news, for its comparison with the period before. */
+export type Better = "higher" | "lower" | "neutral";
+
+export type Dashboard = {
+  dashboard: string; currency: string; timeZone: string; from: string; to: string; generatedAt: string; kpis: Kpi[];
+  /** Which KPIs the page shows as figures and charts, and its "needs attention" list (its first rows). */
+  layout?: { tiles: string[]; charts: string[]; attention: string | null; lists?: string[] };
+  attention?: { kpi: string; total: number; records: RecordRow[] } | null;
+  /** The layout's lists (a KPI that is a list on the dashboard, e.g. payables by due date): their first rows. */
+  lists?: Array<{ kpi: string; total: number; records: RecordRow[] }>;
+};
+
+/** (now − before) ÷ |before| × 100, one decimal; null when there's no figure before or it was zero. */
+export function change(now: string | null, before: string | null): string | null {
+  if (now === null || before === null) return null;
+  const base = Dec.of(before);
+  if (base.isZero()) return null;
+  return Dec.of(now).sub(base).mul(100).div(base.abs()).round(1).toFixed(1);
+}
+
+// ------------------------------------------------------------------ money and numbers
+
+export const sum = (values: Array<string | null | undefined>) => values.reduce<Dec>((total, value) => (value ? total.add(value) : total), Dec.ZERO);
+export const fixed = (value: Dec, places: number) => value.toFixed(places);
+/** a ÷ b × 100, one decimal; null when b is zero. */
+export const percent = (a: Dec | number, b: Dec | number) => {
+  const denominator = Dec.of(b instanceof Dec ? b : String(b));
+  if (denominator.isZero()) return null;
+  return Dec.of(a instanceof Dec ? a : String(a)).mul(100).div(denominator).toFixed(1);
+};
+export const mean = (values: string[], places: number) => (values.length ? sum(values).div(values.length).toFixed(places) : null);
+
+export function inPeriod(fact: Fact) { return fact.dims.period === "1"; }
+
+/** A needs-attention list's order: most days late first; things not late yet (expiring, waiting) after them, soonest first. */
+export function byUrgency(facts: Fact[]) {
+  return facts.sort((a, b) => Number(b.measure ?? "-1e9") - Number(a.measure ?? "-1e9") || (a.at ?? "").localeCompare(b.at ?? ""));
+}
+
+// ------------------------------------------------------------------ calendar categories
+
+const iso = (date: Date) => date.toISOString().slice(0, 10);
+
+/** The 12 months ending with the period's last month, oldest first (YYYY-MM). */
+export function monthKeys(filters: Pick<ReportFilters, "to">): string[] {
+  const [year, monthNumber] = filters.to.split("-").map(Number);
+  return Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(Date.UTC(year, monthNumber - 1 - (11 - index), 1));
+    return iso(date).slice(0, 7);
+  });
+}
+
+/** The 12 weeks (start dates) ending with the week of the period's last day, on the workspace's week start. */
+export function weekKeys(filters: Pick<ReportFilters, "to">, weekStart: number): string[] {
+  const last = new Date(`${filters.to}T00:00:00Z`);
+  const start = new Date(last.getTime() - ((last.getUTCDay() - weekStart + 7) % 7) * 86_400_000);
+  return Array.from({ length: 12 }, (_, index) => iso(new Date(start.getTime() - (11 - index) * 7 * 86_400_000)));
+}
+
+export const categories = (keys: string[]): ChartCategory[] => keys.map((key) => ({ key, label: key }));
+
+/** Count or money per category (and series) from facts. */
+export function grid(facts: Fact[], dimension: string, keys: string[], series: ChartSeries[], seriesDimension: string | null, measure: "count" | "amount", places: number) {
+  return series.map((item) => keys.map((key) => {
+    const matched = facts.filter((fact) => fact.dims[dimension] === key && (!seriesDimension || fact.dims[seriesDimension] === item.id));
+    return measure === "count" ? String(matched.length) : sum(matched.map((fact) => fact.amount)).toFixed(places);
+  }));
+}
+
+/** Groups facts by a dimension, biggest first (by amount when money, else by count). */
+export function groupBy(facts: Fact[], dimension: string, label: (fact: Fact) => string, places: number) {
+  const groups = new Map<string, { key: string; label: string; count: number; amount: Dec; facts: Fact[] }>();
+  for (const fact of facts) {
+    const key = fact.dims[dimension] ?? "none";
+    const group = groups.get(key) ?? { key, label: label(fact), count: 0, amount: Dec.ZERO, facts: [] };
+    group.count += 1;
+    if (fact.amount) group.amount = group.amount.add(fact.amount);
+    group.facts.push(fact);
+    groups.set(key, group);
+  }
+  return [...groups.values()].map((group) => ({ ...group, amountText: group.amount.toFixed(places) }));
+}
+
+/**
+ * Keeps the `keep` biggest groups of a dimension (by amount when `by` is "amount", else by count; ties by key) as
+ * their own `into` value and folds the rest into "other", so a chart and its drill-down use the same groups.
+ */
+export function topGroups(facts: Fact[], dimension: string, into: string, keep: number, by: "count" | "amount" = "count") {
+  const weights = new Map<string, { count: number; amount: Dec }>();
+  for (const fact of facts) {
+    const key = fact.dims[dimension] ?? "none";
+    const weight = weights.get(key) ?? { count: 0, amount: Dec.ZERO };
+    weight.count += 1;
+    if (fact.amount) weight.amount = weight.amount.add(fact.amount);
+    weights.set(key, weight);
+  }
+  const top = [...weights.entries()]
+    .sort((a, b) => (by === "amount" ? b[1].amount.cmp(a[1].amount) : 0) || b[1].count - a[1].count || a[0].localeCompare(b[0]))
+    .slice(0, keep).map(([key]) => key);
+  for (const fact of facts) fact.dims[into] = top.includes(fact.dims[dimension] ?? "none") ? fact.dims[dimension] ?? "none" : "other";
+  return { top, hasOther: facts.some((fact) => fact.dims[into] === "other") };
+}
+
+/** How many facts fall on each day per series (a calendar's entries), by day then series. */
+export function calendarEntries(facts: Fact[], dayDimension: string, seriesDimension: string) {
+  const counts = new Map<string, { day: string; series: string; count: number }>();
+  for (const fact of facts) {
+    const day = fact.dims[dayDimension], series = fact.dims[seriesDimension];
+    if (!day || !series) continue;
+    const entry = counts.get(`${day}|${series}`) ?? { day, series, count: 0 };
+    entry.count += 1;
+    counts.set(`${day}|${series}`, entry);
+  }
+  return [...counts.values()].sort((a, b) => a.day.localeCompare(b.day) || a.series.localeCompare(b.series));
+}
+
+// ------------------------------------------------------------------ drill-down
+
+/** Bucket text from a chart click: `dimension=value;dimension=value` (values are dimension values, never SQL). */
+export function parseBucket(bucket: string | undefined | null): Record<string, string> {
+  if (!bucket) return { period: "1" };
+  const out: Record<string, string> = {};
+  for (const part of bucket.split(";").slice(0, 4)) {
+    const at = part.indexOf("=");
+    if (at <= 0) continue;
+    out[part.slice(0, at).slice(0, 40)] = part.slice(at + 1).slice(0, 200);
+  }
+  return Object.keys(out).length ? out : { period: "1" };
+}
+
+export function matchBucket(facts: Fact[], bucket: Record<string, string>) {
+  return facts.filter((fact) => Object.entries(bucket).every(([key, value]) => fact.dims[key] === value));
+}
+
+export type RecordRow = Omit<Fact, "dims" | "parentId"> & { href: string };
+
+/**
+ * The page that opens a record: its own record where it has one, else the project or case it belongs to. A fact's id
+ * may carry a suffix after ":" (one record counted in several buckets); `parentId` is then the record itself.
+ */
+export function recordHref(fact: Pick<Fact, "kind" | "id" | "parentId">): string {
+  const { kind, parentId } = fact;
+  const id = fact.id.split(":")[0];
+  switch (kind) {
+    case "lead": return href.lead(id);
+    case "opportunity": return href.opportunity(id);
+    case "project": return href.project(id);
+    case "quote": return href.quote(parentId ?? "", fact.id);
+    case "approval": return href.case(parentId ?? id, "execution-release");
+    case "invoice": return href.invoice(id);
+    case "refund": case "finance_request": return href.financeRequest(id);
+    case "project_money": return href.projectSection(id, "money");
+    case "handover": return href.projectSection(id, "handover");
+    case "work_order": return href.workOrder(id);
+    case "bill": return href.bill(id);
+    case "supplier_payment": return href.supplierPayment(id);
+    case "petty_cash": return href.pettyCash(id);
+    case "stock_item": return href.stockItem(id);
+    case "purchase_order": return href.purchaseOrder(id);
+    case "snag": return href.snag(parentId ?? "", id);
+    default: return href.case(parentId ?? id);
+  }
+}
+
+export function recordRow(fact: Fact): RecordRow {
+  const { dims: _dims, parentId: _parentId, ...rest } = fact;
+  return { ...rest, href: recordHref(fact) };
+}
+
+// ------------------------------------------------------------------ row mapping
+
+export type FactRow = {
+  id: string; kind: RecordKind; parent_id: string | null; reference: string | null; title: string | null; client: string | null; owner: string | null;
+  owner_id: string | null; at: Date | string | null; amount: string | null; measure: string | null; detail: string | null; dims: Record<string, unknown> | null;
+};
+
+export function toFact(row: FactRow): Fact {
+  const dims: Record<string, string> = {};
+  for (const [key, value] of Object.entries(row.dims ?? {})) if (value !== null && value !== undefined) dims[key] = String(value);
+  return {
+    id: String(row.id), kind: row.kind, parentId: row.parent_id ? String(row.parent_id) : null, reference: row.reference ?? null,
+    title: row.title ?? row.reference ?? "", client: row.client ?? null, owner: row.owner ?? null, ownerId: row.owner_id ? String(row.owner_id) : null,
+    at: row.at instanceof Date ? row.at.toISOString() : row.at ?? null, amount: row.amount ?? null, measure: row.measure ?? null, detail: row.detail ?? null, dims,
+  };
+}
+
+/** The columns a fact query selects, in order (each KPI's SQL ends with these). */
+export const FACT_COLUMNS = "id, kind, parent_id, reference, title, client, owner, owner_id, at, amount, measure, detail, dims";

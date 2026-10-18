@@ -39,12 +39,3 @@ export function draftFromImportedPrice(record:CatalogRecord,price:ImportedPrice,
  const priceType=price.key.toLowerCase().startsWith('selling_')?'selling':price.key.toLowerCase().startsWith('purchase_')?'purchase':price.key.toLowerCase().startsWith('base_')||price.key.toLowerCase().startsWith('cost_')||price.key.toLowerCase().startsWith('estimated_cost_')?'cost':undefined;
  return {...blank,links:[...blank.links.filter(l=>l.relation!=='unit'),...(unitId?[{relation:'unit',targetId:unitId}]:[])],configuration:{amount:price.amount,currency:price.currency,...(priceType?{priceType}:{}),reference:`Imported ${price.key}${sourceUnit?` · source unit ${sourceUnit}`:''}`}};
 }
-export function priceLabel(rate:CatalogRecord,items:CatalogRecord[]) {
-  const amount=rate.configuration?.amount;
-  if(amount===undefined||amount==="")return "Price not set";
-  const currency=String(rate.configuration?.currency||"INR");
-  let value=`${currency} ${amount}`;
-  try {value=new Intl.NumberFormat("en-IN",{style:"currency",currency,maximumFractionDigits:2}).format(Number(amount));} catch {/* Retain workspace currency text. */}
-  const unit=items.find(r=>r.id===rate.links.find(l=>l.relation==="unit")?.targetId);
-  return `${value}${unit?` / ${unit.name}`:""}`;
-}

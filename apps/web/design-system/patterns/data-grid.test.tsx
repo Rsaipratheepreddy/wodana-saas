@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -13,17 +15,30 @@ describe("DataGrid", () => {
     render(<DesignSystemProvider><DataGrid ariaLabel="Customer organizations" columns={columns} data={[]} getRowId={(row) => row.id} isLoading /></DesignSystemProvider>);
     expect(screen.getByRole("status", { name: "Loading Customer organizations" })).toBeInTheDocument();
     expect(screen.queryByText("No records found")).not.toBeInTheDocument();
+    // No count while loading: "0 records" under the placeholders would be untrue (m21).
+    expect(screen.queryByText("0 records")).not.toBeInTheDocument();
   });
-  it("exports filtered rows across pages and selected rows through the direct Export button", async () => {
+  it("doesn't tell people to adjust filters on a grid that has none", () => {
+    const { unmount } = render(<DesignSystemProvider><DataGrid ariaLabel="Viewed as you" columns={columns} data={[]} getRowId={(row) => row.id} showToolbar={false} emptyTitle="Nobody has viewed as you" /></DesignSystemProvider>);
+    expect(screen.getByText("Nobody has viewed as you")).toBeInTheDocument();
+    expect(screen.queryByText("Create a record or adjust the current filters.")).not.toBeInTheDocument();
+    unmount();
+    render(<DesignSystemProvider><DataGrid ariaLabel="Customers" columns={columns} data={[]} getRowId={(row) => row.id} /></DesignSystemProvider>);
+    expect(screen.getByText("Create a record or adjust the current filters.")).toBeInTheDocument();
+  });
+  it("exports filtered rows across pages and selected rows from the table options menu", async () => {
     const user = userEvent.setup(), onExport = vi.fn();
     const data = [{id:'1',name:'Palm A',stage:'New'}, {id:'2',name:'Palm B',stage:'New'}, {id:'3',name:'Villa',stage:'New'}];
     render(<DesignSystemProvider><DataGrid ariaLabel="Export records" columns={columns} data={data} getRowId={row => row.id} pageSize={1} onExport={onExport}/></DesignSystemProvider>);
     expect(screen.queryByRole("button", { name: "Actions" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
     await user.type(screen.getByRole("searchbox", { name: "Search records" }), "Palm");
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: "Export filtered rows" }));
     expect(onExport).toHaveBeenLastCalledWith(data.slice(0,2));
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("checkbox", { name: "Select row 1" }));
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: "Export selected rows" }));
     expect(onExport).toHaveBeenLastCalledWith([data[0]]);
   });
@@ -31,7 +46,7 @@ describe("DataGrid", () => {
     const user = userEvent.setup();
     render(<DesignSystemProvider><DataGrid ariaLabel="Columns" columns={columns} data={rows} getRowId={row => row.id} initialColumnVisibility={{ stage: false }}/></DesignSystemProvider>);
     expect(screen.queryByRole("columnheader", { name: "Stage" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Manage columns" }));
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     expect(screen.getByRole("checkbox", { name: "Name" })).toBeDisabled();
     await user.click(screen.getByRole("checkbox", { name: "Stage" }));
     await user.click(screen.getByRole("button", { name: "Reset columns" }));
@@ -39,14 +54,15 @@ describe("DataGrid", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("columnheader", { name: "Stage" })).not.toBeInTheDocument();
   });
-  it("sorts across pages through the nested sort picker and keeps row numbers in display order", async () => {
+  it("sorts across pages from the table options menu and keeps row numbers in display order", async () => {
     const user = userEvent.setup();
     const data = [{id:'1',name:'Zebra',stage:'New'}, {id:'2',name:'Alpha',stage:'New'}, {id:'3',name:'Beta',stage:'New'}];
     render(<DesignSystemProvider><DataGrid ariaLabel="Sorted records" columns={columns} data={data} getRowId={row => row.id} pageSize={2}/></DesignSystemProvider>);
-    await user.click(screen.getByRole("button", { name: "Sort" }));
+    await user.click(screen.getByRole("button", { name: "Table options" }));
     await user.click(screen.getByRole("button", { name: /Sort by/ }));
     await user.click(screen.getByRole("option", { name: "Name" }));
-    await user.click(screen.getByRole("button", { name: "Done" }));
+    // Close the options panel the way people do: click outside it.
+    await user.click(screen.getAllByRole("button", { name: "Dismiss" })[0]);
     const table = screen.getByRole("table", { name: "Sorted records" });
     expect(within(table).getAllByRole("row").slice(1).map(row => row.textContent)).toEqual(['1AlphaNew','2BetaNew']);
     await user.click(screen.getByRole("button", { name: "Next page" }));
@@ -69,6 +85,19 @@ describe("DataGrid", () => {
     render(<DesignSystemProvider><DataGrid ariaLabel="Projects" columns={columns} data={rows} getRowId={(row) => row.id} renderInspector={(row) => <span>Inspector: {row.name}</span>} /></DesignSystemProvider>);
     await user.click(screen.getByRole("button", { name: "Palm Villa" }));
     expect(screen.getByRole("dialog")).toHaveTextContent("Inspector: Palm Villa");
+  });
+  it("never nests a cell's own link or button inside the row's open button (M1)", async () => {
+    const user = userEvent.setup(), open = vi.fn(), start = vi.fn();
+    const own: DataGridColumn<Row>[] = [{ accessorKey: "name", header: "Name", meta: { primary: true, interactive: true, renderCell: (row) => row.id === "1"
+      ? <a href={`/records/${row.id}`}>{row.name}</a> : <button type="button" onClick={start}>{row.name}</button> } }, { accessorKey: "stage", header: "Stage" }];
+    const { container } = render(<DesignSystemProvider><DataGrid ariaLabel="Own links" columns={own} data={[...rows, { id: "2", name: "Lead", stage: "New" }]} getRowId={(row) => row.id} onRowAction={open} /></DesignSystemProvider>);
+    expect(container.querySelector("button button, button a, a button, a a")).toBeNull();
+    expect(screen.getByRole("link", { name: "Palm Villa" })).toHaveAttribute("href", "/records/1");
+    await user.click(screen.getByRole("button", { name: "Lead" }));
+    expect(start).toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("cell", { name: "Design" }));
+    expect(open).toHaveBeenCalledWith(rows[0]);
   });
   it("commits inline edits with Enter", async () => {
     const user = userEvent.setup();
@@ -113,10 +142,29 @@ describe("DataGrid", () => {
     expect(screen.queryByText("Palm Villa")).not.toBeInTheDocument();
     expect(screen.getByText("No records found")).toBeInTheDocument();
   });
-  it("supports a flush, non-selectable directory table", () => {
-    render(<DesignSystemProvider><DataGrid appearance="flush" ariaLabel="Directory" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} showFooter={false} /></DesignSystemProvider>);
+  it("supports a non-selectable directory table", () => {
+    render(<DesignSystemProvider><DataGrid ariaLabel="Directory" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} showFooter={false} /></DesignSystemProvider>);
     expect(screen.getByRole("table", { name: "Directory" })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
     expect(screen.queryByText(/per page/)).not.toBeInTheDocument();
+  });
+  it("has one table look: the shared frame, with column lines only for sheets that ask", () => {
+    const { container, rerender } = render(<DesignSystemProvider><DataGrid ariaLabel="Compact projects" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} /></DesignSystemProvider>);
+    const grid = container.querySelector(".wd-data-grid");
+    expect(grid).not.toHaveAttribute("data-appearance");
+    expect(grid).not.toHaveAttribute("data-grid-lines");
+    expect(grid?.querySelector(".wd-table-scroll > table.wd-table")).not.toBeNull();
+    rerender(<DesignSystemProvider><DataGrid gridLines ariaLabel="Compact projects" columns={columns} data={rows} getRowId={(row) => row.id} selectable={false} /></DesignSystemProvider>);
+    expect(container.querySelector(".wd-data-grid")).toHaveAttribute("data-grid-lines", "true");
+    expect(screen.getByRole("table", { name: "Compact projects" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("shows each row's checkbox when there is no row number in its place, as the header's is (UX-061)", () => {
+    render(<DesignSystemProvider><DataGrid ariaLabel="Supplier invoices" columns={columns} data={rows} getRowId={(row) => row.id} rowNumbers={false} /></DesignSystemProvider>);
+    expect(screen.getByRole("checkbox", { name: "Select row 1" }).closest(".wd-row-index")).not.toHaveAttribute("data-numbered");
+    const css = readFileSync(join(__dirname, "../styles/record-tables.css"), "utf8");
+    // Only a numbered cell hides its checkbox until hover.
+    expect(css).toContain(".wd-row-index[data-selectable][data-numbered] > .wd-checkbox { opacity: 0; }");
   });
 });

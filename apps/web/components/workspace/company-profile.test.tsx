@@ -17,7 +17,8 @@ describe("CompanyProfile", () => {
     render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
 
     expect(screen.getByRole("heading", { name: "Company profile" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Iglo Architects" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    expect(screen.getByText("Iglo Architects")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Legal & tax" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Registered office" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Regional defaults" })).toBeInTheDocument();
@@ -67,9 +68,8 @@ describe("CompanyProfile", () => {
     await interaction.clear(name);
     await interaction.click(within(dialog).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => {
-      expect(within(dialog).getAllByText("Enter a company name.")).toHaveLength(2);
-    });
+    // The empty required name blocks the save, and the summary names it.
+    expect(await within(dialog).findByText("Check 1 field")).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => url === "/api/workspace/company-profile")).toBe(false);
 
     await interaction.type(name, "Iglo Architecture");
@@ -94,6 +94,57 @@ describe("CompanyProfile", () => {
     render(<CompanyProfile canManage={false} initialData={structuredClone(companyProfileFixture)} />);
     expect(screen.queryByRole("button", { name: "Edit profile" })).not.toBeInTheDocument();
     expect(screen.getByText(/Only workspace owners and administrators/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upload background" })).not.toBeInTheDocument();
+  });
+
+  it("uploads a sign-in background through the short-lived upload, previews it, and removes it after confirmation", async () => {
+    const interaction = userEvent.setup();
+    const assetId = "7c1d0c2e-3b51-4a39-9f6e-0d7c1a2b3c4d";
+    const workspaceId = companyProfileFixture.workspace.id;
+    const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "/api/workspace/company-profile/login-background-uploads") {
+        return { ok: true, json: async () => ({ assetId, uploadMode: "application", uploadUrl: null, uploadHeaders: { "content-type": "image/jpeg" } }) };
+      }
+      if (url.endsWith("/complete?workspaceId=" + workspaceId)) {
+        return { ok: true, json: async () => ({ assetId, loginBackgroundUrl: `/api/auth/tenant-background/iglo-architects?v=${assetId}`, updatedAt: "2026-10-15T08:00:00.000Z" }) };
+      }
+      return { ok: true, json: async () => ({ uploaded: true, removed: true }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
+
+    expect(screen.getByText("Sign-in background")).toBeInTheDocument();
+    expect(screen.getByText("Default")).toBeInTheDocument();
+    const file = new File([new Uint8Array(2048)], "showroom.jpg", { type: "image/jpeg" });
+    await interaction.upload(screen.getByLabelText("Choose sign-in background"), file);
+
+    await waitFor(() => expect(screen.getByText("Sign-in background updated.")).toBeInTheDocument());
+    const started = fetchMock.mock.calls.find(([url]) => url === "/api/workspace/company-profile/login-background-uploads");
+    expect(JSON.parse(String(started?.[1]?.body))).toEqual({ workspaceId, filename: "showroom.jpg", mimeType: "image/jpeg", byteSize: 2048 });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/workspace/company-profile/login-background-uploads/${assetId}/content?workspaceId=${workspaceId}`,
+      expect.objectContaining({ method: "PUT", body: file }));
+    expect(screen.getByRole("img", { name: "Sign-in background" })).toHaveAttribute("src", `/api/auth/tenant-background/iglo-architects?v=${assetId}`);
+
+    await interaction.click(screen.getAllByRole("button", { name: "Remove" }).at(-1)!);
+    const dialog = await screen.findByRole("dialog", { name: "Remove sign-in background?" });
+    await interaction.click(within(dialog).getByRole("button", { name: "Remove background" }));
+    await waitFor(() => expect(screen.getByText("Sign-in background removed.")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith(`/api/workspace/company-profile/login-background?workspaceId=${workspaceId}`, { method: "DELETE" });
+    expect(screen.queryByRole("img", { name: "Sign-in background" })).not.toBeInTheDocument();
+    expect(screen.getByText("Default")).toBeInTheDocument();
+  });
+
+  it("refuses a sign-in background over 10 MB before uploading anything", async () => {
+    const interaction = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CompanyProfile canManage initialData={structuredClone(companyProfileFixture)} />);
+    const file = new File(["x"], "huge.png", { type: "image/png" });
+    Object.defineProperty(file, "size", { value: 10 * 1024 * 1024 + 1 });
+    await interaction.upload(screen.getByLabelText("Choose sign-in background"), file);
+    expect(await screen.findByText("Sign-in background must be 10 MB or smaller.")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("login-background"))).toBe(false);
   });
 
   it("loads only locations for the company country and selected administrative area", async () => {

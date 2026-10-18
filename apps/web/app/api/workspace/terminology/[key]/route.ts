@@ -1,4 +1,5 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 const TERMINOLOGY_KEY = /^[a-z][a-z_]{1,59}$/;
 
@@ -11,13 +12,14 @@ function visibleName(value: unknown): value is string {
 }
 
 export async function PUT(request: Request, { params }: { params: Promise<{ key: string }> }) {
-  if (!isSameOrigin(request)) return invalidRequest("This request must come from the workspace.");
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return invalidRequest(t("This request must come from the workspace."));
   const { key } = await params;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
-  if (!UUID.test(workspaceId) || !TERMINOLOGY_KEY.test(key)) return invalidRequest("A valid workspace and terminology item are required.");
+  if (!UUID.test(workspaceId) || !TERMINOLOGY_KEY.test(key)) return invalidRequest(t("A valid workspace and terminology item are required."));
   if (!isVersion(body?.version) || !visibleName(body?.visibleName) || !visibleName(body?.visibleNamePlural)) {
-    return invalidRequest("Enter a singular and plural name, each up to 60 characters.");
+    return invalidRequest(t("Enter a singular and plural name, each up to 60 characters."));
   }
   return workspaceJsonResponse(`/workspaces/${workspaceId}/terminology/${key}`, {
     method: "PUT",
@@ -27,21 +29,22 @@ export async function PUT(request: Request, { params }: { params: Promise<{ key:
       visibleName: body.visibleName.trim(),
       visibleNamePlural: body.visibleNamePlural.trim(),
     }),
-  }, "Workspace terminology could not be saved.");
+  }, t("Workspace terminology could not be saved."));
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ key: string }> }) {
-  if (!isSameOrigin(request)) return invalidRequest("This request must come from the workspace.");
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return invalidRequest(t("This request must come from the workspace."));
   const { key } = await params;
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
   if (!UUID.test(workspaceId) || !TERMINOLOGY_KEY.test(key) || !isVersion(body?.version, 1)) {
-    return invalidRequest("A valid workspace, terminology item, and version are required.");
+    return invalidRequest(t("A valid workspace, terminology item, and version are required."));
   }
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/terminology/${key}?version=${body.version}`,
     { method: "DELETE" },
-    "Workspace terminology could not be restored.",
+    t("Workspace terminology could not be restored."),
   );
 }
 

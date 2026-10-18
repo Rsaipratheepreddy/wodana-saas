@@ -3,6 +3,7 @@ export type ProjectWorkflowPhase = "planning" | "active" | "handover" | "complet
 export type ProjectWorkflowGate =
   | "project_manager_assigned"
   | "tasks_planned"
+  | "production_plan_ready"
   | "all_tasks_closed"
   | "all_snags_closed"
   | "all_handovers_accepted"
@@ -29,6 +30,7 @@ export type ProjectWorkflowStage = {
   phase: ProjectWorkflowPhase;
   ownerRole: ProjectWorkflowRole | null;
   exitGates: ProjectWorkflowGate[];
+  releaseStart?: boolean;
 };
 
 export type ProjectWorkflowTemplate = {

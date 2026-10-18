@@ -34,6 +34,12 @@ export type LegalEntityRecord = {
   taxRegistrationNumber: string | null;
   registrationNumber: string | null;
   address: CompanyAddress;
+  /** What the business's documents print (PLM-112). */
+  phone?: string | null;
+  email?: string | null;
+  letterheadFooter?: string | null;
+  logoUrl?: string | null;
+  letterheadUrl?: string | null;
   status: string;
   version: number;
   createdAt: string;
@@ -96,6 +102,9 @@ export type CompanyProfileData = {
     logoAssetId: string | null;
     logoUrl: string | null;
     logoUpdatedAt: string | null;
+    /** The tenant's own sign-in background; null: the default image. */
+    loginBackgroundAssetId?: string | null;
+    loginBackgroundUrl?: string | null;
     primaryColor: string | null;
     secondaryColor: string | null;
     headingFont: string | null;
@@ -152,6 +161,8 @@ export const companyProfileFixture: CompanyProfileData = {
     logoAssetId: null,
     logoUrl: null,
     logoUpdatedAt: null,
+    loginBackgroundAssetId: null,
+    loginBackgroundUrl: null,
     primaryColor: null,
     secondaryColor: null,
     headingFont: null,
@@ -160,10 +171,10 @@ export const companyProfileFixture: CompanyProfileData = {
   terminology: {
     workspace: { visibleName: "Workspace", visibleNamePlural: "Workspaces" },
     crm: { visibleName: "CRM", visibleNamePlural: "CRM" },
-    lead: { visibleName: "Lead", visibleNamePlural: "Leads" },
+    lead: { visibleName: "Enquiry", visibleNamePlural: "Enquiries" },
     opportunity: { visibleName: "Deal", visibleNamePlural: "Deals" },
     client: { visibleName: "Client", visibleNamePlural: "Clients" },
-    pre_execution: { visibleName: "Pre-execution", visibleNamePlural: "Pre-execution" },
+    pre_execution: { visibleName: "Planning", visibleNamePlural: "Planning" },
     quotation: { visibleName: "Quotation", visibleNamePlural: "Quotations" },
     catalog: { visibleName: "Catalog", visibleNamePlural: "Catalogs" },
     vendor: { visibleName: "Vendor", visibleNamePlural: "Vendors" },

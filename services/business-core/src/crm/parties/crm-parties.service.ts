@@ -10,6 +10,7 @@ import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
+import { assertClientIdentityChange, nameChanged, phoneChanged } from "../shared/client-identity-lock";
 import {
   decodeCursor,
   encodeCursor,
@@ -35,6 +36,10 @@ import {
   UpsertConsentDto,
 } from "./dto/parties.dto";
 import { queryClientTimeline } from "../shared/client-timeline";
+import { refreshEnquiryTitlesForParty } from "../leads/enquiry-title";
+import { ProblemList } from "../leads/enquiry-problems";
+import { countryFromLocale, phoneProblem } from "../intake/intake-phone";
+import { PERSON_NAME_MESSAGE, personNameProblem, typedNameProblem } from "../../common/person-name";
 
 interface RelocationRecord { id: string; version: number }
 interface StakeholderRelocation { opportunityId: string; role: string }
@@ -161,6 +166,14 @@ export class CrmPartiesService {
       await this.assertScopedReferences(client, workspaceId, input);
       this.assertProfile(input);
       this.assertPrimarySelections(input);
+      // Staff type a client here: a person's name is letters and spaces, and each phone fits its country.
+      const problems = new ProblemList().when(input.type === "person" && personNameProblem(input.displayName) === "characters", "displayName", PERSON_NAME_MESSAGE);
+      for (const contact of input.contacts ?? []) {
+        if (contact.type !== "phone") continue;
+        const wrong = await this.staffPhoneProblem(client, workspaceId, contact.value, contact.countryCode);
+        if (wrong) problems.add("phone", wrong);
+      }
+      problems.throwIfAny();
       const partyId = randomUUID();
       await client.query(
         `INSERT INTO crm_parties
@@ -222,10 +235,14 @@ export class CrmPartiesService {
     return this.access.withPermission(actor, workspaceId, "crm.parties.manage", async (client, actorUser) => {
       const before = await this.partyAggregate(client, workspaceId, partyId, true);
       if (before.status !== "active") throw new ConflictException("Only active parties can be edited");
+      await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId, nameChanged(before.displayName as string | null, input.displayName));
       if (input.ownerMembershipId) {
         await this.requireMembership(client, workspaceId, input.ownerMembershipId);
       }
       this.assertUpdateProfile(String(before.type), input);
+      // A person's new name is letters and spaces; a name kept as it came (from a channel) is not checked.
+      const wrongName = before.type === "person" ? typedNameProblem(before.displayName as string | null, input.displayName) : null;
+      new ProblemList().when(wrongName, "displayName", wrongName ?? "").throwIfAny();
       const result = await client.query(
         `UPDATE crm_parties SET
            display_name = COALESCE($1, display_name),
@@ -248,6 +265,9 @@ export class CrmPartiesService {
         ],
       );
       if (!result.rowCount) throw new ConflictException("Party changed; reload and try again");
+      if (input.displayName && input.displayName.trim() !== before.displayName) {
+        await refreshEnquiryTitlesForParty(client, workspaceId, partyId, input.displayName);
+      }
       if (before.type === "person") {
         await client.query(
           `UPDATE crm_person_profiles SET
@@ -297,6 +317,10 @@ export class CrmPartiesService {
   ) {
     return this.access.withPermission(actor, workspaceId, "crm.parties.manage", async (client, actorUser) => {
       await this.requireParty(client, workspaceId, partyId, true);
+      if (input.type === "phone") {
+        const wrong = await this.staffPhoneProblem(client, workspaceId, input.value, input.countryCode);
+        new ProblemList().when(wrong, "value", wrong ?? "").throwIfAny();
+      }
       const contact = await this.insertContact(client, workspaceId, partyId, input);
       await this.events.record(client, {
         workspaceId, actorUserId: actorUser.userId, source: "user",
@@ -326,6 +350,16 @@ export class CrmPartiesService {
       if (Number(before.version) !== input.version) throw new ConflictException("Contact point changed; reload and try again");
       const type = String(before.type);
       const rawValue = input.value?.trim() ?? String(before.raw_value);
+      // A phone is part of the client's identity: changing or archiving one is for those who may change it.
+      if (type === "phone" && before.status === "active") {
+        await assertClientIdentityChange(this.access, client, workspaceId, actorUser.userId,
+          input.status === "archived" || phoneChanged(String(before.normalized_value ?? before.raw_value ?? ""), rawValue));
+      }
+      // A phone typed here fits its country; one left as it is (archived, made primary) is kept as it came.
+      if (type === "phone" && input.value !== undefined && phoneChanged(String(before.normalized_value ?? before.raw_value ?? ""), rawValue)) {
+        const wrong = await this.staffPhoneProblem(client, workspaceId, rawValue, input.countryCode ?? (before.country_code as string | null));
+        new ProblemList().when(wrong, "value", wrong ?? "").throwIfAny();
+      }
       const { normalizedValue, invalidReason } = this.normalizeContact(type, rawValue);
       const nextVerified = input.status === "archived" ? false : input.isVerified ?? Boolean(before.is_verified);
       if (nextVerified && (!normalizedValue || invalidReason)) throw new UnprocessableEntityException("An invalid contact point cannot be verified");
@@ -600,6 +634,8 @@ export class CrmPartiesService {
       const replacement = `Erased customer ${partyId.slice(0, 8)}`;
 
       await client.query(`DELETE FROM crm_message_attachments attachment USING crm_messages message, crm_conversations conversation WHERE attachment.workspace_id = $1 AND attachment.message_id = message.id AND message.conversation_id = conversation.id AND conversation.workspace_id = $1 AND conversation.party_id = $2`, [workspaceId, partyId]);
+      // Their emails' facts (addresses, subjects, whole text) go too (PLM-025).
+      await client.query(`DELETE FROM crm_email_messages email USING crm_conversations conversation WHERE email.workspace_id = $1 AND conversation.workspace_id = $1 AND email.conversation_id = conversation.id AND conversation.party_id = $2`, [workspaceId, partyId]);
       await client.query(`UPDATE crm_messages message SET provider_message_id = NULL, body_text = NULL, body_html = NULL, failure_code = NULL, metadata = '{}'::jsonb, version = message.version + 1, updated_at = now() FROM crm_conversations conversation WHERE message.workspace_id = $1 AND conversation.workspace_id = $1 AND message.conversation_id = conversation.id AND conversation.party_id = $2`, [workspaceId, partyId]);
       await client.query(`UPDATE crm_conversations SET provider_thread_id = NULL, subject = 'Erased conversation', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND party_id = $2`, [workspaceId, partyId]);
       await client.query(`UPDATE crm_activities SET title = 'Erased activity', description = NULL, completion_outcome = NULL, version = version + 1, updated_at = now() WHERE workspace_id = $1 AND party_id = $2`, [workspaceId, partyId]);
@@ -1009,6 +1045,13 @@ export class CrmPartiesService {
       );
       if (!result.rowCount) throw new UnprocessableEntityException("Business unit is not active in the selected legal entity");
     }
+  }
+
+  /** A staff-typed phone against its country (or the workspace's region when none is given); the line to show, or null. */
+  private async staffPhoneProblem(client: PoolClient, workspaceId: string, value: string, countryCode?: string | null) {
+    const country = countryCode || value.trim().startsWith("+") ? countryCode ?? undefined
+      : countryFromLocale((await client.query<{ locale: string }>(`SELECT default_locale AS locale FROM workspaces WHERE id = $1`, [workspaceId])).rows[0]?.locale);
+    return phoneProblem(value, country, "phone");
   }
 
   private assertProfile(input: CreatePartyDto) {

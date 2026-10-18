@@ -1,0 +1,2 @@
+/* The convert form uses the shared form rhythm; only its fieldset is reset. */
+.fields { display: grid; gap: var(--wd-space-5); min-inline-size: 0; margin: 0; padding: 0; border: 0; }

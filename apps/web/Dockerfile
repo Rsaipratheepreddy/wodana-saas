@@ -6,15 +6,9 @@ COPY services/business-core/package.json services/business-core/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 RUN npm ci
 
-FROM node:22-alpine AS builder
+FROM dependencies AS builder
 WORKDIR /workspace
-COPY --from=dependencies /workspace/node_modules ./node_modules
-COPY --from=dependencies /workspace/apps/web/node_modules ./apps/web/node_modules
-COPY package.json package-lock.json ./
-COPY apps/web ./apps/web
-COPY services/business-core/package.json ./services/business-core/package.json
-COPY services/business-core/src ./services/business-core/src
-COPY packages/contracts ./packages/contracts
+COPY . .
 RUN npm run build --workspace @wodana/web
 
 FROM node:22-alpine AS runner

@@ -3,6 +3,11 @@
 .inviteComposer { display: grid; gap: var(--wd-flow-3); padding-block-end: var(--wd-flow-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .quickInviteForm { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, var(--wd-inspector-sm)) auto; align-items: end; gap: var(--wd-flow-3); }
 .quickInviteForm :global(.wd-button) { min-block-size: var(--wd-control-lg); }
+.offboard { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.offboardCounts { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
+.offboardCounts strong { font-variant-numeric: tabular-nums; }
+.seatMeter { font-variant-numeric: tabular-nums; }
+.seatMeter[data-full] { color: var(--wd-color-warning); font-weight: var(--wd-weight-semibold); }
 .inviteComposerFooter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-flow-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .inviteComposerActions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-flow-2); }
 .composerError { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
@@ -12,9 +17,16 @@
 .tableRegion { min-inline-size: 0; max-inline-size: 100%; }
 .identity { min-inline-size: 0; max-inline-size: 100%; display: inline-flex; align-items: center; gap: var(--wd-flow-2); }
 .identityDetails { min-inline-size: 0; display: grid; }
-.identity strong { min-inline-size: 0; overflow: hidden; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.identity small { display: none; min-inline-size: 0; overflow: hidden; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
-.emailLink { display: block; overflow: hidden; color: var(--wd-color-link); text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+/* Name on the first line, email muted on the second; neither truncates. */
+.identity strong { min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: break-word; }
+.identity small { min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: break-word; }
+.emailLink { color: var(--wd-color-text-secondary); text-decoration: none; }
+.roleChips { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); min-inline-size: 0; }
+/* The Role column has a set width: a long role name wraps inside it instead of running into Team. */
+.roleChips :global(.wd-badge.wd-badge) { white-space: normal; overflow-wrap: anywhere; }
+.tableSection { display: grid; gap: var(--wd-flow-2); }
+.tableSection + .tableSection { margin-block-start: var(--wd-flow-4); }
+.sectionTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
 .emailLink:hover { text-decoration: underline; }
 .emailLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: var(--wd-space-1); }
 .roleText { color: var(--wd-color-text); }
@@ -46,4 +58,4 @@
 .invitationReady { display: grid; gap: var(--wd-flow-4); }
 .linkField { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-flow-2); }
 .invitationReady > p { min-block-size: var(--wd-flow-4); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
-@media (max-width: 48rem) { .page { padding: 1.25rem 1rem 2.5rem; } .quickInviteForm { grid-template-columns: 1fr; } .quickInviteForm :global(.wd-button) { inline-size: 100%; } .identity small { display: block; } .linkField { grid-template-columns: 1fr; } .accessReview dl > div { grid-template-columns: 1fr; gap: var(--wd-flow-1); } }
+@media (max-width: 48rem) { .page { padding: var(--wd-space-5) var(--wd-space-4) var(--wd-space-10); } .quickInviteForm { grid-template-columns: 1fr; } .quickInviteForm :global(.wd-button) { inline-size: 100%; } .identity small { display: block; } .linkField { grid-template-columns: 1fr; } .accessReview dl > div { grid-template-columns: 1fr; gap: var(--wd-flow-1); } }

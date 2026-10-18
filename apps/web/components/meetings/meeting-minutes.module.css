@@ -1,0 +1,16 @@
+/* PLM-153: a meeting's minutes beside the meeting. */
+.minutes { display: grid; gap: var(--wd-space-3); padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.header h3 { display: inline-flex; align-items: center; gap: var(--wd-space-2); margin: 0; margin-inline-end: auto; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.meta { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.text { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.files { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.files li { display: inline-flex; align-items: center; gap: var(--wd-space-1); font-size: var(--wd-text-sm); }
+.files a { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); }
+.conversation { display: grid; gap: var(--wd-space-2); }
+.comments, .history { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.comments li, .history li { display: grid; gap: var(--wd-space-1); padding-inline-start: var(--wd-space-3); border-inline-start: 2px solid var(--wd-color-structural-divider); }
+.comments li[data-client] { border-inline-start-color: var(--wd-color-action-primary); }
+.reply { display: grid; gap: var(--wd-space-2); }
+.replyActions { display: flex; justify-content: flex-end; }

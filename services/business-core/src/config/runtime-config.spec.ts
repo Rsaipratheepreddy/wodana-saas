@@ -94,6 +94,14 @@ describe("validateRuntimeConfig", () => {
     })).toThrow("BUSINESS_CORE_INTERNAL_TOKEN");
   });
 
+  it("accepts the outbound email limit and the sweep's email cap as positive whole numbers only", () => {
+    const base = { DATABASE_URL: "postgresql://local", AUTH_MODE: "development" };
+    expect(validateRuntimeConfig({ ...base, EMAIL_SEND_PER_SECOND: "5", EMAIL_SEND_PER_MINUTE: "120", REMINDERS_SWEEP_EMAIL_CAP: "20" })).toMatchObject({ EMAIL_SEND_PER_SECOND: "5" });
+    expect(() => validateRuntimeConfig({ ...base, EMAIL_SEND_PER_SECOND: "0" })).toThrow("EMAIL_SEND_PER_SECOND must be a positive whole number");
+    expect(() => validateRuntimeConfig({ ...base, EMAIL_SEND_PER_MINUTE: "2.5" })).toThrow("EMAIL_SEND_PER_MINUTE");
+    expect(() => validateRuntimeConfig({ ...base, REMINDERS_SWEEP_EMAIL_CAP: "many" })).toThrow("REMINDERS_SWEEP_EMAIL_CAP");
+  });
+
   it("requires complete Mailgun credentials when transactional email is enabled", () => {
     expect(() => validateRuntimeConfig({
       DATABASE_URL: "postgresql://local",
@@ -125,4 +133,8 @@ describe("validateRuntimeConfig", () => {
     })).toThrow("HTTPS MAILGUN_BASE_URL");
   });
 
+  it("accepts an inbound email domain and refuses one that isn't a domain name", () => {
+    expect(validateRuntimeConfig({ DATABASE_URL: "postgresql://local", AUTH_MODE: "development", INBOUND_EMAIL_DOMAIN: "in.wodana.ai" })).toMatchObject({ INBOUND_EMAIL_DOMAIN: "in.wodana.ai" });
+    expect(() => validateRuntimeConfig({ DATABASE_URL: "postgresql://local", AUTH_MODE: "development", INBOUND_EMAIL_DOMAIN: "in wodana" })).toThrow("INBOUND_EMAIL_DOMAIN");
+  });
 });

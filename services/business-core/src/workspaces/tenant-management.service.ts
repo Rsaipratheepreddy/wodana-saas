@@ -558,6 +558,8 @@ export class TenantManagementService {
       ),
     ]);
     return {
+      /** The enforced seat limit, whether it comes from an account allocation or the workspace plan. */
+      seatLimit: capacity.seatLimit,
       members: capacity.activeMembers,
       invitedMembers: capacity.invitedMembers,
       pendingInvitations: capacity.pendingInvitations,

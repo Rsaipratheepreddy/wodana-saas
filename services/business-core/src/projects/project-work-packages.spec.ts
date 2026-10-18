@@ -98,6 +98,11 @@ function plannedPackage(workPackage: NonNullable<ProjectData["workPackages"]>[nu
 }
 
 describe("released scope work packages", () => {
+  it("does not let cancelled-only tasks count as delivered work",()=>{
+    const data=command(releasedProject(),"task",{task:task(["line-1"])});
+    data.tasks[0].status="cancelled";
+    expect(()=>command(data,"work_package",{workPackage:{...plannedPackage(data.workPackages![0]),status:"completed"}})).toThrow("Cancelled tasks alone");
+  });
   it("creates one stable, executable planning package per released scope line", () => {
     const data = releasedProject();
 
@@ -258,5 +263,24 @@ describe("released scope work packages", () => {
         ownerId: "manager",
       },
     })).toThrow(/Record the recovery plan/);
+  });
+});
+
+
+describe("work-order supply and site planning", () => {
+  it("persists independent choices and derives compatible factory/site routing", () => {
+    let data = releasedProject();
+    const work = data.workPackages![0];
+    data = command(data,"work_package",{workPackage:{...work,supplyMethod:"make",siteWork:"install"}});
+    expect(data.workPackages![0]).toMatchObject({supplyMethod:"make",siteWork:"install",deliveryRoute:"mixed",status:"planning"});
+    data = command(data,"work_package",{workPackage:{...data.workPackages![0],supplyMethod:"buy",siteWork:"none"}});
+    expect(data.workPackages![0].deliveryRoute).toBe("office");
+  });
+  it("rejects invalid methods and does not silently strand planned factory tasks", () => {
+    let data = releasedProject();
+    const work=data.workPackages![0];
+    expect(()=>command(data,"work_package",{workPackage:{...work,supplyMethod:"unknown",siteWork:"install"}})).toThrow();
+    data=command(data,"task",{task:{...task(work.scopeLineIds,"factory"),packageId:work.id}});
+    expect(()=>command(data,"work_package",{workPackage:{...work,supplyMethod:"client",siteWork:"install"}})).toThrow(/incompatible tasks/);
   });
 });

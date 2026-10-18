@@ -23,29 +23,30 @@ describe("pre-project table selector", () => {
     expect(within(screen.getByRole("table")).getAllByText("Qualified")[0]).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Open Villa interiors" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start Villa interiors" }));
-    const dialog = await screen.findByRole("dialog", { name: "Start pre-execution" });
-    expect(await within(dialog).findByLabelText(/Next follow-up/)).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Start pre-execution" })).toBeDisabled();
+    const dialog = await screen.findByRole("dialog", { name: "Start planning" });
+    expect((await within(dialog).findAllByLabelText(/Next follow-up date/)).length).toBeGreaterThan(0);
+    expect(within(dialog).getByRole("button", { name: "Start planning" })).toBeDisabled();
   });
   it("disables start for a qualified lead when the user only has view access", () => {
     render(<PreProjectListPage initialData={{ ...data, canCreate: false, canStartLead: false, items: [{ ...record, status: "qualified", qualifiedLead: true, opportunityId: null }] }} search="" />);
     expect(screen.getByRole("button", { name: "Start Villa interiors" })).toBeDisabled();
   });
-  it("always shows the table with customer initials and real case links", () => {
+  it("always shows the table with the client under the case and real case links", () => {
     render(<PreProjectListPage initialData={data} search="view=cards" />);
-    const table = screen.getByRole("table", { name: "Pre-execution cases" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Client", "Case", "Phase", "Status", "Owner", "Value", "Target", "Priority", "Risk", "Updated", "Created", "Action"]);
-    expect(within(table).getByRole("img", { name: "Khalid Rahman" })).toHaveTextContent("KR");
-    expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/overview`);
+    const table = screen.getByRole("table", { name: "Planning cases" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Case", "Phase", "Status", "Owner", "Value", "Target", "Priority", "Risk", "Updated", "Created", "Action"]);
+    // The client is the muted line under the case.
+    expect(within(table).getByText("Khalid Rahman")).toBeInTheDocument();
+    expect(within(table).getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/requirements`);
     expect(screen.queryByRole("button", { name: "Cards" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export filtered rows" })).toBeInTheDocument();
-    expect(table.closest(".wd-data-grid")).toHaveAttribute("data-appearance", "card");
+    expect(screen.getByRole("button", { name: "Table options" })).toBeInTheDocument();
+    expect(table.closest(".wd-table-scroll")).not.toBeNull();
   });
   it("searches all server pages as you type and drops obsolete filters", async () => {
     render(<PreProjectListPage initialData={data} search="view=cards&status=released&page=2&search=Villa" />);
-    expect(screen.getByRole("heading", { name: "Cases" })).toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "Pre-execution status" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Start pre-execution" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Cases" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Planning status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search cases" }), { target: { value: "Palm" } });
@@ -54,7 +55,7 @@ describe("pre-project table selector", () => {
   it("keeps the server page and section when paging or opening an existing case", () => {
     render(<PreProjectListPage initialData={{ ...data, total: 70 }} search="page=2&section=designs" />);
     expect(replace).not.toHaveBeenCalled();
-    expect(screen.getByRole("navigation", { name: "Pre-execution cases pagination" })).toHaveTextContent("Page 2 of 3");
+    expect(screen.getByRole("navigation", { name: "Planning cases pagination" })).toHaveTextContent("Page 2 of 3");
         fireEvent.click(screen.getByRole("button", { name: "Next page" }));
     expect(replace).toHaveBeenCalledWith("/workspace/pre-projects?page=3&section=designs");
     expect(screen.getByRole("link", { name: "Open Villa interiors" })).toHaveAttribute("href", `/workspace/pre-projects/cases/${record.id}/designs?page=2&section=designs`);
@@ -76,9 +77,17 @@ describe("pre-project table selector", () => {
   });
   it("shows load errors and retries without suggesting a fake zero count", () => {
     render(<PreProjectListPage initialData={{ ...data, items: [], total: 0, error: "Unable to connect" }} search="" />);
-    expect(screen.getByRole("alert")).toHaveTextContent("Unable to connect");
+    expect(screen.getByText("Unable to connect")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("0 qualified leads")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(refresh).toHaveBeenCalledOnce();
+  });
+  it("has one title with the case lists under it and no page action", () => {
+    render(<PreProjectListPage initialData={{ ...data, items: [{ ...record, qualifiedLead: true, status: "qualified" }] }} search="section=designs" />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Planning"]);
+    const tabs = within(screen.getByRole("group", { name: "Case lists" }));
+    expect(tabs.getByRole("button", { name: /^Ready to start\s*1$/ })).toBeInTheDocument();
+    expect(tabs.getByRole("button", { name: "In progress" })).toBeInTheDocument();
   });
 });

@@ -538,6 +538,8 @@ export class PreProjectDefinitionService {
         readyToPublish: capture.issues.length === 0,
         issues: capture.issues,
         changes: published&&!current.current?definitionChanges(published,capture.snapshot):null,
+        // What would be sent now: the requirements in or out of scope, room by room.
+        items: capture.snapshot.items.map((item) => ({ id: item.id, title: item.title, roomName: item.roomName, scopeStatus: item.scopeStatus, quantity: item.quantity, unit: item.unit })),
       },
       current,
       history: baselines,

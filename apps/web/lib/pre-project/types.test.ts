@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caseHref, caseRoute, listSearch } from "./types";
+import { caseHref, caseRoute, listSearch, requirementHref } from "./types";
 const id = "00000000-0000-4000-8000-000000000001";
 describe("case-scoped navigation", () => {
   it("recognizes only valid case/section URLs", () => {
@@ -16,6 +16,9 @@ describe("case-scoped navigation", () => {
   });
   it("drops retired status filters when opening and returning from a case", () => {
     expect(caseHref(id, new URLSearchParams("status=qualified&search=villa"))).toBe(`/workspace/pre-projects/cases/${id}/requirements?search=villa`);
+  });
+  it("opens one requirement of a case", () => {
+    expect(requirementHref(id, "11111111-1111-4111-8111-111111111113")).toBe(`/workspace/pre-projects/cases/${id}/requirements?requirement=11111111-1111-4111-8111-111111111113`);
   });
   it("normalizes unsupported selector state", () => {
     expect(listSearch(new URLSearchParams("view=bogus&page=-1&status=deleted&section=unknown")).size).toBe(0);

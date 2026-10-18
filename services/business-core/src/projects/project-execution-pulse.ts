@@ -1,3 +1,6 @@
+import { currentRfas } from "./project-rfa";
+import { materialInventory, orderReceivingPosition, recoveredFactoryQuantity } from "./project-inventory";
+import type { StockTransfer } from "./project-stock.types";
 import type {
   ProjectBooking,
   ProjectData,
@@ -75,8 +78,16 @@ export function projectExecutionPulse(
   today: string,
   resources: ProjectResource[] = [],
   bookings: ProjectBooking[] = [],
+  stockTransfers: StockTransfer[] = [],
+  audience: { canBuy: boolean; canReview: boolean; memberId: string } = { canBuy: true, canReview: true, memberId: "" },
 ): ProjectExecutionPulse {
   const actions: ProjectExecutionAction[] = [];
+  for (const request of currentRfas(data)) {
+    if (["approved","withdrawn"].includes(request.status)) continue;
+    const reviewing = ["submitted","in_review"].includes(request.status);
+    actions.push(action({kind:reviewing?"review_rfa":"correct_rfa",recordId:request.id,ownerId:reviewing?request.reviewerId:request.createdBy,
+      priority:request.dueDate && request.dueDate < today?"high":"normal",title:reviewing?"Review RFA":"Prepare RFA",detail:data.documents.find(doc=>doc.id===request.documentId)?.title??"Controlled document"}));
+  }
   const workPackages = data.workPackages ?? [];
   const controls = data.controls;
   const projectOwner = projectOwnerId(data);
@@ -322,15 +333,49 @@ export function projectExecutionPulse(
     }));
   }
 
-  for (const order of data.orders.filter((order) => ["submitted", "approved"].includes(order.status)))
+  const sourcingHorizon = new Date(`${today}T12:00:00Z`);
+  sourcingHorizon.setUTCDate(sourcingHorizon.getUTCDate() + 7);
+  for (const material of audience.canBuy ? data.materials : []) {
+    if (material.supply !== "company" || !material.needBy || material.needBy > sourcingHorizon.toISOString().slice(0, 10)) continue;
+    const missing = materialInventory(material, data.orders, stockTransfers, data.supplierReturns).shortfall;
+    if (missing <= 0) continue;
     actions.push(action({
-      kind: "confirm_order",
-      priority: "high",
-      title: `Confirm ${order.title}`,
-      detail: "Obtain the supplier acknowledgement and reviewed delivery date.",
-      taskId: order.taskId || undefined,
-      recordId: order.id,
+      kind: "source_material",
+      priority: material.needBy < today ? "critical" : "high",
+      title: `Source ${material.title}`,
+      detail: `${missing} ${material.unit} uncovered · needed ${material.needBy}. Review stock or arrange supply.`,
+      taskId: material.taskId || undefined,
+      recordId: material.id,
     }));
+  }
+
+  for (const order of data.orders) {
+    if (!["submitted", "approved", "acknowledged"].includes(order.status)) continue;
+    const receiving = orderReceivingPosition(data, order);
+    const base = { taskId: order.taskId || undefined, recordId: order.id };
+    if (order.status === "submitted" && audience.canBuy && audience.canReview) actions.push(action({
+      ...base, kind: "review_order", priority: "high", title: `Review ${order.number || order.title}`,
+      detail: "This purchase order is awaiting approval before it can be sent to the supplier.",
+    }));
+    else if (order.status === "approved" && audience.canBuy) actions.push(action({
+      ...base, kind: "confirm_order", priority: "high", title: `Confirm ${order.number || order.title}`,
+      detail: "Obtain the supplier acknowledgement and reviewed delivery date.",
+    }));
+    else if (order.status === "acknowledged") {
+      if (receiving.pendingInspection > 0 && audience.canReview && order.receipts.some(receipt => (receipt.pending ?? 0) > 0 && receipt.receivedBy !== audience.memberId)) actions.push(action({
+        ...base, kind: "inspect_receipt", priority: "high", title: `Inspect ${order.number || order.title}`,
+        detail: `${receiving.pendingInspection} ${order.unit} arrived and await inspection; they are not accepted stock.`,
+      }));
+      if (audience.canBuy && receiving.remainingToArrive > 0 && order.promisedDate && order.promisedDate < today) actions.push(action({
+        ...base, kind: "recover_delivery", priority: "critical", title: `Chase ${order.number || order.title}`,
+        detail: `${receiving.remainingToArrive} ${order.unit} still due · promised ${order.promisedDate}. Confirm a revised delivery date.`,
+      }));
+      if (audience.canBuy && order.quantity > 0 && receiving.accepted >= order.quantity && receiving.pendingInspection === 0) actions.push(action({
+        ...base, kind: "close_order", priority: "normal", title: `Close ${order.number || order.title}`,
+        detail: "All ordered quantity is accepted. Verify the receiving record and close the order.",
+      }));
+    }
+  }
 
   for (const check of data.commissioning ?? []) {
     if (check.status === "passed") continue;
@@ -446,7 +491,7 @@ export function projectExecutionPulse(
         dispatch.taskId === task.id &&
         ["draft", "ready", "dispatched", "received"].includes(dispatch.status),
       )
-      .reduce((total, dispatch) => total + dispatch.quantity - dispatch.rejected, 0);
+      .reduce((total, dispatch) => total + dispatch.quantity - recoveredFactoryQuantity(data,dispatch), 0);
     if (unresolvedRejections.length)
       actions.push(action({
         kind: "resolve_factory_rejection",

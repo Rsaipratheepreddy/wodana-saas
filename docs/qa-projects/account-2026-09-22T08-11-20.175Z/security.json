@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "isolated": true,
+  "externalMessages": false,
+  "checks": [
+    "Synthetic password account enrolls MFA; prior access token is invalidated",
+    "Security API marks the current session, lists other devices and rejects self-revocation",
+    "Required administrator MFA cannot be disabled",
+    "Optional MFA disable preserves current session, removes other devices and rejects their refresh and access tokens",
+    "MFA disable leaves a persisted security audit event"
+  ]
+}

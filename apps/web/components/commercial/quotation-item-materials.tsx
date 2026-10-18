@@ -1,5 +1,7 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
+import { Checkbox } from "@/design-system";
 import { Pencil, Plus, X } from "lucide-react";
 import type { QuoteLine, QuotationMaterial } from "@/lib/commercial/types";
 import {
@@ -28,6 +30,7 @@ export function QuotationItemMaterials({
   caseId,
   library = [],
 }: Props) {
+  const t = useT();
   const [adding, setAdding] = useState(false),
     [source, setSource] = useState("catalog");
   const [role, setRole] = useState<MaterialRole>("material");
@@ -79,12 +82,12 @@ export function QuotationItemMaterials({
   return (
     <section
       className={d.materialsSection}
-      aria-label="Item materials"
+      aria-label={t("Item materials")}
       data-item-materials={item.id}
     >
       <div className={d.materialsHeading}>
         <strong>
-          Materials <span>{selections.length + materials.length}</span>
+          {t("Materials")}{" "}<span>{selections.length + materials.length}</span>
         </strong>
         <button
           type="button"
@@ -96,8 +99,7 @@ export function QuotationItemMaterials({
           }}
         >
           <Plus size={14} />
-          Add material
-        </button>
+          {t("Add material")}</button>
       </div>
       {!selections.length &&
         !materials.length &&
@@ -105,8 +107,7 @@ export function QuotationItemMaterials({
         !item.finish &&
         !adding && (
           <p className={d.materialEmpty}>
-            Add materials or finishes for this item.
-          </p>
+            {t("Add materials or finishes for this item.")}</p>
         )}
       <ul className={d.materialList}>
         {selections.map((c) => (
@@ -117,7 +118,7 @@ export function QuotationItemMaterials({
                 {[
                   c.snapshot.code,
                   c.snapshot.catalogName,
-                  c.role === "finish" ? "Finish" : "Catalog material",
+                  t(c.role === "finish" ? "Finish" : "Catalog material"),
                 ]
                   .filter(Boolean)
                   .join(" · ")}
@@ -125,8 +126,8 @@ export function QuotationItemMaterials({
             </div>
             <button
               type="button"
-              aria-label={`Replace material ${c.snapshot.name}`}
-              title="Replace material"
+              aria-label={t("Replace material {name}", { name: c.snapshot.name })}
+              title={t("Replace material")}
               onClick={() => {
                 setCustom(null);
                 setRole(c.role as MaterialRole);
@@ -139,8 +140,8 @@ export function QuotationItemMaterials({
             </button>
             <button
               type="button"
-              aria-label={`Remove ${c.snapshot.name}`}
-              title="Remove material"
+              aria-label={t("Remove {title}", { title: c.snapshot.name })}
+              title={t("Remove material")}
               onClick={() => {
                 onChange(
                   updateMaterials(
@@ -166,7 +167,7 @@ export function QuotationItemMaterials({
                 {[
                   m.brand,
                   m.code,
-                  m.suppliedByClient ? "Client supplied" : "Quotation only",
+                  t(m.suppliedByClient ? "Client supplied" : "Quotation only"),
                 ]
                   .filter(Boolean)
                   .join(" · ")}
@@ -175,8 +176,8 @@ export function QuotationItemMaterials({
             </div>
             <button
               type="button"
-              aria-label={`Edit custom material ${m.name}`}
-              title="Edit material"
+              aria-label={t("Edit custom material {name}", { name: m.name })}
+              title={t("Edit material")}
               onClick={() => {
                 setReplacing(null);
                 setAdding(true);
@@ -188,8 +189,8 @@ export function QuotationItemMaterials({
             </button>
             <button
               type="button"
-              aria-label={`Remove custom material ${m.name}`}
-              title="Remove material"
+              aria-label={t("Remove custom material {name}", { name: m.name })}
+              title={t("Remove material")}
               onClick={() => {
                 onChange({
                   ...item,
@@ -207,15 +208,15 @@ export function QuotationItemMaterials({
         <div className={d.materialComposer}>
           <div className={d.materialsHeading}>
             <strong>
-              {replacing
+              {t(replacing
                 ? "Replace material"
                 : custom && materials.some((m) => m.id === custom.id)
                   ? "Edit material"
-                  : "Add material"}
+                  : "Add material")}
             </strong>
             <button
               type="button"
-              aria-label="Cancel material editing"
+              aria-label={t("Cancel material editing")}
               onClick={close}
             >
               <X size={15} />
@@ -225,7 +226,7 @@ export function QuotationItemMaterials({
             <div
               className={d.sourceTabs}
               role="group"
-              aria-label="Material source"
+              aria-label={t("Material source")}
             >
               <button
                 type="button"
@@ -235,8 +236,7 @@ export function QuotationItemMaterials({
                   setCustom(null);
                 }}
               >
-                Catalog
-              </button>
+                {t("Catalog")}</button>
               <button
                 type="button"
                 aria-pressed={source === "custom"}
@@ -245,8 +245,7 @@ export function QuotationItemMaterials({
                   newCustom();
                 }}
               >
-                Custom material
-              </button>
+                {t("Custom material")}</button>
               {!!library.length && (
                 <button
                   type="button"
@@ -256,8 +255,7 @@ export function QuotationItemMaterials({
                     setCustom(null);
                   }}
                 >
-                  From quotation
-                </button>
+                  {t("From quotation")}</button>
               )}
             </div>
           )}
@@ -265,22 +263,19 @@ export function QuotationItemMaterials({
             <>
               {!replacing && (
                 <label>
-                  Type
-                  <select
-                    aria-label="Material catalog type"
+                  {t("Type")}<select
+                    aria-label={t("Material catalog type")}
                     value={role}
                     onChange={(e) => setRole(e.target.value as MaterialRole)}
                   >
-                    <option value="material">Material / hardware</option>
-                    <option value="finish">Finish</option>
+                    <option value="material">{t("Material / hardware")}</option>
+                    <option value="finish">{t("Finish")}</option>
                   </select>
                 </label>
               )}
               {atLimit ? (
                 <p className={d.hint}>
-                  Remove a catalog selection before adding another. This item
-                  allows 12 catalog links.
-                </p>
+                  {t("Remove a catalog selection before adding another. This item allows 12 catalog links.")}</p>
               ) : (
                 <CommercialCatalogPicker
                   key={`${role}:${replacing}`}
@@ -288,9 +283,9 @@ export function QuotationItemMaterials({
                   caseId={caseId}
                   kind={role}
                   label={
-                    role === "material"
+                    t(role === "material"
                       ? "Material / SKU from catalog"
-                      : "Finish from catalog"
+                      : "Finish from catalog")
                   }
                   value={null}
                   excludeIds={materialSelections(item, role).map(
@@ -304,10 +299,9 @@ export function QuotationItemMaterials({
           {source === "custom" && custom && (
             <div className={d.fields}>
               <label>
-                Material name
-                <input
+                {t("Material name")}<input
                   autoFocus
-                  aria-label="Material name"
+                  aria-label={t("Material name")}
                   value={custom.name}
                   maxLength={240}
                   onChange={(e) =>
@@ -316,23 +310,21 @@ export function QuotationItemMaterials({
                 />
               </label>
               <label>
-                Specification
-                <textarea
-                  aria-label="Material specification"
+                {t("Specification")}<textarea
+                  aria-label={t("Material specification")}
                   rows={2}
                   value={custom.specification}
                   maxLength={3000}
-                  placeholder="Colour, thickness, size or finish"
+                  placeholder={t("Colour, thickness, size or finish")}
                   onChange={(e) =>
                     setCustom({ ...custom, specification: e.target.value })
                   }
                 />
               </label>
-              <details className={d.optionalFields}>
-                <summary>Brand, code & supply</summary>
+              <section className={d.optionalFields}>
+                <h3>{t("Brand, code & supply")}</h3>
                 <label>
-                  Brand / manufacturer
-                  <input
+                  {t("Brand / manufacturer")}<input
                     value={custom.brand}
                     maxLength={160}
                     onChange={(e) =>
@@ -341,8 +333,7 @@ export function QuotationItemMaterials({
                   />
                 </label>
                 <label>
-                  Product / finish code
-                  <input
+                  {t("Product / finish code")}<input
                     value={custom.code}
                     maxLength={80}
                     onChange={(e) =>
@@ -350,21 +341,16 @@ export function QuotationItemMaterials({
                     }
                   />
                 </label>
-                <label className={d.check}>
-                  <input
-                    type="checkbox"
-                    checked={custom.suppliedByClient}
-                    onChange={(e) =>
-                      setCustom({
-                        ...custom,
-                        suppliedByClient: e.target.checked,
-                      })
-                    }
-                  />
-                  Supplied by the client
-                </label>
-              </details>
-              <p className={d.hint}>Saved in this quotation only.</p>
+                <Checkbox
+                  isSelected={custom.suppliedByClient}
+                  onChange={(suppliedByClient) =>
+                    setCustom({ ...custom, suppliedByClient })
+                  }
+                >
+                  {t("Supplied by the client")}
+                </Checkbox>
+              </section>
+              <p className={d.hint}>{t("Saved in this quotation only.")}</p>
               <button
                 type="button"
                 className={d.confirmMaterial}
@@ -384,15 +370,13 @@ export function QuotationItemMaterials({
                   close();
                 }}
               >
-                Save material
-              </button>
+                {t("Save material")}</button>
             </div>
           )}
           {source === "reuse" && (
             <label>
-              Material from this quotation
-              <select
-                aria-label="Reuse quotation material"
+              {t("Material from this quotation")}<select
+                aria-label={t("Reuse quotation material")}
                 value=""
                 disabled={materials.length >= 20}
                 onChange={(e) => {
@@ -409,7 +393,7 @@ export function QuotationItemMaterials({
                   }
                 }}
               >
-                <option value="">Choose material…</option>
+                <option value="">{t("Choose material…")}</option>
                 {library.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
@@ -420,18 +404,17 @@ export function QuotationItemMaterials({
           )}
         </div>
       )}
-      <details className={d.optionalFields}>
-        <summary>
-          Material & finish notes
-          {materialNotes(item, "material") || materialNotes(item, "finish")
-            ? " · added"
-            : ""}
-        </summary>
+      <section className={d.optionalFields}>
+        <h3>
+          {t(materialNotes(item, "material") || materialNotes(item, "finish")
+            ? "Material & finish notes · added"
+            : "Material & finish notes")}
+        </h3>
         {(["material", "finish"] as const).map((r) => (
           <label key={r}>
-            {r === "material"
+            {t(r === "material"
               ? "Material specification / notes"
-              : "Finish / hardware notes"}
+              : "Finish / hardware notes")}
             <textarea
               rows={2}
               value={materialNotes(item, r)}
@@ -448,7 +431,7 @@ export function QuotationItemMaterials({
             />
           </label>
         ))}
-      </details>
+      </section>
     </section>
   );
 }

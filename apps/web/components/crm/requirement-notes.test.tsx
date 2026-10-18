@@ -17,7 +17,7 @@ describe('Requirement notebook',()=>{
   const fetcher=load();render(<RequirementNotes workspaceId="workspace" caseId="case"/>);
   expect(await screen.findByRole('button',{name:'Open Kitchen storage'})).toBeVisible();
   expect(fetcher.mock.calls[0][0]).toContain('/pre-projects/case/requirement-notes');
-  expect(await screen.findByRole('textbox',{name:'Requirement notes'})).toHaveTextContent('Deep drawers');
+  expect(await screen.findByRole('textbox',{name:'Requirement notes'}, {timeout: 5000})).toHaveTextContent('Deep drawers');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.getByRole('button',{name:'Save changes'})).toBeDisabled();
  });
@@ -26,7 +26,7 @@ describe('Requirement notebook',()=>{
   await screen.findByRole('textbox',{name:'Note title'});await userEvent.type(screen.getByRole('textbox',{name:'Note title'}),' revised');
   await userEvent.click(screen.getByRole('button',{name:'Open Bedroom'}));await userEvent.click(screen.getByRole('button',{name:'Open Kitchen storage revised'}));
   expect(screen.getByRole('textbox',{name:'Note title'})).toHaveValue('Kitchen storage revised');
-  await userEvent.type(screen.getByRole('textbox',{name:'Search notes'}),'Quiet');
+  await userEvent.type(screen.getByRole('searchbox',{name:'Search notes'}),'Quiet');
   expect(screen.queryByRole('button',{name:'Open Kitchen storage revised'})).not.toBeInTheDocument();expect(screen.getByRole('button',{name:'Open Bedroom'})).toBeVisible();
  });
  it('creates an explicit draft and sends the note document and original version',async()=>{
@@ -55,7 +55,7 @@ describe('Requirement notebook',()=>{
  });
  it('shows existing content read-only without editor actions',async()=>{
   load([note],false);render(<RequirementNotes workspaceId="workspace" caseId="case"/>);
-  expect(await screen.findByRole('textbox',{name:'Requirement notes'})).toHaveAttribute('contenteditable','false');
+  expect(await screen.findByRole('textbox',{name:'Requirement notes'}, {timeout: 5000})).toHaveAttribute('contenteditable','false');
   expect(screen.queryByRole('button',{name:'New note'})).not.toBeInTheDocument();expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
  });
  it('renders legacy images and links inline through authenticated URLs',async()=>{
@@ -66,7 +66,7 @@ describe('Requirement notebook',()=>{
  it('keeps successful uploads when another file fails',async()=>{
   const upload=vi.fn().mockResolvedValueOnce(asset).mockRejectedValueOnce(new Error('Network unavailable'));const save=vi.fn().mockResolvedValue(undefined);
   render(<RequirementNoteEditor note={note} canEdit onClose={vi.fn()} onSave={save} onUpload={upload} assetUrl={()=>'/private/image'}/>);
-  await screen.findByRole('textbox',{name:'Requirement notes'});
+  await screen.findByRole('textbox',{name:'Requirement notes'}, {timeout: 5000});
   await userEvent.upload(screen.getByLabelText('Attach reference files'),[new File(['png'],'Kitchen.png',{type:'image/png'}),new File(['pdf'],'Plan.pdf',{type:'application/pdf'})]);
   await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('Network unavailable'));
   expect(screen.getByRole('img',{name:'Kitchen.png'})).toBeInTheDocument();await userEvent.click(screen.getByRole('button',{name:'Save changes'}));

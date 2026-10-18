@@ -1,8 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { resetSharedRequests } from "@/lib/workspace/shared-request";
 
-afterEach(cleanup);
+// Each test starts on a clean device: forms keep drafts and remembered choices in local storage.
+afterEach(() => {
+  cleanup();
+  resetSharedRequests();
+  try { globalThis.localStorage?.clear(); } catch { /* no storage in this environment */ }
+});
 
 class ResizeObserverMock {
   observe() {}

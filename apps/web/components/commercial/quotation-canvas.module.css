@@ -16,6 +16,11 @@
   border-block-start: 1px solid var(--wd-color-structural-divider);
 }
 .workspace[data-inspector] { grid-template-columns: 76px minmax(0, 1fr) 250px; }
+.workspace[data-standalone] { position:relative; grid-template-columns:minmax(0,1fr); block-size:calc(100dvh - 160px); min-block-size:520px; }
+.workspace[data-standalone][data-inspector] { grid-template-columns:minmax(0,1fr) 250px; }
+.workspace[data-standalone] .flow { position:relative; min-height:400px; }
+.workspace[data-standalone] .flow :global(.react-flow__node-quotePage) { box-shadow:none; }
+@media (max-width:900px) { .workspace[data-standalone][data-inspector] { grid-template-columns:minmax(0,1fr); } }
 .pages,
 .inspector {
   min-inline-size: 0;
@@ -123,7 +128,7 @@
   border: 1px solid var(--wd-color-structural-divider);
   border-radius: 8px;
   background: var(--wd-color-surface);
-  box-shadow: var(--wd-shadow-overlay);
+  box-shadow: var(--wd-shadow-md);
 }
 .pagePopover label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .7rem; color: var(--wd-color-text-secondary); }
 .pagePopover input[type="color"] { inline-size: 30px; block-size: 26px; border: 0; padding: 0; background: none; }
@@ -265,3 +270,7 @@
   .pageStack { justify-content: start; padding-inline: 20px; }
   .inspector { position: absolute; z-index: 30; inset-inline: 0; inset-block-end: 0; max-block-size: 45%; overflow: auto; border-block-start: 1px solid var(--wd-color-structural-divider); }
 }
+.staticElement :is(p,h1,h2,h3,ul,ol,blockquote,pre) { margin:0; color:inherit; }
+.staticElement :is(ul,ol) { padding-inline-start:1.2em; }
+.staticElement h1 { font-size:1.5em; }.staticElement h2 { font-size:1.25em; }.staticElement h3 { font-size:1.1em; }
+.staticElement blockquote { border-inline-start:3px solid currentColor; padding-inline-start:.5em; }

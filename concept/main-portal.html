@@ -1,0 +1,588 @@
+<meta charset="utf-8">
+<title>Main Portal Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="flow.css">
+<style>
+/* Layout: the staff app as a window. Sidebar (seats decide what shows) · one page header with one primary action · toolbar · content. Same engine as the concept page. */
+html,body{height:100%}
+body{margin:0;background:var(--surface-3);color:var(--fg);font-family:var(--f-sans);font-size:var(--t-base);line-height:1.5;display:flex;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:10px 12px}
+p{margin:0} h1,h2,h3{margin:0}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:var(--t-xs);color:var(--fg-2);padding:0 4px 8px}
+.banner b{color:var(--fg)}
+.banner kbd{font-family:var(--f-mono);font-size:10.5px;border:1px solid var(--line-strong);border-radius:5px;padding:0 5px;background:var(--surface)}
+.banner a{color:var(--accent);margin-inline-start:auto}
+.app{flex:1;min-height:0;display:grid;grid-template-columns:236px minmax(0,1fr);background:var(--bg);border:1px solid var(--line-strong);border-radius:18px;overflow:hidden;box-shadow:var(--shadow);position:relative}
+.sb{background:var(--surface);border-inline-end:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.sb-top{padding:14px 14px 8px;display:grid;gap:10px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700}
+.brand i{width:26px;height:26px;border-radius:8px;background:var(--ink);display:inline-block}
+.brand span{font-size:var(--t-xs);color:var(--fg-3);font-weight:500;display:block}
+.find{display:flex;align-items:center;gap:8px;width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:9px;padding:7px 10px;color:var(--fg-3);font-size:var(--t-sm);cursor:pointer;text-align:start}
+.find kbd{margin-inline-start:auto;font-family:var(--f-mono);font-size:10px;border:1px solid var(--line-strong);border-radius:5px;padding:0 4px}
+.nav{flex:1;overflow-y:auto;padding:4px 8px 8px}
+.ng{margin-top:12px}
+.ng h5{margin:0 0 4px;padding-inline:8px;font-size:10.5px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.07em;color:var(--fg-3);font-weight:500}
+.ni{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;padding:6px 8px;border-radius:8px;font-size:var(--t-sm);cursor:pointer;color:var(--fg-2);text-align:start}
+.ni:hover{background:var(--surface-2);color:var(--fg)}
+.ni[aria-current="page"]{background:var(--accent-subtle);color:var(--fg);font-weight:650}
+.ni svg{width:16px;height:16px;flex:none;stroke:currentColor}
+.ni .bd{margin-inline-start:auto;font-size:10.5px;font-weight:700;background:var(--surface-3);color:var(--fg-2);border-radius:999px;padding:0 7px}
+.ni .bd.hot{background:var(--ink);color:var(--ink-fg)}
+.sb-foot{border-top:1px solid var(--line);padding:10px 12px;display:grid;gap:8px}
+.sb-foot label{font-size:10.5px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3)}
+.sb-foot select{width:100%;padding:6px 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);font-size:var(--t-sm)}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.mtop{display:none;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--surface)}
+.iconbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer;flex:none}
+.iconbtn svg{width:17px;height:17px;stroke:var(--fg-2)}
+.view{flex:1;min-height:0;overflow:auto;padding:20px 24px 40px}
+.ph{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.ph h1{font-size:1.45rem;font-weight:700;letter-spacing:-.015em;line-height:1.2}
+.ph .sub{font-size:var(--t-sm);color:var(--fg-2)}
+.ph .acts{display:flex;gap:8px;align-items:center}
+.tb{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.tb .end{margin-inline-start:auto;display:flex;gap:8px;align-items:center}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.tabs button{border:0;background:transparent;padding:8px 12px;font-size:var(--t-sm);color:var(--fg-2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--fg);font-weight:700;border-bottom-color:var(--ink)}
+.tabs .n{font-size:10.5px;color:var(--fg-3);margin-inline-start:4px}
+.brief{display:flex;gap:10px;align-items:flex-start;border-radius:12px;padding:11px 14px;background:var(--ai-subtle);font-size:var(--t-sm);margin-bottom:16px}
+.home{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+.sec{display:grid;gap:8px;margin-bottom:18px}
+.sec > h4{margin:0;font-size:var(--t-xs);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);font-weight:500}
+.qi{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;cursor:pointer;text-align:start;width:100%}
+.qi:hover{border-color:var(--line-strong)}
+.qi .tx{display:grid;gap:3px;min-width:0;flex:1}
+.qi .tx b{font-size:var(--t-sm)}
+.qi .tx .w{font-size:var(--t-xs);color:var(--fg-2)}
+.qi .tx .chips{margin-top:2px}
+.qi .btn{flex:none}
+.wi{display:flex;gap:10px;align-items:center;font-size:var(--t-sm);padding:8px 2px;border-bottom:1px solid var(--line)}
+.wi:last-child{border-bottom:0}
+.wi .since{margin-inline-start:auto;font-size:var(--t-xs);color:var(--fg-3)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0}
+.ev{display:flex;gap:10px;font-size:var(--t-sm);align-items:baseline}
+.ev .t{font-family:var(--f-mono);font-size:var(--t-xs);color:var(--fg-3);width:42px;flex:none}
+.grid{border:1px solid var(--line);border-radius:12px;overflow:auto;background:var(--surface)}
+.grid table{border-collapse:collapse;width:100%;font-size:var(--t-sm);min-width:640px}
+.grid th{position:sticky;top:0;background:var(--surface);text-align:start;font-weight:500;color:var(--fg-3);font-size:var(--t-xs);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.grid td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.grid tr:last-child td{border-bottom:0}
+.grid tbody tr{cursor:pointer}
+.grid tbody tr:hover td{background:var(--surface-2)}
+.grid td.num{text-align:end;font-variant-numeric:tabular-nums}
+.grid th.num{text-align:end}
+.rn{display:grid;line-height:1.3}
+.rn span{font-size:var(--t-xs);color:var(--fg-3)}
+.trk{display:flex;gap:3px;min-width:150px}
+.trk i{flex:1;height:6px;border-radius:3px;background:var(--surface-3)}
+.trk i.done{background:var(--done)} .trk i.now{background:var(--accent)}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(220px,1fr);gap:10px;overflow-x:auto;padding-bottom:6px}
+.col{background:var(--surface-2);border-radius:12px;padding:10px;display:grid;gap:8px;align-content:start;min-height:200px}
+.col h5{margin:0;font-size:var(--t-xs);display:flex;justify-content:space-between;color:var(--fg-2)}
+.bc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:6px;cursor:pointer;font-size:var(--t-sm)}
+.bc .top{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.inbox{display:grid;grid-template-columns:300px minmax(0,1fr) 270px;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface);min-height:520px}
+.thl{border-inline-end:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.thl .tabs{margin:0;padding-inline:6px}
+.th{display:grid;gap:3px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;text-align:start;background:transparent;border-inline:0;border-top:0;width:100%}
+.th[aria-current="true"]{background:var(--accent-subtle)}
+.th .r1{display:flex;gap:6px;align-items:center;font-size:var(--t-sm)}
+.th .r1 .tm{margin-inline-start:auto;font-size:var(--t-xs);color:var(--fg-3)}
+.th .pv{font-size:var(--t-xs);color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.th .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+.conv{display:flex;flex-direction:column;min-width:0}
+.conv .hd{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msgs{flex:1;padding:14px;display:grid;gap:10px;align-content:start;background:var(--bg)}
+.msg{max-width:78%;padding:9px 12px;border-radius:12px;font-size:var(--t-sm);background:var(--surface);border:1px solid var(--line)}
+.msg.me{justify-self:end;background:var(--accent-subtle);border-color:transparent}
+.msg.note{justify-self:center;background:var(--wait-subtle);border-color:transparent;color:var(--wait);font-size:var(--t-xs)}
+.msg .meta{font-size:10.5px;color:var(--fg-3);margin-top:3px}
+.compose{border-top:1px solid var(--line);padding:10px 12px;display:grid;gap:8px}
+.compose .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--wait-subtle);color:var(--wait);border-radius:10px;padding:8px 10px;font-size:var(--t-sm)}
+.ctxp{border-inline-start:1px solid var(--line);padding:14px;display:grid;gap:14px;align-content:start}
+.ctxp h4{margin:0 0 6px;font-size:var(--t-xs);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);font-weight:500}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:var(--t-xs)}
+.kv span:nth-child(odd){color:var(--fg-3)}
+.cal{display:grid;grid-template-columns:150px repeat(7,minmax(110px,1fr));border:1px solid var(--line);border-radius:12px;overflow:auto;background:var(--surface)}
+.cal > div{border-bottom:1px solid var(--line);border-inline-end:1px solid var(--line);padding:6px;min-height:64px;font-size:var(--t-xs)}
+.cal .hd{min-height:auto;font-weight:600;color:var(--fg-2);background:var(--surface-2)}
+.cal .rl{font-weight:600;color:var(--fg-2)}
+.cal .we{background:var(--surface-2)}
+.evt{border-radius:7px;padding:4px 6px;margin-bottom:4px;line-height:1.3;border-inline-start:3px solid var(--accent);background:var(--accent-subtle)}
+.evt.cl{border-color:var(--client);background:var(--client-subtle)}
+.evt.op{border-color:var(--wait);background:var(--wait-subtle)}
+.evt.vi{border-color:var(--done);background:var(--done-subtle)}
+.apv{display:grid;gap:10px}
+.ap{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px}
+.ap .top{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ap .top .amt{margin-inline-start:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.ap .checks{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:var(--t-xs)}
+.ap .checks span{display:inline-flex;gap:5px;align-items:center}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:2px}
+.tile b{font-size:1.4rem;font-variant-numeric:tabular-nums}
+.tile span{font-size:var(--t-xs);color:var(--fg-2)}
+.bars{display:grid;gap:6px}
+.bar{display:grid;grid-template-columns:120px minmax(0,1fr) 40px;gap:8px;align-items:center;font-size:var(--t-xs)}
+.bar i{height:8px;border-radius:4px;background:var(--accent);display:block}
+.bar .bg{background:var(--surface-2);border-radius:4px}
+.jobhd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.jobhd .acts{margin-inline-start:auto;display:flex;gap:8px}
+.scrim{position:absolute;inset:0;background:rgba(10,14,16,.35);z-index:40}
+.sheet{position:fixed;top:0;bottom:0;inset-inline-end:0;width:min(440px,100%);background:var(--surface);border-inline-start:1px solid var(--line);box-shadow:var(--shadow);z-index:60;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet .sh{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.sheet .sh b{font-size:var(--t-md)}
+.sheet .sh button{margin-inline-start:auto}
+.sheet .sbd{flex:1;overflow:auto;padding:16px;display:grid;gap:12px;align-content:start}
+.sheet.wide{width:min(380px,100%);background:var(--bg)}
+.setrow{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) auto;gap:8px;align-items:center;font-size:var(--t-sm);padding:8px 0;border-bottom:1px solid var(--line)}
+.setrow .src{font-size:var(--t-xs);color:var(--fg-3)}
+.setrow .ov{color:var(--accent);font-weight:700}
+.pal{position:fixed;inset:0;z-index:70;background:rgba(10,14,16,.35);display:grid;place-items:start center;padding:12vh 16px 16px}
+.pal-in{width:min(620px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.pal-in input{width:100%;border:0;border-bottom:1px solid var(--line);padding:14px 16px;font-size:var(--t-md);background:transparent;outline:none}
+.pal-list{max-height:52vh;overflow:auto;padding:6px}
+.pal-g{font-size:10.5px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);padding:8px 10px 4px}
+.pal-i{display:flex;gap:10px;align-items:center;width:100%;border:0;background:transparent;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:var(--t-sm);text-align:start}
+.pal-i[aria-selected="true"]{background:var(--accent-subtle)}
+.pal-i .hint{margin-inline-start:auto;font-size:var(--t-xs);color:var(--fg-3)}
+.tabbar{display:none}
+.cap{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cap button{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:16px 10px;display:grid;gap:6px;place-items:center;font-size:var(--t-sm);cursor:pointer}
+.cap svg{width:22px;height:22px;stroke:var(--fg-2)}
+@media (max-width:1100px){ .inbox{grid-template-columns:260px minmax(0,1fr)} .ctxp{display:none} .home{grid-template-columns:minmax(0,1fr)} }
+@media (max-width:760px){
+  body{padding-block:6px 8px}
+  .banner{display:none}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;border-radius:14px}
+  .sb{position:absolute;inset-block:0;inset-inline-start:0;width:min(280px,86%);z-index:50;transform:translateX(-105%);transition:transform .2s}
+  .app.open .sb{transform:none}
+  .mtop{display:flex}
+  .view{padding:14px 14px 30px}
+  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--surface);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .tabbar button{border:0;background:transparent;display:grid;place-items:center;gap:2px;padding:7px 0;font-size:10.5px;color:var(--fg-3);cursor:pointer}
+  .tabbar button svg{width:19px;height:19px;stroke:currentColor}
+  .tabbar button[aria-current="page"]{color:var(--fg);font-weight:700}
+  .inbox{grid-template-columns:minmax(0,1fr)} .conv{display:none} .inbox.reading .thl{display:none} .inbox.reading .conv{display:flex}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (prefers-reduced-motion:reduce){.sb{transition:none}}
+</style>
+
+<div class="banner"><b>Main portal</b><span>Clickable prototype on the same engine as the concept page.</span><span>Switch seat at the bottom of the sidebar · <kbd>⌘K</kbd> to find or ask</span><a id="concept-link" href="index.html">Open the concept</a></div>
+<div class="app" id="app">
+  <aside class="sb" id="sb" aria-label="Navigation">
+    <div class="sb-top">
+      <div class="brand"><i></i><div>Firm A<span>Interiors workspace</span></div></div>
+      <button class="find" type="button" data-go="palette"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg>Find or ask<kbd>⌘K</kbd></button>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sb-foot"><label for="seat">Viewing as</label><select id="seat">
+      <option value="owner">Owner · CRM owner</option><option value="sa">Sales admin</option><option value="am" selected>Account manager</option><option value="des">Interior designer</option><option value="fin">Finance</option><option value="ops">Operations</option>
+    </select></div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+  <main class="main">
+    <div class="mtop"><button class="iconbtn" type="button" data-go="menu" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><button class="find" type="button" data-go="palette">Find or ask</button></div>
+    <div class="view" id="view"></div>
+  </main>
+  <nav class="tabbar" id="tabbar" aria-label="Tabs"></nav>
+</div>
+<div class="sheet" id="sheet" hidden><div class="sh"><b id="sheet-t"></b><button class="btn ghost sm" type="button" data-go="close-sheet">Close</button></div><div class="sbd" id="sheet-b"></div></div>
+<div class="sheet wide" id="cv" hidden><div class="sh"><b>Client view</b><button class="btn ghost sm" type="button" data-go="close-cv">Close</button></div><div class="sbd" id="cv-b"></div></div>
+<div class="pal" id="pal" hidden><div class="pal-in" role="dialog" aria-label="Find or ask"><input id="pal-q" type="text" placeholder="Find a job, page or person, or say what to do" autocomplete="off"><div class="pal-list" id="pal-list"></div></div></div>
+
+<script src="flow.js"></script>
+<script>
+(function(){
+  const F = window.Flow, esc = F.esc, val = F.val, money = F.money;
+  const I = d => '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+  const ICON = {
+    home:I('<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>'),
+    inbox:I('<path d="M3 13h5l2 3h4l2-3h5M5 5h14l2 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/>'),
+    queue:I('<path d="M4 6h16M4 12h10M4 18h7"/><circle cx="18" cy="17" r="3"/>'),
+    route:I('<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h7a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h7"/>'),
+    cal:I('<path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/>'),
+    check:I('<path d="M4 12l5 5L20 6"/>'),
+    pen:I('<path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/>'),
+    ruler:I('<path d="M3 17 17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/>'),
+    factory:I('<path d="M3 21V10l6 4V10l6 4V6h6v15z"/>'),
+    truck:I('<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'),
+    money:I('<path d="M3 6h18v12H3z"/><circle cx="12" cy="12" r="3"/>'),
+    chart:I('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    users:I('<circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 12 0v1M16 4a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6"/>'),
+    grid:I('<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>'),
+    swatch:I('<path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-.9-.8-1.3-.8-2.2 0-.9.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.4-4-8.8-9-8.8z"/>'),
+    person:I('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+    gear:I('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>'),
+    plus:I('<path d="M12 5v14M5 12h14"/>'),
+    camera:I('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+    mic:I('<path d="M12 3a3 3 0 0 1 3 3v5a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/>'),
+    receipt:I('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/>'),
+    menu:I('<path d="M4 7h16M4 12h16M4 17h16"/>')
+  };
+  const NAV = [
+    {items:[['home','My day','home'],['inbox','Inbox','inbox'],['enquiries','Enquiries','queue'],['jobs','Jobs','route'],['calendar','Calendar','cal'],['approvals','Approvals','check']]},
+    {g:'Work', items:[['design','Design work','pen'],['technical','Technical','ruler'],['factory','Factory','factory'],['logistics','Logistics','truck']]},
+    {g:'Money', items:[['finance','Finance','money'],['reports','Reports','chart']]},
+    {g:'Company', items:[['clients','Clients','users'],['catalogue','Catalogue','grid'],['materials','Materials','swatch'],['people','People','person'],['settings','Settings','gear']]}
+  ];
+  const BADGE = {inbox:[3,true], enquiries:[4,true], approvals:[5,false]};
+  const SEATS = {
+    owner:{label:'Owner · CRM owner', nav:'home inbox enquiries jobs calendar approvals design technical factory logistics finance reports clients catalogue materials people settings'},
+    sa:{label:'Sales admin', nav:'home inbox enquiries jobs calendar clients catalogue'},
+    am:{label:'Account manager', nav:'home enquiries jobs calendar clients catalogue materials'},
+    des:{label:'Interior designer', nav:'home jobs design calendar materials catalogue'},
+    fin:{label:'Finance', nav:'home approvals jobs finance reports clients'},
+    ops:{label:'Operations', nav:'home jobs technical factory logistics calendar materials'}
+  };
+  const JOBS = [
+    {id:'JOB-0146', name:'Corner apartment', where:'Marina, Dubai', flow:'fof', pkg:'bespoke', at:'contact', value:null, am:'AM'},
+    {id:'JOB-0151', name:'Studio flat', where:'Al Nahda, Sharjah', flow:'fof', pkg:'concept', at:'book', value:null},
+    {id:'JOB-0148', name:'Loft 9', where:'Jumeirah, Dubai', flow:'id', pkg:'concept', at:'intro', value:null},
+    {id:'JOB-0149', name:'Family villa', where:'Reem Island, Abu Dhabi', flow:'fof', pkg:'bespoke', at:'qual', value:null},
+    {id:'JOB-0144', name:'Townhouse 22', where:'Al Barsha, Dubai', flow:'id', pkg:'bespoke', at:'prop1', value:60000},
+    {id:'JOB-0127', name:'Penthouse 3', where:'Downtown, Dubai', flow:'id', pkg:'concept', at:'acc1', value:30000, wait:'Client 3 days'},
+    {id:'JOB-0147', name:'Duplex 9', where:'Saadiyat, Abu Dhabi', flow:'fof', pkg:'director', at:'own1', value:120000},
+    {id:'JOB-0150', name:'Garden villa', where:'Arabian Ranches, Dubai', flow:'fof', pkg:'director', at:'measure', value:150000},
+    {id:'JOB-0142', name:'Apartment 1204', where:'Marina, Dubai', flow:'fof', pkg:'bespoke', at:'mats', value:434500},
+    {id:'JOB-0139', name:'Villa 7', where:'Jumeirah, Dubai', flow:'fof', pkg:'director', at:'est', value:512000, risk:'Margin 26%'},
+    {id:'JOB-0131', name:'Office lounge', where:'Business Bay, Dubai', flow:'fof', pkg:'bespoke', at:'factory', value:298000, risk:'Slipping +4d'},
+    {id:'JOB-0124', name:'Sea-view villa', where:'Palm area, Dubai', flow:'fof', pkg:'concept', at:'snag', value:640000},
+    {id:'JOB-0120', name:'Townhouse 18', where:'Mirdif, Dubai', flow:'fu', pkg:'bespoke', at:'warr', value:46000}
+  ];
+  JOBS.forEach(j => { const c = {flow:j.flow, pkg:j.pkg, q2:'active'}; j.L = F.listFor(c); j.i = j.L.findIndex(s => s.id === j.at); j.step = j.L[j.i]; j.c = c; j.chs = F.CH.filter(ch => j.L.some(s => s.ch === ch.id)); });
+  const job = id => JOBS.find(j => j.id === id);
+
+  const st = {seat:'am', route:'home', jobId:null, jobTab:'map', jobsView:'lines', inboxTab:'open', thread:0, t3:false, approved:new Set(), enqTab:'new', cal:{des:true, vis:true, ops:true, me:true}};
+  try { const s = localStorage.getItem('mp-seat'); if (s && SEATS[s]) st.seat = s; } catch (e) {}
+  const H = location.hash.replace('#', ''); if (H) { if (job(H.toUpperCase())) { st.route = 'job'; st.jobId = H.toUpperCase(); } else if (NAV.some(g => g.items.some(i => i[0] === H))) st.route = H; }
+  const allowed = r => r === 'job' || SEATS[st.seat].nav.split(' ').includes(r);
+  const $ = id => document.getElementById(id);
+  const view = $('view');
+  const SPARK = F.SPARK;
+
+  function chip(t, cls){ return '<span class="chip ' + (cls || '') + '">' + esc(t) + '</span>'; }
+  function av(r){ return '<span class="av' + (r === 'CL' ? ' client' : '') + '">' + r + '</span>'; }
+  function track(j){ return '<div class="trk" aria-label="' + esc(j.step ? F.CH.find(c => c.id === j.step.ch).label : '') + '">' + j.chs.map(ch => { const f = j.L.findIndex(s => s.ch === ch.id); let l = -1; j.L.forEach((s, k) => { if (s.ch === ch.id) l = k; }); return '<i class="' + (j.i > l ? 'done' : (j.i >= f ? 'now' : '')) + '"></i>'; }).join('') + '</div>'; }
+  function health(j){ if (j.risk) return chip(j.risk, j.risk.startsWith('Margin') ? 'stop' : 'wait'); if (j.wait) return chip(j.wait, 'client'); if (F.roleOf(j.step, j.c) === 'client') return chip('Waiting on client', 'client'); return chip('On track', 'done'); }
+  function grid(cols, rows){ return '<div class="grid"><table><thead><tr>' + cols.map(c => '<th' + (c[1] ? ' class="num"' : '') + '>' + esc(c[0]) + '</th>').join('') + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'; }
+  function header(title, sub, actions){ return '<div class="ph"><div><h1>' + esc(title) + '</h1>' + (sub ? '<div class="sub">' + sub + '</div>' : '') + '</div><div class="acts">' + (actions || '') + '</div></div>'; }
+  function more(mod){ return '<button class="btn ghost sm" type="button" data-go="settings-sheet" data-mod="' + mod + '" aria-label="Module settings">⋯ Settings</button>'; }
+
+  /* ---------- nav ---------- */
+  function renderNav(){
+    const allow = SEATS[st.seat].nav.split(' ');
+    $('nav').innerHTML = NAV.map(g => { const items = g.items.filter(i => allow.includes(i[0])); if (!items.length) return ''; return '<div class="ng">' + (g.g ? '<h5>' + g.g + '</h5>' : '') + items.map(i => { const b = BADGE[i[0]]; return '<button class="ni" type="button" data-go="' + i[0] + '"' + (st.route === i[0] || (st.route === 'job' && i[0] === 'jobs') ? ' aria-current="page"' : '') + '>' + ICON[i[2]] + i[1] + (b ? '<span class="bd' + (b[1] ? ' hot' : '') + '">' + b[0] + '</span>' : '') + '</button>'; }).join('') + '</div>'; }).join('');
+    const tabs = [['home','My day','home'], allow.includes('inbox') ? ['inbox','Inbox','inbox'] : (allow.includes('enquiries') ? ['enquiries','Enquiries','queue'] : ['calendar','Calendar','cal']), ['jobs','Jobs','route'], ['capture','Capture','plus'], ['menu','More','menu']];
+    $('tabbar').innerHTML = tabs.map(t => '<button type="button" data-go="' + t[0] + '"' + (st.route === t[0] ? ' aria-current="page"' : '') + '>' + ICON[t[2]] + t[1] + '</button>').join('');
+  }
+
+  /* ---------- home ---------- */
+  const HOME = {
+    owner:{brief:'3 approvals wait for you. JOB-0139 is 4 points under its margin target. One enquiry bounced between account managers all day.', cta:'', needs:[
+      ['JOB-0147','Approve deal 1','Finance checked AED 120,000 · commission split for 2 people','Today','',"Deal file complete",'Approve','approvals'],
+      ['JOB-0118','Confirm Q2 withdrawn','Client sources furniture elsewhere · completes at design handover','Today','wait','','Review','approvals'],
+      ['ENQ-00431','Reassign or move to Lost','Untouched for 1 working day · back in Unassigned','Now','stop','','Open','enquiries']],
+      wait:[['JOB-0139','Discount 8% with the creative director','1 day'],['JOB-0131','Veneer from the supplier','+4 days']]},
+    sa:{brief:'2 new chats need a reply. JOB-0144’s design proposal is drafted and ready to check. One chat has had no reply for 3 working hours.', cta:'New enquiry', needs:[
+      ['Inbox','Reply to a new WhatsApp chat','Villa enquiry · details missing: emirate, budget','12 min','wait','T2 form link ready','Open','inbox'],
+      ['JOB-0144','Check and send proposal 1','Bespoke · 1,500 sq ft · AED 60,000','Today','','Drafted from the template','Open','job:JOB-0144'],
+      ['Inbox','Close a silent chat','No reply for 3 working hours · T3 needs your confirmation','Now','','','Open','inbox']],
+      wait:[['JOB-0139','QS to price 3 lines','2 hours'],['JOB-0142','Client to confirm materials','1 day']]},
+    am:{brief:'One new enquiry has 38 minutes left on its 1-hour clock. JOB-0127 opened proposal 1 twice without answering. JOB-0149 needs a target date to reach Proposal.', cta:'New enquiry', needs:[
+      ['JOB-0146','Log the first contact','WhatsApp · Full ID + fit-out · Marina, Dubai','38 min','wait','Reply drafted in Arabic','Open','job:JOB-0146'],
+      ['JOB-0127','Chase proposal 1','Opened twice, no reply in 3 days','Today','client','Call suggested at 10:00','Open','job:JOB-0127'],
+      ['JOB-0149','Record the qualified outcome','Gate: target completion date missing','Today','stop','Found in the notes: 15 Feb 2027','Open','job:JOB-0149'],
+      ['JOB-0151','Book the intro','Designer free Tue 11:00 or Wed 15:00','Tomorrow','','Deck page 3 filled','Open','job:JOB-0151']],
+      wait:[['JOB-0144','Sales admin to send proposal 1','Today'],['JOB-0147','Owner to approve deal 1','2 hours']]},
+    des:{brief:'Material selection for JOB-0142 today at 14:00 with the material coordinator. Garden villa site measure is due within 3 days of kick-off. 2 revision tasks came from client pins.', cta:'', needs:[
+      ['JOB-0142','Material selection meeting','Showroom · 14:00 · 8 items','14:00','','7 of 8 matched to library codes','Open','job:JOB-0142'],
+      ['JOB-0150','Design site measure','Due Wed · within 3 days of kick-off','Wed','wait','Questions drafted from the brief','Open','job:JOB-0150'],
+      ['JOB-0124','Inspect snag fixes','5 of 6 look closed in photos','Thu','','1 needs a second look','Open','job:JOB-0124']],
+      wait:[['JOB-0142','Visualiser: final render (if asked)','—'],['JOB-0150','Creative director to choose the lead designer','Done']]},
+    fin:{brief:'2 payments to verify; AI has read both proofs. 1 commission to pay. Refund on JOB-0101 follows the card method’s 14 days.', cta:'', needs:[
+      ['JOB-0147','Finance check · deal 1','Transfer AED 120,000 · ref FT2486','Today','','Proof read · 98% · net and VAT split','Open','job:JOB-0147'],
+      ['JOB-0139','Received / Approved · stage 1','Card AED 100,000 + cheque AED 54,600','Today','','Both proofs read','Open','finance'],
+      ['JOB-0101','Refund · card','AED 6,000 · 14 days from approval','Fri','','Credit note drafted','Open','approvals']],
+      wait:[['JOB-0139','Creative director: discount','1 day']]},
+    ops:{brief:'JOB-0131 is 4 days late after a veneer delay; a client message is drafted. A permit expires before an install date. 2 items wait for inspection 2.', cta:'', needs:[
+      ['JOB-0131','Supplier delay','Veneer +4 days · install moves to 12 Nov','Today','wait','Client message drafted','Open','job:JOB-0131'],
+      ['JOB-0124','Close the last snag','Open snags block the handover','Today','stop','','Open','job:JOB-0124'],
+      ['JOB-0131','Renew the site permit','Expires 3 Nov, before install','Wed','','Task for the tagged person','Open','logistics']],
+      wait:[['JOB-0131','Lead designer: inspection 2','Tomorrow']]}
+  };
+  function renderHome(){
+    const h = HOME[st.seat];
+    let s = header('My day', 'Saturday 17 October · ' + esc(SEATS[st.seat].label), h.cta ? '<button class="btn primary" type="button" data-go="toast" data-msg="New enquiry form opens with source and channel">' + esc(h.cta) + '</button>' : '');
+    s += '<div class="brief">' + SPARK + '<span>' + esc(h.brief) + '</span></div>';
+    s += '<div class="home"><div><div class="sec"><h4>Needs you · ' + h.needs.length + '</h4>' + h.needs.map(n => '<button class="qi" type="button" data-go="' + n[7] + '"><div class="tx"><b>' + esc(n[1]) + ' · <span class="mono xs">' + esc(n[0]) + '</span></b><span class="w">' + esc(n[2]) + '</span><span class="chips">' + chip(n[3], n[4] || '') + (n[5] ? '<span class="chip ai">' + SPARK + esc(n[5]) + '</span>' : '') + '</span></div><span class="btn sm">' + esc(n[6]) + '</span></button>').join('') + '</div>';
+    s += '<div class="sec"><h4>Waiting on others</h4><div class="card">' + h.wait.map(w => '<div class="wi"><span class="mono xs">' + esc(w[0]) + '</span>' + esc(w[1]) + '<span class="since">' + esc(w[2]) + '</span></div>').join('') + '</div></div></div>';
+    const mine = JOBS.filter(j => ({am:['win'], sa:['win','price'], des:['design'], fin:['win','price'], ops:['make','install','care'], owner:['win','design','price','make','install','care']})[st.seat].includes(j.step.ch)).slice(0, 5);
+    s += '<div><div class="sec"><h4>Today</h4><div class="card">' + [['10:00','Intro · JOB-0148 · online'],['11:30','Kick-off minutes due · JOB-0150'],['14:00','Material selection · JOB-0142 · showroom'],['16:00','Weekly client update · JOB-0142']].map(e => '<div class="ev"><span class="t">' + e[0] + '</span>' + esc(e[1]) + '</div>').join('') + '</div></div>';
+    s += '<div class="sec"><h4>My jobs</h4><div class="card">' + mine.map(j => '<button class="qi" type="button" data-go="job:' + j.id + '" style="border:0;padding:4px 0"><div class="tx"><b>' + esc(j.id) + ' · ' + esc(j.name) + '</b><span class="w">' + esc(F.CH.find(c => c.id === j.step.ch).label) + ' · ' + esc(val(j.step.name, j.c)) + '</span>' + track(j) + '</div></button>').join('') + '</div></div></div></div>';
+    view.innerHTML = s;
+  }
+
+  /* ---------- inbox ---------- */
+  const THREADS = [
+    {who:'New contact', ch:'WhatsApp', label:'Open', unread:true, tm:'12 min', pv:'Hi, we need help with a 3-bed villa, kitchen and living…', msgs:[['c','Hi, we need help with a 3-bed villa, kitchen and living room. Do you do full fit-out?','09:48']], ai:'New enquiry. Likely Full ID, Fit-Out & Furniture. Missing: emirate, budget range. No duplicate, not a past client.', acts:'new'},
+    {who:'Client · JOB-0142', ch:'WhatsApp', label:'Open', unread:true, tm:'40 min', pv:'Can the lamps be brass instead?', msgs:[['c','Can the lamps be brass instead?','09:20']], ai:'Belongs to JOB-0142 · Material selection. Reply drafted; the request goes to the job, not the chat.', acts:'job'},
+    {who:'Unknown', ch:'WhatsApp', label:'Open', unread:true, tm:'1 h', pv:'Earn 30% monthly with our investment…', msgs:[['c','Earn 30% monthly with our investment programme, click here','08:55']], ai:'Spam (96% sure). Resolving creates a spam enquiry and flags the contact; no message is sent.', acts:'spam'},
+    {who:'Prospect · villa', ch:'WhatsApp', label:'Unresolved', unread:false, tm:'3 h 20 m', pv:'You: please complete this short form…', msgs:[['c','Interested in a design package','Thu 14:02'],['me','Hi, to take your enquiry forward, please complete this short form: [form link]. Once we receive it, our team will be in touch.','Thu 14:10'],['n','No reply for 3 working hours (Mon–Fri)','']], ai:'No client reply for 3 working hours. T3 can close the chat after you confirm.', acts:'t3'},
+    {who:'Client · JOB-0120', ch:'Email', label:'Resolved', unread:false, tm:'Mon', pv:'Thank you, the table arrived perfectly.', msgs:[['c','Thank you, the table arrived perfectly.','Mon 11:00']], ai:'Filed into JOB-0120 · Warranty.', acts:'none'}
+  ];
+  function renderInbox(){
+    const tabs = [['open','Open',THREADS.filter(t => t.label === 'Open').length],['unread','Unread',THREADS.filter(t => t.unread).length],['resolved','Resolved',THREADS.filter(t => t.label === 'Resolved').length],['all','All',THREADS.length]];
+    const list = THREADS.map((t, i) => ({t, i})).filter(o => st.inboxTab === 'all' || (st.inboxTab === 'open' && o.t.label !== 'Resolved') || (st.inboxTab === 'unread' && o.t.unread) || (st.inboxTab === 'resolved' && o.t.label === 'Resolved'));
+    if (!list.some(o => o.i === st.thread) && list.length) st.thread = list[0].i;
+    const t = THREADS[st.thread];
+    let s = header('Inbox', 'WhatsApp and email · Sales admin team and CRM owner', '');
+    s += '<div class="inbox' + (st.reading ? ' reading' : '') + '"><div class="thl"><div class="tabs" role="tablist">' + tabs.map(x => '<button type="button" role="tab" data-go="inbox-tab" data-v="' + x[0] + '" aria-selected="' + (st.inboxTab === x[0]) + '">' + x[1] + '<span class="n">' + x[2] + '</span></button>').join('') + '</div>' +
+      list.map(o => '<button class="th" type="button" data-go="thread" data-i="' + o.i + '" aria-current="' + (o.i === st.thread) + '"><span class="r1">' + (o.t.unread ? '<i class="dot"></i>' : '') + '<b>' + esc(o.t.who) + '</b>' + chip(o.t.label, o.t.label === 'Open' ? '' : o.t.label === 'Resolved' ? 'done' : o.t.label === 'Spam' ? 'stop' : 'wait') + '<span class="tm">' + esc(o.t.tm) + '</span></span><span class="pv">' + esc(o.t.ch) + ' · ' + esc(o.t.pv) + '</span></button>').join('') + '</div>';
+    s += '<div class="conv"><div class="hd"><button class="btn ghost sm" type="button" data-go="inbox-back">‹</button><b>' + esc(t.who) + '</b>' + chip(t.ch) + chip(t.label, t.label === 'Resolved' ? 'done' : '') + '</div><div class="msgs">' + t.msgs.map(m => m[0] === 'n' ? '<div class="msg note">' + esc(m[1]) + '</div>' : '<div class="msg' + (m[0] === 'me' ? ' me' : '') + '">' + esc(m[1]) + '<div class="meta">' + esc(m[2]) + '</div></div>').join('') + '</div>';
+    s += '<div class="compose"><div class="j-ai"><div class="h">' + SPARK + '<span class="ai-text">AI read this chat</span></div><p>' + esc(t.ai) + '</p></div>';
+    if (st.t3 && t.acts === 't3') s += '<div class="confirm">Send T3 “closing the chat” and resolve? It cannot be undone.<button class="btn sm" type="button" data-go="t3-cancel">Cancel</button><button class="btn primary sm" type="button" data-go="t3-ok">Send T3 and resolve</button></div>';
+    s += '<div class="row">';
+    if (t.acts === 'new') s += '<button class="btn primary sm" type="button" data-go="toast" data-msg="T2 sent with the form for WhatsApp · when the client fills it, the enquiry is created and T1 goes out">Send T2 form link</button><button class="btn sm" type="button" data-go="toast" data-msg="Enquiry ENQ-2026-00433 created from the chat · T1 sent automatically · round-robin to the next account manager">Create enquiry</button>';
+    if (t.acts === 'job') s += '<button class="btn primary sm" type="button" data-go="job:JOB-0142">File into JOB-0142</button><button class="btn sm" type="button" data-go="toast" data-msg="Reply sent; the question is pinned on the material selection step">Send drafted reply</button>';
+    if (t.acts === 'spam') s += '<button class="btn primary sm" type="button" data-go="toast" data-msg="Resolved as spam · no message sent · contact flagged on every source">Mark spam</button>';
+    if (t.acts === 't3') s += '<button class="btn primary sm" type="button" data-go="t3">Close with T3</button>';
+    s += '<button class="btn ghost sm" type="button" data-go="toast" data-msg="Chat resolved · only you can reopen it">Resolve</button></div></div></div>';
+    s += '<aside class="ctxp"><div><h4>Contact</h4><div class="kv"><span>Source</span><span>WhatsApp</span><span>Channel</span><span>Main number</span><span>Matches</span><span>None</span></div></div><div><h4>Templates</h4><div class="chips"><span class="chip">T1 · automatic</span><span class="chip">T2 · form link</span><span class="chip">T3 · after 3 working hours</span></div></div><div><h4>Rules</h4><p class="xs muted">English templates; {{name}} and {{form_link}} fill in. Only the person who resolved a chat can reopen it.</p></div></aside></div>';
+    view.innerHTML = s;
+  }
+
+  /* ---------- enquiries ---------- */
+  const ENQ = [
+    ['ENQ-2026-00433','new','Villa · Reem Island, Abu Dhabi','WhatsApp · form','TBC','AM','38 min left','wait',0,''],
+    ['ENQ-2026-00432','new','Apartment · Marina, Dubai','Website · form','Full ID, Fit-Out & Furniture','AM','52 min left','wait',0,'job:JOB-0146'],
+    ['ENQ-2026-00430','new','Townhouse · Mirdif, Dubai','Walk-in · showroom','Furniture only','AM','Reassigned 1×','stop',0,''],
+    ['ENQ-2026-00431','unassigned','Villa · Al Barsha, Dubai','Instagram · marketing','Full ID','—','1 working day · owner emailed','stop',0,''],
+    ['ENQ-2026-00428','contacted','Penthouse · Downtown, Dubai','Referral','Full ID','AM','Attempt 2 · no answer','',2,''],
+    ['ENQ-2026-00425','contacted','Office · Business Bay, Dubai','Digital marketing','Fit-out','AM','Attempt 1 · WhatsApp, no reply','',1,''],
+    ['ENQ-2026-00419','back','Villa · Jumeirah, Dubai','Event','Full ID','AM','Not ready · follow up 2 Nov','',3,''],
+    ['ENQ-2026-00434','new','Apartment · Marina, Dubai','WhatsApp','Duplicate of ENQ-2026-00432','AM','Goes to the original AM','',0,'dup'],
+    ['ENQ-2026-00435','new','Villa · Mirdif, Dubai','Phone call','Returning customer · old leads','AM','Same AM as before','done',0,'ret']
+  ];
+  function renderEnquiries(){
+    const tabs = [['new','New'],['contacted','Contacted'],['back','Come back to'],['unassigned','Unassigned'],['all','All']];
+    const count = k => k === 'all' ? ENQ.length : ENQ.filter(e => e[1] === k).length;
+    const rows = ENQ.filter(e => st.enqTab === 'all' || e[1] === st.enqTab).map(e => '<tr data-go="' + (e[9].startsWith('job:') ? e[9] : 'toast') + '" data-msg="' + esc(e[9] === 'dup' ? 'Duplicate: linked to ENQ-2026-00432 and its account manager; excluded from reports' : e[9] === 'ret' ? 'Returning customer: source Returning Customer, channel Old Leads, same account manager, no new client record' : 'Log an outcome after every attempt: no answer · WhatsApp sent, no reply · willing to talk · not interested (reason)') + '"><td><div class="rn"><b>' + esc(e[0]) + '</b><span>' + esc(e[2]) + '</span></div></td><td>' + esc(e[3]) + '</td><td>' + (e[9] === 'dup' ? chip(e[4], 'stop') : e[9] === 'ret' ? chip(e[4], 'done') : esc(e[4])) + '</td><td>' + av(e[5] === '—' ? '—' : e[5]) + '</td><td>' + chip(e[6], e[7]) + '</td><td class="num">' + e[8] + '</td></tr>');
+    let s = header('Enquiries', 'Each account manager sees only their own · 1 working hour to first activity', '<button class="btn primary" type="button" data-go="toast" data-msg="New enquiry: source and channel required; mobile with country code; emirate">New enquiry</button>' + more('enquiries'));
+    s += '<div class="tabs" role="tablist">' + tabs.map(t => '<button type="button" role="tab" data-go="enq-tab" data-v="' + t[0] + '" aria-selected="' + (st.enqTab === t[0]) + '">' + t[1] + '<span class="n">' + count(t[0]) + '</span></button>').join('') + '</div>';
+    s += rows.length ? grid([['Enquiry'],['Source · channel'],['Type'],['Owner'],['Response clock'],['Attempts',1]], rows) : '<div class="card"><b>No enquiries here</b><span class="small muted">New ones arrive from forms, chats and walk-ins.</span></div>';
+    view.innerHTML = s;
+  }
+
+  /* ---------- jobs ---------- */
+  const PIPE = [['New opportunity',['convert','book']],['Intro booked',['intro']],['Qualified',['qual']],['Proposal',['prop1','acc1','quote','est','mgr','eprop','sign2']],['Negotiation',['nego']],['Won · deal file',['pay1','fin1','own1','pay2','fin2','own2']]];
+  function renderJobs(){
+    const vs = [['lines','Lines'],['pipeline','Pipeline'],['table','Table']];
+    let s = header('Jobs', JOBS.length + ' jobs · one record from enquiry to warranty', '<button class="btn primary" type="button" data-go="enquiries">New enquiry</button>');
+    s += '<div class="tb"><span class="chip ink">All</span><span class="chip">Mine</span><span class="chip client">Waiting on client</span><span class="chip wait">At risk</span><div class="end"><div class="seg" role="group" aria-label="View">' + vs.map(v => '<button type="button" data-go="jobs-view" data-v="' + v[0] + '" aria-pressed="' + (st.jobsView === v[0]) + '">' + v[1] + '</button>').join('') + '</div></div></div>';
+    if (st.jobsView === 'pipeline') {
+      s += '<div class="board">' + PIPE.map(p => { const js = JOBS.filter(j => p[1].includes(j.at) && j.step.ch !== 'make'); return '<div class="col"><h5><span>' + p[0] + '</span><span>' + js.length + '</span></h5>' + js.map(j => '<div class="bc" data-go="job:' + j.id + '"><div class="top"><b class="mono xs">' + j.id + '</b>' + av(F.SHORT[F.roleOf(j.step, j.c)]) + '</div><b>' + esc(j.name) + '</b><span class="xs muted">' + esc(j.where) + '</span><span class="xs">' + esc(val(j.step.name, j.c)) + (j.value ? ' · ' + money(j.value) : '') + '</span>' + health(j) + '</div>').join('') + '</div>'; }).join('') + '<div class="col"><h5><span>Needs time to think</span><span>1</span></h5><div class="bc"><b class="mono xs">JOB-0141</b><b>Villa 3</b><span class="xs">Follow-up booked 24 Oct</span></div></div><div class="col"><h5><span>Lost</span><span>2</span></h5><div class="bc"><b class="mono xs">JOB-0133</b><span class="xs">Budget · reason recorded</span></div></div></div>';
+    } else if (st.jobsView === 'table') {
+      s += grid([['Job'],['Type'],['Chapter'],['Step'],['Seat'],['Value',1],['Health']], JOBS.map(j => '<tr data-go="job:' + j.id + '"><td><div class="rn"><b>' + j.id + ' · ' + esc(j.name) + '</b><span>' + esc(j.where) + '</span></div></td><td>' + esc(F.FLOWS[j.flow].short) + '</td><td>' + esc(F.CH.find(c => c.id === j.step.ch).label) + '</td><td>' + esc(val(j.step.name, j.c)) + '</td><td>' + av(F.SHORT[F.roleOf(j.step, j.c)]) + '</td><td class="num">' + (j.value ? money(j.value) : '—') + '</td><td>' + health(j) + '</td></tr>'));
+    } else {
+      s += grid([['Job'],['Journey'],['Now'],['Seat'],['Health']], JOBS.map(j => '<tr data-go="job:' + j.id + '"><td><div class="rn"><b>' + j.id + ' · ' + esc(j.name) + '</b><span>' + esc(F.FLOWS[j.flow].short) + (j.flow === 'fu' ? '' : ' · ' + esc(F.PK[j.pkg].short || F.PK[j.pkg].label)) + '</span></div></td><td>' + track(j) + '</td><td><div class="rn"><b>' + esc(val(j.step.name, j.c)) + '</b><span>' + esc(F.CH.find(c => c.id === j.step.ch).label) + '</span></div></td><td>' + av(F.SHORT[F.roleOf(j.step, j.c)]) + '</td><td>' + health(j) + '</td></tr>'));
+    }
+    view.innerHTML = s;
+  }
+
+  /* ---------- job ---------- */
+  function renderJob(){
+    const j = job(st.jobId) || JOBS[8];
+    const tabs = [['map','Map'],['chat','Chat'],['files','Files'],['money','Money'],['history','History']];
+    const pn = k => ' data-panel="' + k + '"' + (st.jobTab === k ? '' : ' hidden');
+    let s = '<div class="jobhd"><button class="btn ghost sm" type="button" data-go="jobs">‹ Jobs</button><span class="xs muted">' + esc(j.where) + '</span><div class="acts"><button class="btn sm" type="button" data-go="client-view">Client view</button></div></div>';
+    s += '<div class="tabs" role="tablist" id="jobtabs">' + tabs.map(t => '<button type="button" role="tab" data-go="job-tab" data-v="' + t[0] + '" aria-selected="' + (st.jobTab === t[0]) + '">' + t[1] + '</button>').join('') + '</div>';
+    s += '<div id="jobmap"' + pn('map') + '></div>';
+    s += '<div' + pn('chat') + '><div class="card"><div class="tb" style="margin:0"><span class="chip ink">Everything</span><span class="chip">Client can see</span><span class="chip">Internal notes</span></div><div class="msgs" style="background:transparent;padding:0"><div class="msg">Can the lamps be brass instead?<div class="meta">Client · portal · 09:20</div></div><div class="msg note">Internal: brass is in stock from the usual supplier, +AED 300 each</div><div class="msg me">Yes, we can do brass. I have added it to your material choices to confirm.<div class="meta">Interior designer · client can see · 09:41</div></div></div><div class="j-ai"><div class="h">' + SPARK + '<span class="ai-text">Linked</span></div><p>The request is pinned to Material selection; it reaches the quotation when the client confirms.</p></div></div></div>';
+    s += '<div' + pn('files') + '>' + grid([['Document'],['From step'],['Status'],['Client sees']], [['Design proposal','Proposal 1','Signed'],['Floor plan','Convert','Uploaded'],['Kick-off minutes','Kick-off','Posted'],['Mood board B','Mood boards','Chosen'],['Space plan','Space planning','Uploaded'],['2D concept v2','2D concept','Approved'],['Renders v2 (6)','3D renders','Approved']].map(r => '<tr><td><b>' + esc(r[0]) + '</b></td><td>' + esc(r[1]) + '</td><td>' + chip(r[2], 'done') + '</td><td>' + (r[1] === 'Space planning' || r[1] === 'Convert' ? 'No' : 'Yes') + '</td></tr>')) + '</div>';
+    s += '<div' + pn('money') + '><div class="card"><div class="j-mrow"><div class="top"><span>Proposal 1 · design fee · 100% upfront</span><span class="amt">' + money(48000) + '</span></div><span>' + chip('Won 14 Oct', 'done') + ' ' + chip('Transfer') + ' ' + chip('Commission: AM 2%, ID 1%') + '</span></div><div class="j-mrow"><div class="top"><span>Proposal 2 · estimate</span><span class="amt">' + money(386500) + '</span></div><span>' + chip('Draft · after design approval') + '</span></div><div class="j-mrow"><div class="top"><b>Client statement</b><span class="amt">Received ' + money(48000) + ' · Due ' + money(0) + '</span></div></div></div></div>';
+    s += '<div' + pn('history') + '><div class="card">' + [['14 Oct 16:02','Owner','Approved deal 1 · deal file locked'],['14 Oct 11:15','Finance','Added net, VAT, method, commission'],['13 Oct 09:48','AI → Account manager','Target date filled from notes (15 Feb 2027) · confirmed'],['2 Oct 10:42','System','Reassigned to the next account manager after 1 working hour'],['2 Oct 09:41','Form','Enquiry created · T1 sent']].map(h => '<div class="wi"><span class="mono xs" style="width:96px;flex:none">' + esc(h[0]) + '</span><b class="xs" style="width:140px;flex:none">' + esc(h[1]) + '</b><span>' + esc(h[2]) + '</span></div>').join('') + '</div></div>';
+    view.innerHTML = s;
+    const host = document.createElement('div'); $('jobmap').appendChild(host);
+    const ph = document.createElement('div'); $('cv-b').innerHTML = ''; $('cv-b').appendChild(ph);
+    F.mount(host, {flow:j.flow, pkg:j.pkg, startAt:j.at, title:j.id + ' · ' + j.name, phone:ph});
+  }
+  function switchJobTab(v){
+    st.jobTab = v;
+    document.querySelectorAll('#jobtabs [data-v]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === v)));
+    document.querySelectorAll('[data-panel]').forEach(p => { p.hidden = p.dataset.panel !== v; });
+  }
+
+  /* ---------- calendar ---------- */
+  function renderCalendar(){
+    const days = ['Mon 19','Tue 20','Wed 21','Thu 22','Fri 23','Sat 24','Sun 25'];
+    const rows = [
+      ['des','Lead designer calendar',[[['10:00 Intro · JOB-0148','']],[['11:00 Intro · JOB-0151','']],[['09:00 Site measure · JOB-0150','']],[],[['15:00 Kick-off · JOB-0149','']],[],[]]],
+      ['vis','Visualiser',[[],[['Renders · JOB-0139 · 5 days','vi']],[['Renders · JOB-0139','vi']],[['Renders · JOB-0139','vi']],[['Renders · JOB-0139','vi']],[],[]]],
+      ['ops','Factory & logistics',[[['Persons: 2 joiners · JOB-0131','op']],[['Inspection 1 · JOB-0131','op']],[['Delivery · JOB-0124 · Van 2 · crew of 3','op']],[['Inspection 2 · JOB-0131','op']],[['Permit renewal · JOB-0131','op']],[],[]]],
+      ['me','Me',[[['14:00 Material selection · JOB-0142','cl']],[],[['16:00 Weekly update · JOB-0142','cl']],[],[],[],[]]]
+    ];
+    let s = header('Calendar', 'Week of 19 October · working week Mon–Fri 9:00–18:00', '<button class="btn primary" type="button" data-go="toast" data-msg="Booking: pick the step, the person (with or without a login) and the time">Book</button>');
+    s += '<div class="tb">' + rows.map(r => '<button class="chip' + (st.cal[r[0]] ? ' ink' : '') + '" type="button" data-go="cal-t" data-v="' + r[0] + '">' + esc(r[1]) + '</button>').join('') + '<span class="xs muted">Overlay any calendars</span></div>';
+    s += '<div class="cal"><div class="hd"></div>' + days.map((d, k) => '<div class="hd' + (k > 4 ? ' we' : '') + '">' + d + '</div>').join('');
+    rows.filter(r => st.cal[r[0]]).forEach(r => { s += '<div class="rl">' + esc(r[1]) + '</div>' + r[2].map((evs, k) => '<div class="' + (k > 4 ? 'we' : '') + '">' + evs.map(e => '<div class="evt ' + e[1] + '">' + esc(e[0]) + '</div>').join('') + '</div>').join(''); });
+    view.innerHTML = s + '</div>';
+  }
+
+  /* ---------- approvals ---------- */
+  const APV = [
+    ['a1','Deal 1 · JOB-0147 Duplex 9','Owner', money(120000), ['Payment proof attached','Net AED 114,286 · VAT 5% AED 5,714','Method: transfer','Commission: AM 2%, ID 1%'], 'Deal file complete. Nothing missing.'],
+    ['a2','Discount 8% · JOB-0139 Villa 7','Creative director', '− ' + money(40960), ['Manager approval done','Margin after discount 26%'], 'Margin drops below the 30% target. Value engineering could save AED 22,000 instead.'],
+    ['a3','Q2 withdrawn · JOB-0118 Garden house','Owner', '—', ['Reason: client sources furniture elsewhere','Design approval signed'], 'Deal completes at design handover; time used is charged per the agreement. Listed in Withdrawn Q2, not Lost.'],
+    ['a4','Refund · JOB-0101','Finance → Owner', money(6000), ['Method: card · 14 days','Capped by verified receipts'], 'Credit note drafted; the expected date is fixed at approval.'],
+    ['a5','Purchase order above limit · JOB-0131','Owner', money(62000), ['Supplies for 6 items','Supplier acknowledged'], 'Price 4% above the last order from this supplier.']
+  ];
+  function renderApprovals(){
+    const list = APV.filter(a => !st.approved.has(a[0]));
+    let s = header('Approvals', list.length + ' waiting · one engine for deals, discounts, refunds, POs and Q2 withdrawals', '');
+    s += list.length ? '<div class="apv">' + list.map(a => '<div class="ap"><div class="top"><b>' + esc(a[1]) + '</b>' + chip(a[2]) + '<span class="amt">' + esc(a[3]) + '</span></div><div class="checks">' + a[4].map(x => '<span>' + F.IC.ok + esc(x) + '</span>').join('') + '</div><div class="j-ai"><div class="h">' + SPARK + '<span class="ai-text">Checked</span></div><p>' + esc(a[5]) + '</p></div><div class="j-actions"><button class="btn primary sm" type="button" data-go="approve" data-v="' + a[0] + '">Approve</button><button class="btn sm" type="button" data-go="approve" data-v="' + a[0] + '" data-ret="1">Return with reason</button></div></div>').join('') + '</div>' : '<div class="card"><b>Nothing waits for you</b><span class="small muted">New approvals appear here and on My day.</span></div>';
+    view.innerHTML = s;
+  }
+
+  /* ---------- workbenches ---------- */
+  const WB = {
+    design:{t:'Design work', sub:'Every design step with owner, due date, status and revisions · workload by person', cta:'', cols:[['Job'],['Step'],['Owner'],['Due'],['Status'],['Revisions'],['Resend']], rows:[
+      ['JOB-0142','Material selection','ID','Today','In progress','—','—','job:JOB-0142'],['JOB-0150','Site measure','ID','Wed','Not started','—','—','job:JOB-0150'],['JOB-0139','3D renders','VI','Fri','Changes requested','2 of 2 free','Mon','job:JOB-0139'],['JOB-0149','Mood boards','ID','24 Oct','Sent to client','1 of 2 free','—',''],['JOB-0147','Allocate team','AM','Today','Not started','—','—','job:JOB-0147'],['JOB-0144','2D concept','ID','—','Approved','0 of 2 free','—','']],
+      extra:'<div class="card" style="margin-top:12px"><b class="small">Workload</b><div class="bars">' + [['Lead designer A',6],['Lead designer B',3],['Junior designer',4],['Visualiser',2],['Creative director',2]].map(b => '<div class="bar"><span>' + b[0] + '</span><span class="bg"><i style="width:' + (b[1] * 14) + '%"></i></span><span class="mono">' + b[1] + '</span></div>').join('') + '</div></div>'},
+    technical:{t:'Technical', sub:'Per item · assigned from the names list (no login) · technical never contacts the client', cta:'Assign', cols:[['Item'],['Job'],['Assignee'],['Due'],['Status'],['Cross-check visit']], rows:[
+      ['TV wall','JOB-0131','Draftsman 1 (guest link)','Mon','Uploaded · lead designer checking','Done',''],['Kitchen cabinets','JOB-0131','Draftsman 2 (guest link)','Tue','Client signed · locked','Done',''],['Wardrobe M1','JOB-0124','Draftsman 1 (guest link)','Thu','In progress','Booked Wed',''],['Living room sofa','JOB-0124','Technical lead','Fri','Not started','—','']]},
+    factory:{t:'Factory', sub:'Persons booked per item · Ready / Done · dispatch blocked until inspection 2', cta:'Book persons', cols:[['Item'],['Job'],['Persons'],['Status'],['Inspection 1'],['Inspection 2']], rows:[
+      ['TV wall','JOB-0131','2 joiners','In production','Passed','—','job:JOB-0131'],['Kitchen cabinets','JOB-0131','3 joiners','Ready','Passed','Tomorrow','job:JOB-0131'],['Living room sofa','JOB-0131','Upholsterer','Waiting veneer +4d','—','—','job:JOB-0131']]},
+    logistics:{t:'Logistics', sub:'Deliveries with crew, driver, vehicle and permit · photos are the proof of delivery', cta:'Plan delivery', cols:[['Delivery'],['Job'],['Items'],['Vehicle · crew'],['Permit'],['Status']], rows:[
+      ['DEL-0219','JOB-0124','6 · delivery + install','Van 2 · crew of 3','Valid to 30 Nov','Wed 21',''],['DEL-0220','JOB-0131','4 · delivery + install','Pickup 1 · crew of 2','Expires 3 Nov → renewal','Blocked',''],['DEL-0221','JOB-0120','1 · delivery only','Van 1 · driver','Not needed','Done · photos','']]},
+    finance:{t:'Finance', sub:'Receipts to verify (AI has read the proofs) · stages due · commission · refunds', cta:'Record receipt', cols:[['Item'],['Job'],['Amount'],['Method'],['AI read'],['Status']], rows:[
+      ['Proposal 1 · design fee','JOB-0147','AED 120,000','Transfer','98% · ref FT2486','Finance check','job:JOB-0147'],['Estimate · stage 1','JOB-0139','AED 154,600','Card + cheque','97% · 2 proofs','To verify',''],['Estimate · stage 2 (50%)','JOB-0131','AED 149,000','—','—','Due 1 Nov · reminder set',''],['Commission','JOB-0118','AED 3,600','—','—','To pay',''],['Refund · card','JOB-0101','AED 6,000','Card','—','Waiting approval','approvals']]},
+    clients:{t:'Clients', sub:'One record per client, never duplicated · a statement across every proposal', cta:'New client', cols:[['Client'],['Jobs'],['Agreed'],['Received'],['Due'],['Owner']], rows:[
+      ['Client of JOB-0142','1 · Apartment 1204','AED 434,500','AED 48,000','AED 0 now','AM','stmt'],['Client of JOB-0131','1 · Office lounge','AED 298,000','AED 149,000','AED 149,000','AM','stmt'],['Returning client','2 · Mirdif','AED 92,000','AED 92,000','AED 0','AM','stmt']]},
+    catalogue:{t:'Catalogue', sub:'Core Collection and supplier items · recipes for assemblies', cta:'New item', cols:[['Item'],['Code'],['Type'],['Standard size'],['Price']], rows:[['Lounge chair','CC-114','Core Collection','82 × 90 × 78 cm','AED 4,200',''],['Dining table','CC-201','Core Collection','220 × 100 × 75 cm','AED 9,800',''],['Pendant light','LGT-014','Supplier','Ø 40 cm','AED 1,450',''],['TV wall unit','JN-REC','Assembly · recipe','From the site measure','Formula','']]},
+    materials:{t:'Materials', sub:'Own and supplier materials with codes · outsourced ones need creative director sign-off', cta:'Add material', cols:[['Material'],['Code'],['Supplier'],['Origin'],['Used in']], rows:[['Velvet · burgundy','FAB-221','Fabric supplier A','Outsourced · CD signed','JOB-0142',''],['Oak veneer','VEN-08','Own stock','Own','4 jobs',''],['Brushed brass','MET-03','Metal supplier','Outsourced','JOB-0142','']]},
+    people:{t:'People', sub:'Seats and who holds them · people without a login are booked by name', cta:'Invite', cols:[['Person'],['Seat'],['Login'],['Active jobs']], rows:[['Lead designer A','Interior designer (lead)','Yes','6',''],['Draftsman 1','Technical','No · guest links','3',''],['Joiner team','Factory persons','No · booked by name','4',''],['Material coordinator','Material coordinator','Yes','2','']]}
+  };
+  function renderWB(k){
+    const w = WB[k];
+    let s = header(w.t, w.sub, (w.cta ? '<button class="btn primary" type="button" data-go="toast" data-msg="' + esc(w.cta) + ' (prototype)">' + esc(w.cta) + '</button>' : '') + more(k));
+    s += '<div class="tb"><span class="chip ink">All</span><span class="chip">Mine</span><span class="chip wait">Needs attention</span></div>';
+    s += grid(w.cols, w.rows.map(r => '<tr data-go="' + (r[r.length - 1] || 'toast') + '" data-msg="Opens the record in a side sheet"><td><b>' + esc(r[0]) + '</b></td>' + r.slice(1, w.cols.length).map(c => '<td>' + (/^(Ready|Approved|Done|Passed|Client signed)/.test(c) ? chip(c, 'done') : /^(Changes requested|Blocked|Waiting|Expires|To verify|To pay)/.test(c) ? chip(c, 'wait') : esc(c)) + '</td>').join('') + '</tr>'));
+    if (w.extra) s += w.extra;
+    view.innerHTML = s;
+  }
+
+  function renderReports(){
+    let s = header('Reports', 'Rules from the firm’s guide: duplicates excluded everywhere; Won without cancelled or withdrawn Q2', '');
+    s += '<div class="tiles"><div class="tile"><b>14</b><span>Won this month · 9 design fees, 5 estimates</span></div><div class="tile"><b>6</b><span>Lost opportunities · reasons recorded</span></div><div class="tile"><b>11</b><span>Not interested enquiries · separate list</span></div><div class="tile"><b>1 · 2</b><span>Cancelled deals · withdrawn Q2</span></div></div>';
+    s += '<div class="home"><div class="card"><b class="small">Spam by source</b><div class="bars">' + [['WhatsApp',9],['Instagram',5],['Website form',2],['TikTok',1]].map(b => '<div class="bar"><span>' + b[0] + '</span><span class="bg"><i style="width:' + (b[1] * 10) + '%"></i></span><span class="mono">' + b[1] + '</span></div>').join('') + '</div></div><div class="card"><b class="small">First activity within 1 working hour</b><div class="bars">' + [['Account manager A',94],['Account manager B',81],['Account manager C',67]].map(b => '<div class="bar"><span>' + b[0] + '</span><span class="bg"><i style="width:' + b[1] + '%"></i></span><span class="mono">' + b[1] + '%</span></div>').join('') + '</div><span class="xs muted">Reassignments: 4 this month · history on each lead</span></div></div>';
+    view.innerHTML = s;
+  }
+
+  function renderSettings(){
+    let s = header('Settings', 'Workspace-wide only. Each module keeps its own settings under ⋯ in that module.', '');
+    s += grid([['Area'],['What lives here']], [['Workspace','Name, legal entities, TRN, numbering'],['Brand','Logo, colours, fonts, email sender; the only brand source'],['Region','Currency, VAT, working week, phone and address format'],['Connections','WhatsApp number, email, QuickBooks, calendars'],['Billing','Plan and seats']].map(r => '<tr data-go="toast" data-msg="Opens ' + esc(r[0]) + ' settings"><td><b>' + esc(r[0]) + '</b></td><td>' + esc(r[1]) + '</td></tr>'));
+    view.innerHTML = s;
+  }
+
+  const MODSET = {
+    enquiries:[['First response window','2 working hours','1 working hour',1],['Owner email after bouncing','—','1 working day',1],['Chat closes after silence (T3)','24 hours','3 working hours',1],['Mandatory at intake','Name, mobile','+ source, channel, type, emirate',1]],
+    design:[['Free revisions','2','2',0],['Inspiration phase','1 week','1 week',0],['Site measure after kick-off','5 days','3 days',1],['Site-visit questions','Required','Optional',1]],
+    technical:[['Cross-check visit for joinery','Off','On',1],['Guest upload links expire after','7 days','7 days',0]],
+    factory:[['Inspections before dispatch','1','2',1],['Factory steps','Scheduled → In production → QC → Ready','+ Permit collection',1]],
+    logistics:[['Permit alert ahead','2 days','3 working days',1],['Default per item','Delivery only','Delivery + installation',1]],
+    finance:[['Commission split','1 person','Up to 3 people',1],['Refund methods','Transfer','Transfer · card · Stripe · Tabby (TBC)',1],['Payables approvers','Owner','Finance, then owner above a limit',1]],
+    clients:[['Duplicate match','Mobile','Mobile or email',1]], catalogue:[['Standard sizes from','Manual','Core Collection',1]], materials:[['Outsourced materials need','—','Creative director sign-off',1]], people:[['Client sees designers as','Their role','“Interior designer”',1]]
+  };
+  function openSettingsSheet(mod){
+    const rows = MODSET[mod] || [];
+    openSheet((WB[mod] ? WB[mod].t : 'Enquiries') + ' settings', '<p class="xs muted">Firm A’s values over the design-build kit. Changes go into the next configuration version.</p>' + rows.map(r => '<div class="setrow"><div><b>' + esc(r[0]) + '</b><div class="src">Kit: ' + esc(r[1]) + '</div></div><span class="' + (r[3] ? 'ov' : '') + '">' + esc(r[2]) + '</span>' + (r[3] ? '<button class="btn ghost sm" type="button" data-go="toast" data-msg="Back to the kit value in the next version">Reset</button>' : '<span></span>') + '</div>').join(''));
+  }
+  function openSheet(t, html){ $('sheet-t').textContent = t; $('sheet-b').innerHTML = html; $('sheet').hidden = false; }
+
+  /* ---------- palette ---------- */
+  let palItems = [], palSel = 0;
+  function palData(q){
+    const out = [];
+    const ql = q.trim().toLowerCase();
+    if (ql.split(/\s+/).length >= 3) out.push(['Ask', 'Plan it: “' + q.trim() + '”', 'AI turns it into steps on the right job', 'plan']);
+    const acts = {am:[['Log contact on JOB-0146','job:JOB-0146'],['Book the intro for JOB-0151','job:JOB-0151']], sa:[['Send proposal 1 for JOB-0144','job:JOB-0144'],['Reply to new chats','inbox']], des:[['Open material selection · JOB-0142','job:JOB-0142']], fin:[['Verify the JOB-0147 payment','job:JOB-0147']], ops:[['Review the JOB-0131 delay','job:JOB-0131']], owner:[['Approve deal 1 · JOB-0147','approvals']]}[st.seat];
+    acts.forEach(a => out.push(['Do', a[0], 'Prepared by AI', a[1]]));
+    JOBS.forEach(j => out.push(['Jobs', j.id + ' · ' + j.name, val(j.step.name, j.c), 'job:' + j.id]));
+    NAV.forEach(g => g.items.forEach(i => { if (allowed(i[0])) out.push(['Go to', i[1], '', i[0]]); }));
+    return ql ? out.filter(o => o[0] === 'Ask' || (o[1] + ' ' + o[2]).toLowerCase().includes(ql)) : out.slice(0, 14);
+  }
+  function renderPal(){
+    palItems = palData($('pal-q').value); if (palSel >= palItems.length) palSel = 0;
+    let g = ''; $('pal-list').innerHTML = palItems.map((o, k) => { const head = o[0] !== g ? '<div class="pal-g">' + (g = o[0]) + '</div>' : ''; return head + '<button class="pal-i" type="button" data-pal="' + k + '" aria-selected="' + (k === palSel) + '">' + (o[0] === 'Ask' || o[0] === 'Do' ? SPARK : '') + '<span>' + esc(o[1]) + '</span><span class="hint">' + esc(o[2]) + '</span></button>'; }).join('') || '<div class="pal-g">Nothing found</div>';
+  }
+  function openPal(){ $('pal').hidden = false; $('pal-q').value = ''; palSel = 0; renderPal(); setTimeout(() => $('pal-q').focus(), 0); }
+  function closePal(){ $('pal').hidden = true; }
+  function runPal(k){ const o = palItems[k]; if (!o) return; closePal(); if (o[3] === 'plan') { go('job:JOB-0142'); setTimeout(() => { const f = document.querySelector('#jobmap form'); if (f) { f.querySelector('input').value = $('pal-q').value; f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', {cancelable:true})); } }, 50); } else go(o[3]); }
+
+  /* ---------- routing ---------- */
+  function go(r, el){
+    if (r === 'palette') return openPal();
+    if (r === 'menu') { $('app').classList.toggle('open'); $('scrim').hidden = !$('app').classList.contains('open'); return; }
+    if (r === 'capture') return openSheet('Capture', '<div class="cap"><button type="button" data-go="toast" data-msg="Photo saved offline · uploads first when back online">' + ICON.camera + 'Photo</button><button type="button" data-go="toast" data-msg="Voice note → AI drafts the answers">' + ICON.mic + 'Voice note</button><button type="button" data-go="toast" data-msg="Measurement added to the site measure">' + ICON.ruler + 'Measure</button><button type="button" data-go="toast" data-msg="Proof attached → Finance check">' + ICON.receipt + 'Payment proof</button></div><p class="xs muted">Attaches to JOB-0150 · you are at its site.</p>');
+    if (r === 'toast') return F.toast(el && el.dataset.msg ? el.dataset.msg : 'Prototype');
+    if (r === 'close-sheet') { $('sheet').hidden = true; return; }
+    if (r === 'close-cv') { $('cv').hidden = true; return; }
+    if (r === 'client-view') { $('cv').hidden = false; return; }
+    if (r === 'settings-sheet') return openSettingsSheet(el.dataset.mod);
+    if (r === 'inbox-tab') { st.inboxTab = el.dataset.v; st.reading = false; return render(); }
+    if (r === 'thread') { st.thread = Number(el.dataset.i); st.t3 = false; st.reading = true; return render(); }
+    if (r === 'inbox-back') { st.reading = false; return render(); }
+    if (r === 't3') { st.t3 = true; return render(); }
+    if (r === 't3-cancel') { st.t3 = false; return render(); }
+    if (r === 't3-ok') { st.t3 = false; THREADS[st.thread].label = 'Resolved'; F.toast('T3 sent · chat resolved'); return render(); }
+    if (r === 'enq-tab') { st.enqTab = el.dataset.v; return render(); }
+    if (r === 'jobs-view') { st.jobsView = el.dataset.v; return render(); }
+    if (r === 'job-tab') return switchJobTab(el.dataset.v);
+    if (r === 'cal-t') { st.cal[el.dataset.v] = !st.cal[el.dataset.v]; return render(); }
+    if (r === 'approve') { st.approved.add(el.dataset.v); F.toast(el.dataset.ret ? 'Returned with a reason · the submitter is told' : 'Approved · recorded with your name and time'); return render(); }
+    if (r === 'stmt') return openSheet('Client statement', '<div class="card"><div class="j-mrow"><div class="top"><span>Proposal 1 · design fee</span><span class="amt">' + money(48000) + '</span></div><span>' + chip('Paid 14 Oct', 'done') + '</span></div><div class="j-mrow"><div class="top"><span>Proposal 2 · estimate · 3 stages</span><span class="amt">' + money(386500) + '</span></div><span>' + chip('After design approval') + '</span></div></div><p class="xs muted">Separate invoices and receipts, one statement. Duplicates never create a second client.</p>');
+    if (r.startsWith('job:')) { st.route = 'job'; st.jobId = r.slice(4); st.jobTab = 'map'; }
+    else if (allowed(r)) st.route = r;
+    else { F.toast('This seat can’t open ' + r + ' · switch seat to see it'); return; }
+    $('app').classList.remove('open'); $('scrim').hidden = true; $('sheet').hidden = true; $('cv').hidden = true;
+    try { history.replaceState(null, '', '#' + (st.route === 'job' ? st.jobId : st.route)); } catch (e) {}
+    render(); view.scrollTop = 0;
+  }
+  function render(){
+    if (!allowed(st.route)) st.route = 'home';
+    renderNav();
+    const r = st.route;
+    if (r === 'home') renderHome(); else if (r === 'inbox') renderInbox(); else if (r === 'enquiries') renderEnquiries(); else if (r === 'jobs') renderJobs(); else if (r === 'job') renderJob();
+    else if (r === 'calendar') renderCalendar(); else if (r === 'approvals') renderApprovals(); else if (r === 'reports') renderReports(); else if (r === 'settings') renderSettings(); else if (WB[r]) renderWB(r); else renderHome();
+  }
+
+  document.addEventListener('click', e => {
+    const p = e.target.closest('[data-pal]'); if (p) { runPal(Number(p.dataset.pal)); return; }
+    if (e.target.id === 'pal') { closePal(); return; }
+    if (e.target.id === 'scrim') { go('menu'); return; }
+    const g = e.target.closest('[data-go]'); if (g && !e.target.closest('#jobmap .j-room [data-a]')) { e.preventDefault(); go(g.dataset.go, g); }
+  });
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('pal').hidden ? openPal() : closePal(); return; }
+    if ($('pal').hidden) { if (e.key === 'Escape') { $('sheet').hidden = true; $('cv').hidden = true; } return; }
+    if (e.key === 'Escape') closePal();
+    else if (e.key === 'ArrowDown') { palSel = Math.min(palSel + 1, palItems.length - 1); renderPal(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { palSel = Math.max(palSel - 1, 0); renderPal(); e.preventDefault(); }
+    else if (e.key === 'Enter') { runPal(palSel); e.preventDefault(); }
+  });
+  $('pal-q').addEventListener('input', () => { palSel = 0; renderPal(); });
+  $('seat').value = st.seat;
+  $('seat').addEventListener('change', e => { st.seat = e.target.value; try { localStorage.setItem('mp-seat', st.seat); } catch (x) {} if (!allowed(st.route)) st.route = 'home'; render(); F.toast('Viewing as ' + SEATS[st.seat].label + ' · the sidebar and My day follow the seat'); });
+  window.addEventListener('hashchange', () => { const h = location.hash.replace('#', ''); if (!h) return; if (job(h.toUpperCase())) { if (st.route !== 'job' || st.jobId !== h.toUpperCase()) go('job:' + h.toUpperCase()); } else if (h !== st.route) go(h); });
+  F.ensureDefs();
+  render();
+})();
+</script>

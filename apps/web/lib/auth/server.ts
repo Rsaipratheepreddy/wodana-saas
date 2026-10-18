@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import type { ViewAsSummary } from "@/lib/workspace/view-as";
 
 export const ACCESS_COOKIE = "wodana_access";
 export const REFRESH_COOKIE = "wodana_refresh";
@@ -14,6 +15,10 @@ export type AuthProfile = {
   id: string;
   primaryEmail: string;
   displayName: string;
+  /** The person's saved interface language with the workspace region ("ar-AE"); plain "en" means not chosen. */
+  preferredLocale?: string | null;
+  /** Sound and haptics on this person's devices (Profile → Sound & haptics); on unless they turned it off. */
+  feedbackEnabled?: boolean;
   platformRole?: "administrator" | null;
   memberships: Array<{
     workspaceId: string;
@@ -24,8 +29,21 @@ export type AuthProfile = {
     workspaceSecondaryColor: string | null;
     workspaceHeadingFont: string | null;
     workspaceBodyFont: string | null;
+    /** How the workspace formats money, dates and times (optional: older sessions may not carry them). */
+    workspaceLocale?: string | null;
+    workspaceCurrency?: string | null;
+    workspaceTimezone?: string | null;
+    /** The workspace's working week (0 = Sunday) and upcoming days off, for dates people pick. */
+    workspaceWorkingDays?: number[];
+    workspaceHolidays?: string[];
+    workspaceWorkingHours?: { start: string; end: string } | null;
     accountName?: string | null;
+    /** A suspended organization stays readable; the API refuses its changes (423). */
+    workspaceStatus?: string;
+    /** Set when Wodana configured the organization's modules; then only those modules show, for owners too. */
+    entitlement?: { status: string; version: number | null };
     allowedModules: Array<"workspace" | "crm" | "pre-project" | "projects" | "hrms">;
+    allowedPermissions?: string[];
     roles: string[];
     onboarding: {
       status: "not_started" | "in_progress" | "completed";
@@ -42,6 +60,8 @@ export type AuthProfile = {
     accountName: string | null;
   }>;
   nextAction: string;
+  /** Set while this sign-in session views the workspace as someone, read-only: the profile is then theirs. */
+  viewAs?: ViewAsSummary | null;
 };
 
 export function businessApiUrl(path: string) {
@@ -85,6 +105,7 @@ export const getAuthenticatedProfile = cache(async (): Promise<AuthProfile> => {
         workspaceHeadingFont: null,
         workspaceBodyFont: null,
         allowedModules: ["workspace", "crm", "pre-project", "projects", "hrms"],
+        allowedPermissions: ["workspace.roles.manage"],
         roles: ["owner"],
         onboarding: {
           status: "completed",

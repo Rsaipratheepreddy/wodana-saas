@@ -1,5 +1,7 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useState } from "react";
+import { Checkbox } from "@/design-system";
 import { QuotationItemMaterials } from "./quotation-item-materials";
 import { Check, Link2, Package, Pencil, Plus, X } from "lucide-react";
 import {
@@ -26,6 +28,7 @@ export function QuotationMaterialsSummary({
   line: QuoteLine;
   onEdit?: () => void;
 }) {
+  const t = useT();
   const selections = materialSelections(line, "material"),
     finishes = materialSelections(line, "finish");
   const variant = line.catalogLinks?.find((link) => link.role === "variant");
@@ -43,13 +46,12 @@ export function QuotationMaterialsSummary({
         </ul>
       ) : (
         <span className={line.material ? q.customText : q.placeholder}>
-          {line.material || "No material selected"}
+          {line.material || t("No material selected")}
         </span>
       )}
       {finishes.length ? (
         <span className={q.finishText}>
-          Finish ·{" "}
-          {finishes.map((selection) => selection.snapshot.name).join(", ")}
+          {t("Finish · {names}", { names: finishes.map((selection) => selection.snapshot.name).join(", ") })}
         </span>
       ) : (
         line.finish && <span className={q.finishText}>{line.finish}</span>
@@ -57,27 +59,26 @@ export function QuotationMaterialsSummary({
       {selections.length > 0 && (
         <span className={q.linked}>
           <Link2 size={11} />
-          {selections.length} catalog{" "}
-          {selections.length === 1 ? "material" : "materials"}
+          {t(selections.length === 1 ? "{count} catalog material" : "{count} catalog materials", { count: selections.length })}
         </span>
       )}
       {selections.length > 0 && materialNotes(line, "material") && (
-        <details className={q.materialNote}>
-          <summary>Specification notes</summary>
+        <section className={q.materialNote}>
+          <h3>{t("Specification notes")}</h3>
           <p>{materialNotes(line, "material")}</p>
-        </details>
+        </section>
       )}
       <CustomMaterialSummary materials={line.customMaterials} />
       {onEdit && (
         <button
           className={q.materialAction}
-          aria-label={`Edit material for ${line.title}`}
+          aria-label={t("Edit material for {title}", { title: line.title })}
           onClick={onEdit}
         >
           <Pencil size={12} />
-          {line.material || selections.length
+          {t(line.material || selections.length
             ? "Edit materials"
-            : "Select materials"}
+            : "Select materials")}
         </button>
       )}
     </div>
@@ -97,6 +98,7 @@ function MaterialSelectionSection({
   workspaceId: string;
   caseId: string;
 }) {
+  const t = useT();
   const selections = materialSelections(item, role);
   const [adding, setAdding] = useState(!selections.length);
   const [related, setRelated] = useState(false);
@@ -124,16 +126,16 @@ function MaterialSelectionSection({
     <section
       className={q.selectionSection}
       aria-label={
-        role === "material" ? "Selected materials" : "Selected finishes"
+        t(role === "material" ? "Selected materials" : "Selected finishes")
       }
     >
       <div className={q.sectionHeading}>
         <div>
-          <h3>{role === "material" ? "Materials & hardware" : "Finishes"}</h3>
+          <h3>{t(role === "material" ? "Materials & hardware" : "Finishes")}</h3>
           <span>
-            {role === "material"
+            {t(role === "material"
               ? "Select the actual products for this item."
-              : "Choose the finish your client will receive."}
+              : "Choose the finish your client will receive.")}
           </span>
         </div>
         <span className={q.count}>{selections.length}</span>
@@ -147,16 +149,16 @@ function MaterialSelectionSection({
             <strong>{selection.snapshot.name}</strong>
             <span>
               {selection.snapshot.code} ·{" "}
-              {selection.snapshot.catalogName || "Workspace catalog"}
+              {selection.snapshot.catalogName || t("Workspace catalog")}
             </span>
             <small>
-              <Check size={11} /> Catalog linked · v{selection.version}
+              <Check size={11} /> {t("Catalog linked · v{version}", { version: selection.version })}
             </small>
           </div>
           <button
             type="button"
             className={q.removeSelection}
-            aria-label={`Remove ${selection.snapshot.name}`}
+            aria-label={t("Remove {title}", { title: selection.snapshot.name })}
             onClick={() =>
               onChange(
                 updateMaterials(
@@ -179,22 +181,20 @@ function MaterialSelectionSection({
             <div
               className={q.sourceOptions}
               role="group"
-              aria-label={`${role} catalog source`}
+              aria-label={t(role === "material" ? "material catalog source" : "finish catalog source")}
             >
               <button
                 type="button"
                 aria-pressed={!related}
                 onClick={() => setRelated(false)}
               >
-                All catalogs
-              </button>
+                {t("All catalogs")}</button>
               <button
                 type="button"
                 aria-pressed={related}
                 onClick={() => setRelated(true)}
               >
-                Linked to this item
-              </button>
+                {t("Linked to this item")}</button>
             </div>
           )}
           <CommercialCatalogPicker
@@ -202,9 +202,9 @@ function MaterialSelectionSection({
             caseId={caseId}
             kind={role}
             label={
-              role === "material"
+              t(role === "material"
                 ? "Material / SKU from catalog"
-                : "Finish from catalog"
+                : "Finish from catalog")
             }
             value={null}
             onChange={choose}
@@ -217,8 +217,7 @@ function MaterialSelectionSection({
               className={q.textButton}
               onClick={() => setAdding(false)}
             >
-              Cancel selection
-            </button>
+              {t("Cancel selection")}</button>
           )}
         </div>
       ) : (
@@ -229,26 +228,24 @@ function MaterialSelectionSection({
             onClick={() => setAdding(true)}
           >
             <Plus size={14} />
-            {role === "material" ? "Add material or hardware" : "Add finish"}
+            {t(role === "material" ? "Add material or hardware" : "Add finish")}
           </button>
         )
       )}
       {atLimit && (
         <p className={q.muted}>
-          This item has reached its 12 catalog selections. Remove a selection to
-          add another.
-        </p>
+          {t("This item has reached its 12 catalog selections. Remove a selection to add another.")}</p>
       )}
       <label className={q.notesField}>
-        {role === "material"
+        {t(role === "material"
           ? "Material specification / notes"
-          : "Finish / hardware notes"}
+          : "Finish / hardware notes")}
         <textarea
           rows={2}
           placeholder={
-            role === "material"
+            t(role === "material"
               ? "Thickness, application, dimensions or a custom material…"
-              : "Colour, finish code or installation detail…"
+              : "Colour, finish code or installation detail…")
           }
           value={materialNotes(item, role)}
           onChange={(event) =>
@@ -267,6 +264,7 @@ export function CustomMaterialSummary({
 }: {
   materials?: QuotationMaterial[];
 }) {
+  const t = useT();
   return (
     <>
       {materials?.map((m) => (
@@ -275,7 +273,7 @@ export function CustomMaterialSummary({
           <small>{[m.brand, m.code].filter(Boolean).join(" · ")}</small>
           {m.specification && <p>{m.specification}</p>}
           <small>
-            {m.suppliedByClient ? "Client supplied" : "Custom material"}
+            {t(m.suppliedByClient ? "Client supplied" : "Custom material")}
           </small>
         </div>
       ))}
@@ -291,6 +289,7 @@ export function QuotationMaterialsEditor(props: {
   library?: QuotationMaterial[];
   compact?: boolean;
 }) {
+  const t = useT();
   const [custom, setCustom] = useState<QuotationMaterial | null>(null);
   const [reuse, setReuse] = useState(false);
   const materials = props.item.customMaterials ?? [];
@@ -299,13 +298,12 @@ export function QuotationMaterialsEditor(props: {
     <div className={q.materialEditor}>
       <MaterialSelectionSection {...props} role="material" />
       <MaterialSelectionSection {...props} role="finish" />
-      <section className={q.selectionSection} aria-label="Custom materials">
+      <section className={q.selectionSection} aria-label={t("Custom materials")}>
         <div className={q.sectionHeading}>
           <div>
-            <h3>Custom materials</h3>
+            <h3>{t("Custom materials")}</h3>
             <span>
-              Saved with this quotation. Your catalogs stay unchanged.
-            </span>
+              {t("Saved with this quotation. Your catalogs stay unchanged.")}</span>
           </div>
           <span className={q.count}>{materials.length}</span>
         </div>
@@ -319,13 +317,13 @@ export function QuotationMaterialsEditor(props: {
               <span>{[m.brand, m.code].filter(Boolean).join(" · ")}</span>
               <span>{m.specification}</span>
               <small>
-                {m.suppliedByClient ? "Client supplied" : "Quotation only"}
+                {t(m.suppliedByClient ? "Client supplied" : "Quotation only")}
               </small>
             </div>
             <button
               type="button"
               className={q.removeSelection}
-              aria-label={`Edit custom material ${m.name}`}
+              aria-label={t("Edit custom material {name}", { name: m.name })}
               onClick={() => setCustom({ ...m })}
             >
               <Pencil size={14} />
@@ -333,7 +331,7 @@ export function QuotationMaterialsEditor(props: {
             <button
               type="button"
               className={q.removeSelection}
-              aria-label={`Remove custom material ${m.name}`}
+              aria-label={t("Remove custom material {name}", { name: m.name })}
               onClick={() =>
                 props.onChange({
                   ...props.item,
@@ -348,8 +346,7 @@ export function QuotationMaterialsEditor(props: {
         {custom ? (
           <div className={q.customForm}>
             <label>
-              Material name
-              <input
+              {t("Material name")}<input
                 autoFocus
                 value={custom.name}
                 maxLength={240}
@@ -357,16 +354,14 @@ export function QuotationMaterialsEditor(props: {
               />
             </label>
             <label>
-              Product / finish code
-              <input
+              {t("Product / finish code")}<input
                 value={custom.code}
                 maxLength={80}
                 onChange={(e) => setCustom({ ...custom, code: e.target.value })}
               />
             </label>
             <label>
-              Brand / manufacturer
-              <input
+              {t("Brand / manufacturer")}<input
                 value={custom.brand}
                 maxLength={160}
                 onChange={(e) =>
@@ -375,27 +370,24 @@ export function QuotationMaterialsEditor(props: {
               />
             </label>
             <label>
-              Material specification
-              <textarea
+              {t("Material specification")}<textarea
                 rows={3}
                 value={custom.specification}
                 maxLength={3000}
-                placeholder="Dimensions, thickness, colour, finish…"
+                placeholder={t("Dimensions, thickness, colour, finish…")}
                 onChange={(e) =>
                   setCustom({ ...custom, specification: e.target.value })
                 }
               />
             </label>
-            <label className={q.check}>
-              <input
-                type="checkbox"
-                checked={custom.suppliedByClient}
-                onChange={(e) =>
-                  setCustom({ ...custom, suppliedByClient: e.target.checked })
-                }
-              />
-              Supplied by the client
-            </label>
+            <Checkbox
+              isSelected={custom.suppliedByClient}
+              onChange={(suppliedByClient) =>
+                setCustom({ ...custom, suppliedByClient })
+              }
+            >
+              {t("Supplied by the client")}
+            </Checkbox>
             <div className={q.sourceOptions}>
               <button
                 type="button"
@@ -410,11 +402,9 @@ export function QuotationMaterialsEditor(props: {
                   setCustom(null);
                 }}
               >
-                Save material
-              </button>
+                {t("Save material")}</button>
               <button type="button" onClick={() => setCustom(null)}>
-                Cancel
-              </button>
+                {t("Cancel")}</button>
             </div>
           </div>
         ) : (
@@ -434,8 +424,7 @@ export function QuotationMaterialsEditor(props: {
               }
             >
               <Plus size={14} />
-              Add custom material
-            </button>
+              {t("Add custom material")}</button>
           )
         )}
         {!!props.library?.length && (
@@ -445,8 +434,7 @@ export function QuotationMaterialsEditor(props: {
               className={q.textButton}
               onClick={() => setReuse(!reuse)}
             >
-              Reuse from this quotation
-            </button>
+              {t("Reuse from this quotation")}</button>
             {reuse &&
               props.library
                 .filter((m) => !materials.some((x) => x.id === m.id))
@@ -474,19 +462,19 @@ export function QuotationMaterialsEditor(props: {
           </>
         )}
       </section>
-      <details className={q.clientPreview}>
-        <summary>Client-facing specification</summary>
+      <section className={q.clientPreview}>
+        <h3>{t("Client-facing specification")}</h3>
         <div>
-          <strong>Materials</strong>
-          <p>{props.item.material || "No material selected"}</p>
+          <strong>{t("Materials")}</strong>
+          <p>{props.item.material || t("No material selected")}</p>
           {props.item.finish && (
             <>
-              <strong>Finishes</strong>
+              <strong>{t("Finishes")}</strong>
               <p>{props.item.finish}</p>
             </>
           )}
         </div>
-      </details>
+      </section>
     </div>
   );
 }

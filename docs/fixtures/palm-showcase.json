@@ -1,0 +1,112 @@
+{
+  "_about": "Palm Living's workspace bootstrap and showcase content (tenant data, not product code). Loaded by services/business-core/src/seed/palm-showcase: the tenant (when the database has none), the role-wise team accounts as invitations, teams and roles (from palm-teams-access.json), the tax profile, quotation settings, and one demonstration client and project run end to end through the real commands. Every value here is either from Palm's documents (runbook, tracker, Core Collection workbook) or clearly a demonstration.",
+  "tenant": {
+    "externalTenantId": "tenant_palm_living",
+    "name": "Palm Living",
+    "region": { "code": "AE", "version": 3 },
+    "firmKit": { "code": "design_build_deal_first", "version": 1 },
+    "plan": { "code": "starter", "version": 1 },
+    "seatLimit": 25,
+    "unitSystem": "metric",
+    "weekStartsOn": 1,
+    "legalEntity": { "code": "PLM", "displayName": "Palm Living", "registeredName": "Palm Living Interior Design L.L.C", "countryCode": "AE", "baseCurrency": "AED", "locale": "en-AE", "timezone": "Asia/Dubai" },
+    "account": { "displayName": "Palm Living", "contactName": "Palm Living owner" }
+  },
+  "owner": { "email": "owner@palmliving.test", "displayName": "Olivia (Owner)" },
+  "people": [
+    { "email": "manager@palmliving.test", "displayName": "Maya (Manager)", "roleCodes": ["administrator"], "team": "OPS_ADMIN" },
+    { "email": "sara.sales@palmliving.test", "displayName": "Sara (Account Manager)", "roleCodes": ["sales"], "team": "SALES" },
+    { "email": "amal.salesadmin@palmliving.test", "displayName": "Amal (Sales Admin)", "roleCodes": [], "team": "SALES_ADMIN" },
+    { "email": "noor.design@palmliving.test", "displayName": "Noor (Interior Designer)", "roleCodes": [], "team": "INTERIOR_DESIGN" },
+    { "email": "omar.qs@palmliving.test", "displayName": "Omar (QS)", "roleCodes": ["quantity_surveyor"], "team": "QS" },
+    { "email": "khalid.pm@palmliving.test", "displayName": "Khalid (Project Manager)", "roleCodes": ["project_manager"], "team": "PROJECT_MANAGERS" },
+    { "email": "layla.finance@palmliving.test", "displayName": "Layla (Finance)", "roleCodes": ["finance"], "team": "FINANCE" },
+    { "email": "faisal.buyer@palmliving.test", "displayName": "Faisal (Procurement)", "roleCodes": [], "team": "PROCUREMENT" },
+    { "email": "rami.factory@palmliving.test", "displayName": "Rami (Factory)", "roleCodes": [], "team": "PRODUCTION" },
+    { "email": "sam.site@palmliving.test", "displayName": "Sam (Site Supervisor)", "roleCodes": ["site_supervisor"], "team": "PRODUCTION" }
+  ],
+  "businessUnits": [
+    { "code": "SALES", "name": "Sales", "type": "department", "teams": ["SALES", "SALES_ADMIN", "SHOWROOM", "MARKETING"] },
+    { "code": "DESIGN", "name": "Design", "type": "studio", "teams": ["CREATIVE_DIRECTOR", "INTERIOR_DESIGN", "VISUALISER", "TECHNICAL"] },
+    { "code": "OPERATIONS", "name": "Operations", "type": "department", "teams": ["OPS_ADMIN", "PROJECT_MANAGERS", "QS", "FINANCE"] },
+    { "code": "PRODUCTION", "name": "Production", "type": "factory", "teams": ["PROCUREMENT", "PROCUREMENT_LEAD", "INVENTORY", "PRODUCTION", "PRODUCTION_LEAD"] }
+  ],
+  "tax": {
+    "_source": "Onboarding runbook §6: Tax & numbering → Standard VAT 5 %, prices exclude tax. The UAE region pack fixes the model (VAT) and the registration label (TRN); the rate is Palm's confirmed setting.",
+    "pricesIncludeTax": false,
+    "rates": [{ "code": "standard_vat", "label": "Standard VAT", "rate": "5", "isDefault": true }]
+  },
+  "quotation": { "_source": "Onboarding runbook §6: valid for 7 days, review before sending on.", "validityDays": 7, "internalReview": true },
+  "showcase": {
+    "client": {
+      "displayName": "Dana Demo",
+      "email": "demo.client@palmliving.test",
+      "mobile": "+971501234567",
+      "demoCode": "123456",
+      "title": "Demo Client — Villa 12",
+      "summary": "Demonstration enquiry: a four-bedroom villa in Dubai Hills; living, dining and master bedroom furniture from the Core Collection with a fitted media wall. All records are a demonstration of the Wodana flow, not a real client.",
+      "emirate": "dubai",
+      "area": "Dubai Hills",
+      "opportunityAmount": 66500,
+      "targetDate": "2027-01-31",
+      "promiseDate": "2027-01-31"
+    },
+    "rooms": ["Living room", "Dining room", "Master bedroom"],
+    "requirements": [
+      { "key": "living-sofa", "room": "Living room", "title": "Feature sofa for the family lounge", "note": "Deep, low seating in a warm boucle; must seat five.", "category": "Furniture", "priority": "must_have", "quantity": 1, "unit": "nos", "catalogRecordName": "Annie Sofa - Length 2000mm" },
+      { "key": "living-coffee", "room": "Living room", "title": "Nesting coffee tables in Calacatta", "note": "Two-piece nesting set to match the marble console in the entrance.", "category": "Furniture", "priority": "preferred", "quantity": 1, "unit": "set", "catalogRecordName": "Ace Calacatta Nesting Coffee Table" },
+      { "key": "living-media", "room": "Living room", "title": "Fitted media wall with hidden storage", "note": "Wall-to-wall joinery, oak veneer, concealed cable routing; made in the Palm factory.", "category": "Joinery", "priority": "must_have", "quantity": 4.5, "unit": "m" },
+      { "key": "dining-chairs", "room": "Dining room", "title": "Curved dining chairs", "note": "Eight chairs, upholstered to match the living room palette.", "category": "Furniture", "priority": "must_have", "quantity": 8, "unit": "nos", "catalogRecordName": "Andrea Curved Dining Chair" },
+      { "key": "dining-light", "room": "Dining room", "title": "Pendant light over the dining table", "note": "Warm dimmable light, centred on the table.", "category": "Lighting", "priority": "preferred", "quantity": 1, "unit": "nos", "catalogRecordName": "Mandy Pendant Light - Large — Lights" },
+      { "key": "bed", "room": "Master bedroom", "title": "Upholstered queen bed", "note": "Queen size 160 × 200 with a soft headboard.", "category": "Furniture", "priority": "must_have", "quantity": 1, "unit": "nos", "catalogRecordName": "Devon Cloud Bed" },
+      { "key": "bed-rug", "room": "Master bedroom", "title": "Bedside rug", "note": "Soft underfoot, neutral tone.", "category": "Soft furnishing", "priority": "optional", "quantity": 1, "unit": "nos", "catalogRecordName": "Amelia Rug" }
+    ],
+    "inspiration": [
+      { "key": "mood-console", "title": "Entrance console in Calacatta Viola", "catalogRecordName": "Freja Marble Console", "sentiment": "love" },
+      { "key": "mood-mirror", "title": "Round mirror above the console", "catalogRecordName": "Darla Round Mirror", "sentiment": "love" },
+      { "key": "mood-sofa", "title": "Warm boucle seating", "catalogRecordName": "Annie Sofa - Length 2000mm", "sentiment": "love" },
+      { "key": "mood-chairs", "title": "Curved dining chairs", "catalogRecordName": "Andrea Curved Dining Chair", "sentiment": "love" }
+    ],
+    "siteVisit": { "location": "Villa 12, Dubai Hills (demonstration address)", "access": "Security gate; call the client on arrival.", "outcome": "Measured the living room, dining room and master bedroom. Media wall opening 4.5 m; power at both ends.", "durationMinutes": 120 },
+    "measurement": { "requirement": "living-media", "title": "Media wall opening", "dimensions": [{ "name": "Width", "unit": "mm", "measured": 4500 }, { "name": "Height", "unit": "mm", "measured": 2800 }] },
+    "design": { "title": "Living room concept board", "documentType": "Space plan / furniture layout", "catalogRecordName": "Freja Marble Console" },
+    "quote": {
+      "_prices": "List prices in AED from the Core Collection workbook (PRICE (AED) column, September 2026); the media wall is a demonstration rate.",
+      "lines": [
+        { "key": "living-sofa", "room": "Living room", "title": "Annie Sofa - Length 2000mm", "description": "Core Collection · Sofa · 200 × 80 × 75 cm", "quantity": "1", "unit": "nos", "unitCost": "11400", "rate": "19000", "catalogRecordName": "Annie Sofa - Length 2000mm", "requirement": "living-sofa" },
+        { "key": "living-coffee", "room": "Living room", "title": "Ace Calacatta Nesting Coffee Table", "description": "Core Collection · Table · nesting set of two", "quantity": "1", "unit": "set", "unitCost": "9800", "rate": "16300", "catalogRecordName": "Ace Calacatta Nesting Coffee Table", "requirement": "living-coffee" },
+        { "key": "living-media", "room": "Living room", "title": "Fitted media wall, oak veneer", "description": "Made to measure in the Palm factory: carcass, doors, cable management and installation", "quantity": "4.5", "unit": "m", "unitCost": "2400", "rate": "3800", "requirement": "living-media", "supply": "make" },
+        { "key": "dining-chairs", "room": "Dining room", "title": "Andrea Curved Dining Chair", "description": "Core Collection · Chairs", "quantity": "8", "unit": "nos", "unitCost": "1900", "rate": "3200", "catalogRecordName": "Andrea Curved Dining Chair", "requirement": "dining-chairs" },
+        { "key": "dining-light", "room": "Dining room", "title": "Mandy Pendant Light - Large", "description": "Core Collection · Lights", "quantity": "1", "unit": "nos", "unitCost": "950", "rate": "1600", "catalogRecordName": "Mandy Pendant Light - Large — Lights", "requirement": "dining-light" },
+        { "key": "bed", "room": "Master bedroom", "title": "Devon Cloud Bed · Queen Size 160 X 200", "description": "Core Collection · Bed · queen size", "quantity": "1", "unit": "nos", "unitCost": "8400", "rate": "14000", "catalogRecordName": "Devon Cloud Bed", "requirement": "bed" },
+        { "key": "bed-rug", "room": "Master bedroom", "title": "Amelia Rug", "description": "Core Collection · Rugs", "quantity": "1", "unit": "nos", "unitCost": "540", "rate": "900", "catalogRecordName": "Amelia Rug", "requirement": "bed-rug", "optional": true }
+      ],
+      "paymentTerms": [
+        { "title": "Advance on signing", "percent": 50, "trigger": "Signed agreement", "requiredForRelease": true, "requiredForProduction": false },
+        { "title": "Before production", "percent": 40, "trigger": "Before factory production starts", "requiredForRelease": false, "requiredForProduction": true },
+        { "title": "On handover", "percent": 10, "trigger": "At client handover", "requiredForRelease": false, "requiredForProduction": false }
+      ],
+      "agreementReference": "AGR-DEMO-VILLA12",
+      "commissionLines": [{ "recipientName": "Sara (Account Manager)", "type": "sales", "basis": "percent", "value": 2 }]
+    },
+    "materials": [
+      { "name": "Oak veneer, natural", "code": "OAK-NAT", "specification": "Crown cut, matt lacquer, 0.6 mm on 18 mm MDF", "quantity": "14", "unit": "sheet", "line": "living-media" },
+      { "name": "Soft-close hinges and drawer runners", "code": "HW-SC", "specification": "Concealed 110° hinges; full-extension runners", "quantity": "24", "unit": "nos", "line": "living-media" }
+    ],
+    "purchasing": {
+      "supplierName": "SIOM MARBLE & GRANITE TR. LLC",
+      "material": "Oak veneer, natural",
+      "orderQuantity": "14",
+      "unitPrice": "180",
+      "expectedDate": "2026-11-05",
+      "sendTo": "demo.supplier@palmliving.test",
+      "supplierReference": "SO-DEMO-1201",
+      "promisedDate": "2026-11-03",
+      "deliveryNote": "DN-DEMO-4471"
+    },
+    "factory": { "workcenter": "Joinery", "line": "living-media", "drawingReference": "MW-12 rev B", "plannedStart": "2026-11-10", "plannedEnd": "2026-11-21" },
+    "site": { "startedOn": "2026-12-01", "reportDate": "2026-12-03", "workforce": [{ "trade": "Carpenters", "people": 3 }], "installedLine": "living-media", "installed": "3", "photoLabel": "Media wall carcass installed" },
+    "snag": { "title": "Shadow gap uneven on the media wall's left return", "severity": "minor", "source": "inspection", "room": "Living room" },
+    "handover": { "title": "Villa 12 handover", "document": { "kind": "warranty", "title": "Joinery and furniture warranty" } }
+  }
+}

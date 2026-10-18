@@ -1,0 +1,95 @@
+/* Notion-like: quiet surfaces, soft hover, few lines. */
+.layout { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--wd-phi-3); align-items: start; min-inline-size: 0; }
+.tree { position: sticky; inset-block-start: var(--wd-space-4); display: grid; gap: var(--wd-space-0-5); }
+.tree > :global(.wd-field) { margin-block-end: var(--wd-space-3); }
+.treeList { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
+.treeRow { display: flex; align-items: center; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.treeRow[data-depth="1"] { padding-inline-start: var(--wd-space-4); }
+.treeRow[data-depth="2"] { padding-inline-start: var(--wd-space-8); }
+.treeRow[data-depth="3"], .treeRow[data-depth="4"] { padding-inline-start: var(--wd-space-12); }
+.treeToggle { display: inline-grid; flex: none; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); padding: 0; border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-text-tertiary); cursor: pointer; }
+span.treeToggle { cursor: default; }
+button.treeToggle:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+button.treeToggle:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.treeToggle[data-open] svg { transform: rotate(90deg); }
+.treeMenu { flex: none; }
+@media (hover: hover) {
+  .treeMenu { opacity: 0; }
+  .treeRow:hover .treeMenu, .treeRow:focus-within .treeMenu { opacity: 1; }
+}
+.treeItem { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-inline-size: 0; min-block-size: var(--wd-control-sm); padding-inline: var(--wd-space-2); border: 0; border-radius: var(--wd-radius-xs); background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
+.treeItem:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.treeItem[aria-current="true"] { background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-weight: var(--wd-weight-medium); }
+.treeItem:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.treeItem small { color: var(--wd-color-text-tertiary); font-variant-numeric: tabular-nums; }
+.content { min-inline-size: 0; }
+.itemCell { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 0; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.itemCell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+/* One compact row per item: the name on at most two lines, the code and kind on one (in full in its title and the item panel).
+   Three classes, so the table's "text wraps" rule for cell text doesn't undo it. */
+.content .itemCell .itemName { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; white-space: normal; }
+.content .itemCell .itemCode { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A price reads on one line in tabular figures (the class doubled to outrank the same rule). */
+.content .price.price, .content .price.price span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.muted { color: var(--wd-color-text-tertiary); }
+.form { display: grid; gap: var(--wd-space-4); }
+.inspector { display: grid; gap: var(--wd-space-5); }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
+.facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.facts dd { margin: var(--wd-space-0-5) 0 0; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.list { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-3); padding: var(--wd-space-2); border-radius: var(--wd-radius-xs); }
+.list li:hover { background: var(--wd-color-surface-hover); }
+.list code { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.list small { color: var(--wd-color-text-tertiary); }
+@media (max-width: 48rem) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .tree { position: static; display: flex; overflow-x: auto; gap: var(--wd-space-1); padding-block-end: var(--wd-space-1); }
+  .tree > :global(.wd-field) { display: none; }
+  .tree > .treeList { display: flex; gap: var(--wd-space-1); }
+  .treeList .treeList { display: none; }
+  .treeRow[data-depth] { padding-inline-start: 0; }
+  .treeItem { flex: none; }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+}
+.prices { display: grid; gap: var(--wd-space-3); }
+.priceBook { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-2) var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.priceBook > header { display: flex; align-items: baseline; gap: var(--wd-space-2); }
+.priceBook > header small { color: var(--wd-color-text-tertiary); }
+.priceLine { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.priceValue { font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+.priceLine small { color: var(--wd-color-text-tertiary); }
+.priceActions { display: flex; gap: var(--wd-space-1); margin-inline-start: auto; }
+.tiers { display: grid; gap: var(--wd-space-2); }
+/* One price tier per line: the quantity it starts at, its price, remove. */
+.tierRow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-3); }
+.actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+.tiers > :global(.wd-button) { justify-self: start; }
+.inspectorActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.componentRow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 7rem 2.25rem; align-items: center; gap: var(--wd-space-2); }
+.componentHead { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+/* One header row instead of a label on every line; labels stay for screen readers. */
+.componentLine :global(.wd-field-label) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.componentRow :global(.wd-input) { font-family: inherit; }
+/* PLM-162: a recipe line is its component row plus a row for its kind, basis and hours (labels shown). */
+.recipeLine { display: grid; gap: var(--wd-space-2); padding-block-end: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-border); }
+.recipeRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); align-items: end; gap: var(--wd-space-2); }
+.form > :global(.wd-button) { justify-self: start; }
+@media (max-width: 48rem) { .componentRow { grid-template-columns: minmax(0, 1fr) 6rem 2.25rem; } .componentRow > :first-child { grid-column: 1 / -1; } .componentHead { display: none; } }
+.ideas { display: grid; gap: var(--wd-space-1); margin: 0; padding: var(--wd-space-2); list-style: none; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
+.ideas li { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-3); padding: var(--wd-space-2); }
+.ideas li > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-1) var(--wd-space-2); min-inline-size: 0; }
+.ideas code { font-family: var(--wd-font-mono); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.ideas small { color: var(--wd-color-text-tertiary); }
+.ideas p { inline-size: 100%; margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+
+.images { display: flex; flex-direction: column; align-items: flex-start; gap: var(--wd-space-3); }
+.images ul { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-2); inline-size: 100%; margin: 0; padding: 0; list-style: none; }
+.images li { position: relative; display: flex; flex-direction: column; gap: var(--wd-space-1); }
+.images img { inline-size: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.images li small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.images li :global(.wd-icon-button) { position: absolute; inset-block-start: var(--wd-space-1); inset-inline-end: var(--wd-space-1); background: var(--wd-color-surface); }
+
+/* The item's picture in the list, medium and square; an empty tile when it has none. */
+.thumb { display: block; inline-size: var(--wd-space-12); block-size: var(--wd-space-12); border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); border: 1px solid var(--wd-color-border); }
+.thumb[data-empty] { opacity: 0.6; }

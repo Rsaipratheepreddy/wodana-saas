@@ -1,0 +1,14 @@
+/* Settings → Delivery: one row per channel, and the owner's Home banner. */
+.channel { display: grid; justify-items: end; gap: var(--wd-space-1); min-inline-size: 0; text-align: end; }
+.facts { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.failure { color: var(--wd-color-danger); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+
+.banner { margin-block-end: var(--wd-space-4); }
+
+/* The messages grid: the event code with its critical and fallback marks; provider ids stay on one line. */
+.event { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); overflow-wrap: anywhere; }
+.provider { font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+
+@media (max-width: 640px) {
+  .channel { justify-items: start; text-align: start; }
+}

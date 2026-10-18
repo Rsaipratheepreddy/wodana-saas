@@ -1,21 +1,20 @@
 :root {
   color-scheme: light;
 
-  /* Legacy artwork aliases now share one cool, low-chroma family. Product
-     chrome uses neutral lightness; only action and selection use the accent. */
-  --wd-brand-lilac: #eef3ef;
-  --wd-brand-rose: #dfe8e2;
-  --wd-brand-peach: #c6d8cd;
+  /* Keep Wodana's varied illustration colours separate from tenant actions. */
+  --wd-brand-lilac: var(--wd-workspace-accent-light-lilac, #eee8f6);
+  --wd-brand-rose: var(--wd-workspace-accent-light-rose, #f5e8ec);
+  --wd-brand-peach: var(--wd-workspace-accent-light-peach, #f5ece0);
   --wd-brand-ink: #1c1f1d;
   --wd-brand-gradient: var(--wd-color-action-primary);
   --wd-identity-base: #e9ece9;
   --wd-identity-ink: #2a302c;
-  --wd-identity-color-0: #e6ece8;
-  --wd-identity-color-1: #ebe8e1;
-  --wd-identity-color-2: #e4e9ec;
-  --wd-identity-color-3: #ece6e6;
-  --wd-identity-color-4: #e8eae4;
-  --wd-identity-color-5: #e3ebe9;
+  --wd-identity-color-0: var(--wd-workspace-identity-light-0, #e8edf4);
+  --wd-identity-color-1: var(--wd-workspace-identity-light-1, #f3eae2);
+  --wd-identity-color-2: var(--wd-workspace-identity-light-2, #eee9f5);
+  --wd-identity-color-3: var(--wd-workspace-identity-light-3, #f5e9ed);
+  --wd-identity-color-4: var(--wd-workspace-identity-light-4, #e9f1ef);
+  --wd-identity-color-5: var(--wd-workspace-identity-light-5, #f4efe3);
   --wd-identity-gradient-0: none;
   --wd-identity-gradient-1: none;
   --wd-identity-gradient-2: none;
@@ -24,44 +23,81 @@
   --wd-identity-gradient-5: none;
 
   /* Brand palette. Components consume semantic tokens below, not these raw steps. */
-  --wd-brand-50: var(--wd-workspace-brand-light-50, #f2f6f3);
-  --wd-brand-100: var(--wd-workspace-brand-light-100, #e2ebe5);
-  --wd-brand-200: var(--wd-workspace-brand-light-200, #c6d8cd);
-  --wd-brand-300: var(--wd-workspace-brand-light-300, #a3bfae);
-  --wd-brand-400: var(--wd-workspace-brand-light-400, #7ca08b);
-  --wd-brand-500: var(--wd-workspace-brand-light-500, #5d846f);
-  --wd-brand-600: var(--wd-workspace-brand-light-600, #46705a);
-  --wd-brand-700: var(--wd-workspace-brand-light-700, #3a5d4b);
-  --wd-brand-800: var(--wd-workspace-brand-light-800, #2f4b3d);
-  --wd-brand-900: var(--wd-workspace-brand-light-900, #253b30);
-  --wd-brand-950: var(--wd-workspace-brand-light-950, #16241d);
-  --wd-aqua-500: #3f7f86;
-  --wd-lime-400: #b9c98a;
+  --wd-brand-50: var(--wd-workspace-brand-light-50, #f5f6f7);
+  --wd-brand-100: var(--wd-workspace-brand-light-100, #eceef0);
+  --wd-brand-200: var(--wd-workspace-brand-light-200, #d9dde1);
+  --wd-brand-300: var(--wd-workspace-brand-light-300, #bdc3c9);
+  --wd-brand-400: var(--wd-workspace-brand-light-400, #929ba4);
+  --wd-brand-500: var(--wd-workspace-brand-light-500, #68727c);
+  --wd-brand-600: var(--wd-workspace-brand-light-600, #4d565f);
+  --wd-brand-700: var(--wd-workspace-brand-light-700, #394149);
+  --wd-brand-800: var(--wd-workspace-brand-light-800, #292f35);
+  --wd-brand-900: var(--wd-workspace-brand-light-900, #20252a);
+  --wd-brand-950: var(--wd-workspace-brand-light-950, #171b1f);
+  --wd-aqua-500: var(--wd-workspace-accent-light-aqua, #3f7f86);
+  --wd-lime-400: var(--wd-workspace-accent-light-lime, #b9c98a);
+
+  /* Module illustration colours from the current Wodana sidebar; each can be
+     overridden by a tenant without recolouring status or action semantics. */
+  --wd-color-module-home: var(--wd-workspace-module-home, #a77632);
+  --wd-color-module-sales: var(--wd-workspace-module-sales, #388263);
+  --wd-color-module-clients: var(--wd-workspace-module-clients, #8366b1);
+  --wd-color-module-projects: var(--wd-workspace-module-projects, #5187b8);
+  --wd-color-module-resources: var(--wd-workspace-module-resources, #b17c45);
+  --wd-color-module-activity: var(--wd-workspace-module-activity, #399174);
+  --wd-color-module-calendar: var(--wd-workspace-module-calendar, #b96572);
+  --wd-color-module-planning: var(--wd-workspace-module-planning, #7c71b7);
+  --wd-color-module-team: var(--wd-workspace-module-team, #398a97);
+  --wd-color-module-integrations: var(--wd-workspace-module-integrations, #548f72);
+  --wd-color-module-settings: var(--wd-workspace-module-settings, #778397);
+  --wd-color-module-follow-ups: var(--wd-workspace-module-follow-ups, #7560a0);
+
+  /* Categorical data-viz palette from the Wodana doodle colours: sky, plum, sage, mustard,
+     coral, teal. Charts, icon chips and card accents use these, never the tenant action colour.
+     Each solid reaches ≥ 4.5:1 on the light surfaces and on its own soft tint. */
+  --wd-color-viz-1: #2f6aa8;
+  --wd-color-viz-2: #6957a6;
+  --wd-color-viz-3: #35745a;
+  --wd-color-viz-4: #846300;
+  --wd-color-viz-5: #a84a43;
+  --wd-color-viz-6: #26737d;
+  --wd-color-viz-1-soft: #e6edf5;
+  --wd-color-viz-2-soft: #edebf4;
+  --wd-color-viz-3-soft: #e7eeeb;
+  --wd-color-viz-4-soft: #f0ece0;
+  --wd-color-viz-5-soft: #f5e9e8;
+  --wd-color-viz-6-soft: #e5eeef;
 
   /* Neutral palette. */
   --wd-neutral-0: #ffffff;
-  --wd-neutral-25: #fcfcfb;
-  --wd-neutral-50: #f8f8f6;
-  --wd-neutral-100: #f1f2ef;
-  --wd-neutral-200: #e5e7e2;
-  --wd-neutral-300: #d1d5cf;
-  --wd-neutral-400: #a2a7a2;
-  --wd-neutral-500: #676d68;
-  --wd-neutral-600: #555b56;
-  --wd-neutral-700: #414744;
-  --wd-neutral-800: #2a2f2c;
-  --wd-neutral-900: #1a1e1c;
-  --wd-neutral-950: #101312;
+  --wd-neutral-25: #fcfcfc;
+  --wd-neutral-50: #fafafa;
+  --wd-neutral-100: #f5f5f5;
+  --wd-neutral-200: #e6e6e6;
+  --wd-neutral-300: #d4d4d4;
+  --wd-neutral-400: #a3a3a3;
+  --wd-neutral-500: #767676;
+  --wd-neutral-600: #616161;
+  --wd-neutral-700: #404040;
+  --wd-neutral-800: #333333;
+  --wd-neutral-900: #252525;
+  --wd-neutral-950: #171717;
 
   /* Semantic surfaces and text. */
-  --wd-color-canvas: var(--wd-neutral-50);
+  --wd-color-canvas: var(--wd-neutral-0);
   --wd-color-surface: var(--wd-neutral-0);
   --wd-color-surface-subtle: var(--wd-neutral-25);
   --wd-color-surface-muted: var(--wd-neutral-100);
-  --wd-color-surface-hover: #eef0ec;
-  --wd-color-surface-pressed: #e5e8e3;
-  --wd-color-surface-selected: var(--wd-brand-50);
+  /* The tenant's brand surface (their pale primary when they set an accent, else a light tint of their colour):
+     the client portal's header and foot. Always light enough for ink text and a dark logo. */
+  --wd-color-brand-surface: var(--wd-workspace-brand-surface-light, var(--wd-neutral-100));
+  /* The light that sweeps across loading placeholders. */
+  --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-surface) 78%, transparent);
+  --wd-color-surface-hover: #f0f0f0;
+  --wd-color-surface-pressed: #e8e8e8;
+  --wd-color-surface-selected: var(--wd-color-action-primary-subtle);
   --wd-color-composer-surface: #ffffff;
+  --wd-color-floating-surface: color-mix(in srgb, var(--wd-color-surface) 94%, transparent);
   --wd-color-text: var(--wd-neutral-900);
   --wd-color-text-secondary: var(--wd-neutral-600);
   --wd-color-text-tertiary: var(--wd-neutral-500);
@@ -69,28 +105,34 @@
   --wd-color-text-inverse: var(--wd-neutral-0);
   --wd-color-icon: var(--wd-neutral-600);
   --wd-color-icon-subtle: var(--wd-neutral-500);
-  --wd-color-border: var(--wd-neutral-200);
-  --wd-color-border-strong: var(--wd-neutral-300);
-  --wd-color-border-control: #c4c9c3;
+  --wd-color-border: #dadada;
+  --wd-color-border-strong: #c2c2c2;
+  --wd-color-table-border: #e0e0e0;
+  --wd-color-table-selected: #eaf2ff;
+  --wd-color-table-header: #fafafa;
+  --wd-color-table-header-ink: #404040;
+  --wd-color-border-control: #cfcfcf;
+  /* Checkbox, radio and switch boundaries: at least 3:1 against the surface. */
+  --wd-color-border-choice: #767676;
   --wd-color-overlay: rgb(16 19 18 / 46%);
   --wd-color-workspace-canvas: #ffffff;
   --wd-color-workspace-toolbar: #ffffff;
-  --wd-color-sidebar: #f4f5f2;
-  --wd-color-sidebar-hover: #e9ece7;
-  --wd-color-sidebar-active: #dfe4de;
-  --wd-color-structural-divider: #e5e7e2;
-  --wd-color-breadcrumb: #676d68;
+  --wd-color-sidebar: #ffffff;
+  --wd-color-sidebar-hover: #f0f0f0;
+  --wd-color-sidebar-active: #ebebeb;
+  --wd-color-structural-divider: #e6e6e6;
+  --wd-color-breadcrumb: #6b6b6b;
 
   /* Semantic actions and focus. */
-  --wd-color-action-primary: var(--wd-brand-600);
-  --wd-color-action-primary-hover: var(--wd-brand-700);
-  --wd-color-action-primary-pressed: var(--wd-brand-800);
-  --wd-color-action-primary-subtle: var(--wd-brand-50);
+  --wd-color-action-primary: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-action-primary-hover: var(--wd-workspace-action-light-hover, #41464c);
+  --wd-color-action-primary-pressed: var(--wd-workspace-action-light-pressed, #191c20);
+  --wd-color-action-primary-subtle: var(--wd-workspace-action-light-subtle, #eef0f2);
   --wd-color-navigation-selected: color-mix(in oklch, var(--wd-color-action-primary) 14%, var(--wd-color-sidebar));
   --wd-color-action-on-primary: var(--wd-workspace-brand-light-on, #ffffff);
-  --wd-color-link: var(--wd-workspace-brand-light-700, #3a5d4b);
-  --wd-color-link-hover: var(--wd-workspace-brand-light-800, #2f4b3d);
-  --wd-color-focus: var(--wd-workspace-brand-light-600, #46705a);
+  --wd-color-link: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-link-hover: var(--wd-workspace-action-light-hover, #41464c);
+  --wd-color-focus: var(--wd-workspace-action-light-primary, #292d32);
   --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
   --wd-field-focus-border: var(--wd-color-focus);
   --wd-field-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
@@ -108,7 +150,7 @@
   --wd-color-info-subtle: #e6f0f3;
 
   /* Fonts are provided by next/font in app/fonts.ts. */
-  --wd-font-sans: var(--wd-workspace-font-body, var(--font-inter), Inter), ui-sans-serif, -apple-system, BlinkMacSystemFont,
+  --wd-font-sans: var(--wd-workspace-font-body, var(--font-jakarta, "Plus Jakarta Sans")), ui-sans-serif, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif;
   --wd-font-display: var(--wd-workspace-font-heading, var(--wd-font-sans));
   --wd-font-arabic: var(--font-noto-arabic), "Noto Sans Arabic", Tahoma, Arial, sans-serif;
@@ -165,10 +207,15 @@
   --wd-flow-8: 9rem;
 
   /* Shape, elevation and motion. */
+  --wd-radius-2xs: 0.25rem;
+  --wd-illustration-ink: var(--wd-color-text-tertiary);
+  --wd-illustration-fill: var(--wd-color-surface-muted);
+  --wd-illustration-paper: var(--wd-color-surface);
+  --wd-illustration-accent: var(--wd-color-action-primary);
   --wd-radius-xs: 0.375rem;
   --wd-radius-sm: 0.5rem;
-  --wd-radius-md: 0.625rem;
-  --wd-radius-lg: 0.75rem;
+  --wd-radius-md: 0.75rem;
+  --wd-radius-lg: 1rem;
   --wd-radius-xl: 1rem;
   /* Golden-ratio rhythm (φ ≈ 1.618) used for page composition. */
   --wd-phi-1: 0.5rem;
@@ -182,6 +229,8 @@
   --wd-shadow-xs: 0 1px 2px rgb(20 28 24 / 6%);
   --wd-shadow-sm: 0 1px 2px rgb(20 28 24 / 6%), 0 4px 12px rgb(20 28 24 / 5%);
   --wd-shadow-md: 0 16px 40px rgb(20 28 24 / 12%), 0 3px 10px rgb(20 28 24 / 6%);
+  --wd-glass-blur: 12px;
+  --wd-glass-surface: var(--wd-color-floating-surface);
   --wd-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --wd-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --wd-duration-fast: 120ms;
@@ -195,13 +244,34 @@
   --wd-control-lg: 2.5rem;
   --wd-control-compact: var(--wd-control-sm);
   --wd-control-standard: var(--wd-control-md);
+  /* Shared action sizing; feature screens should use Button sizes, not local px values. */
+  --wd-button-height-compact: var(--wd-control-xs);
+  --wd-button-height-standard: var(--wd-control-sm);
+  --wd-button-height-large: 2.5rem;
+  --wd-button-padding-compact: var(--wd-space-2);
+  --wd-button-padding-standard: var(--wd-space-3);
+  --wd-button-padding-large: var(--wd-space-4);
+  --wd-auth-control-height: 2.75rem;
+  --wd-auth-control-radius: var(--wd-radius-md);
+  --wd-auth-panel-width: 25rem;
+  --wd-navigation-item-height: 2rem;
+  --wd-navigation-icon-size: 1.125rem;
+  --wd-navigation-section-height: 1.25rem;
   --wd-table-row: 2.5rem;
+  --wd-table-row-compact: 2rem;
+  --wd-table-header-row: 2.5rem;
+  --wd-table-cell-padding: var(--wd-space-3);
+  --wd-table-max-width: 92rem;
+  --wd-table-frame-radius: var(--wd-radius-md);
+  /* Checkbox and radio box, and the switch height. */
+  --wd-choice-size: 1.125rem;
   --wd-sidebar-rail: 3.5rem;
-  --wd-sidebar-width: 15rem;
+  --wd-sidebar-width: 14rem;
   --wd-topbar-height: 3.5rem;
   --wd-inspector-sm: 26.25rem;
   --wd-inspector-md: 35rem;
   --wd-inspector-lg: 45rem;
+  --wd-inspector-xl: 64rem;
   --wd-content-narrow: 46rem;
   --wd-content-wide: 76rem;
   --wd-ratio-minor: 38.2%;
@@ -249,86 +319,220 @@
   --wd-record-selected: var(--wd-color-surface-selected);
 }
 
+/* A nested light theme (a design-system provider carrying a tenant's brand, such as the client portal)
+   resolves its actions on its own element, like the dark theme does, so the brand reaches them. */
+/* Before hydration a provider following the page says "document" (the page theme is only known in the browser). */
+:root:not([data-theme="dark"]):not([data-theme="high-contrast"]) [data-wd-theme="document"],
+[data-wd-theme="light"] {
+  --wd-color-brand-surface: var(--wd-workspace-brand-surface-light, var(--wd-neutral-100));
+  --wd-color-action-primary: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-action-primary-hover: var(--wd-workspace-action-light-hover, #41464c);
+  --wd-color-action-primary-pressed: var(--wd-workspace-action-light-pressed, #191c20);
+  --wd-color-action-primary-subtle: var(--wd-workspace-action-light-subtle, #eef0f2);
+  --wd-color-action-on-primary: var(--wd-workspace-brand-light-on, #ffffff);
+  --wd-color-link: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-link-hover: var(--wd-workspace-action-light-hover, #41464c);
+  --wd-color-focus: var(--wd-workspace-action-light-primary, #292d32);
+  --wd-color-navigation-selected: color-mix(in oklch, var(--wd-color-action-primary) 14%, var(--wd-color-sidebar));
+  --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
+  --wd-field-focus-border: var(--wd-color-focus);
+  --wd-field-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 20%, transparent);
+}
+
+/* A light provider inside a dark page (the public form preview) restores the light neutrals and tones on its own
+   element; without them it would inherit the page's dark surfaces and text. */
+[data-wd-theme="light"] {
+  color-scheme: light;
+  --wd-brand-lilac: var(--wd-workspace-accent-light-lilac, #eee8f6);
+  --wd-brand-rose: var(--wd-workspace-accent-light-rose, #f5e8ec);
+  --wd-brand-peach: var(--wd-workspace-accent-light-peach, #f5ece0);
+  --wd-identity-base: #e9ece9;
+  --wd-identity-ink: #2a302c;
+  --wd-identity-color-0: var(--wd-workspace-identity-light-0, #e8edf4);
+  --wd-identity-color-1: var(--wd-workspace-identity-light-1, #f3eae2);
+  --wd-identity-color-2: var(--wd-workspace-identity-light-2, #eee9f5);
+  --wd-identity-color-3: var(--wd-workspace-identity-light-3, #f5e9ed);
+  --wd-identity-color-4: var(--wd-workspace-identity-light-4, #e9f1ef);
+  --wd-identity-color-5: var(--wd-workspace-identity-light-5, #f4efe3);
+  --wd-brand-50: var(--wd-workspace-brand-light-50, #f5f6f7);
+  --wd-brand-100: var(--wd-workspace-brand-light-100, #eceef0);
+  --wd-brand-200: var(--wd-workspace-brand-light-200, #d9dde1);
+  --wd-brand-300: var(--wd-workspace-brand-light-300, #bdc3c9);
+  --wd-brand-400: var(--wd-workspace-brand-light-400, #929ba4);
+  --wd-brand-500: var(--wd-workspace-brand-light-500, #68727c);
+  --wd-brand-600: var(--wd-workspace-brand-light-600, #4d565f);
+  --wd-brand-700: var(--wd-workspace-brand-light-700, #394149);
+  --wd-brand-800: var(--wd-workspace-brand-light-800, #292f35);
+  --wd-brand-900: var(--wd-workspace-brand-light-900, #20252a);
+  --wd-brand-950: var(--wd-workspace-brand-light-950, #171b1f);
+  --wd-aqua-500: var(--wd-workspace-accent-light-aqua, #3f7f86);
+  --wd-color-viz-1: #2f6aa8;
+  --wd-color-viz-2: #6957a6;
+  --wd-color-viz-3: #35745a;
+  --wd-color-viz-4: #846300;
+  --wd-color-viz-5: #a84a43;
+  --wd-color-viz-6: #26737d;
+  --wd-color-viz-1-soft: #e6edf5;
+  --wd-color-viz-2-soft: #edebf4;
+  --wd-color-viz-3-soft: #e7eeeb;
+  --wd-color-viz-4-soft: #f0ece0;
+  --wd-color-viz-5-soft: #f5e9e8;
+  --wd-color-viz-6-soft: #e5eeef;
+  --wd-color-canvas: var(--wd-neutral-0);
+  --wd-color-surface: var(--wd-neutral-0);
+  --wd-color-surface-subtle: var(--wd-neutral-25);
+  --wd-color-surface-muted: var(--wd-neutral-100);
+  --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-surface) 78%, transparent);
+  --wd-color-surface-hover: #f0f0f0;
+  --wd-color-surface-pressed: #e8e8e8;
+  --wd-color-surface-selected: var(--wd-color-action-primary-subtle);
+  --wd-color-composer-surface: #ffffff;
+  --wd-color-floating-surface: color-mix(in srgb, var(--wd-color-surface) 94%, transparent);
+  --wd-color-text: var(--wd-neutral-900);
+  --wd-color-text-secondary: var(--wd-neutral-600);
+  --wd-color-text-tertiary: var(--wd-neutral-500);
+  --wd-color-text-disabled: var(--wd-neutral-400);
+  --wd-color-text-inverse: var(--wd-neutral-0);
+  --wd-color-icon: var(--wd-neutral-600);
+  --wd-color-icon-subtle: var(--wd-neutral-500);
+  --wd-color-border: #dadada;
+  --wd-color-border-strong: #c2c2c2;
+  --wd-color-table-border: #e0e0e0;
+  --wd-color-table-selected: #eaf2ff;
+  --wd-color-table-header: #fafafa;
+  --wd-color-table-header-ink: #404040;
+  --wd-color-border-control: #cfcfcf;
+  --wd-color-border-choice: #767676;
+  --wd-color-overlay: rgb(16 19 18 / 46%);
+  --wd-color-workspace-canvas: #ffffff;
+  --wd-color-workspace-toolbar: #ffffff;
+  --wd-color-sidebar: #ffffff;
+  --wd-color-sidebar-hover: #f0f0f0;
+  --wd-color-sidebar-active: #ebebeb;
+  --wd-color-structural-divider: #e6e6e6;
+  --wd-color-breadcrumb: #6b6b6b;
+  --wd-color-success: #2f6b4f;
+  --wd-color-success-subtle: #e6f2ea;
+  --wd-color-warning: #8a5a14;
+  --wd-color-warning-subtle: #f8efdc;
+  --wd-color-danger: #a3454a;
+  --wd-color-danger-subtle: #f8e9e9;
+  --wd-color-danger-solid: #ad474d;
+  --wd-color-on-danger: #ffffff;
+  --wd-color-info: #3b6a78;
+  --wd-color-info-subtle: #e6f0f3;
+  --wd-shadow-xs: 0 1px 2px rgb(20 28 24 / 6%);
+  --wd-shadow-sm: 0 1px 2px rgb(20 28 24 / 6%), 0 4px 12px rgb(20 28 24 / 5%);
+  --wd-shadow-md: 0 16px 40px rgb(20 28 24 / 12%), 0 3px 10px rgb(20 28 24 / 6%);
+}
+
 [data-theme="dark"],
+[data-theme="dark"] [data-wd-theme="document"],
 [data-wd-theme="dark"] {
   color-scheme: dark;
-  --wd-brand-lilac: #263029;
-  --wd-brand-rose: #34413a;
-  --wd-brand-peach: #46574d;
+  --wd-brand-lilac: var(--wd-workspace-accent-dark-lilac, #393044);
+  --wd-brand-rose: var(--wd-workspace-accent-dark-rose, #49343e);
+  --wd-brand-peach: var(--wd-workspace-accent-dark-peach, #4a3e31);
   --wd-identity-base: #30352f;
   --wd-identity-ink: #edf1ec;
-  --wd-identity-color-0: #2f3731;
-  --wd-identity-color-1: #363a30;
-  --wd-identity-color-2: #303a3c;
-  --wd-identity-color-3: #3a3334;
-  --wd-identity-color-4: #363b33;
-  --wd-identity-color-5: #2f3c39;
-  --wd-brand-50: var(--wd-workspace-brand-dark-50, #17211b);
-  --wd-brand-100: var(--wd-workspace-brand-dark-100, #1f2d25);
-  --wd-brand-200: var(--wd-workspace-brand-dark-200, #2b3f34);
-  --wd-brand-300: var(--wd-workspace-brand-dark-300, #3b5647);
-  --wd-brand-400: var(--wd-workspace-brand-dark-400, #4f7060);
-  --wd-brand-500: var(--wd-workspace-brand-dark-500, #6a8f7b);
-  --wd-brand-600: var(--wd-workspace-brand-dark-600, #8fbba2);
-  --wd-brand-700: var(--wd-workspace-brand-dark-700, #a8cdb8);
-  --wd-brand-800: var(--wd-workspace-brand-dark-800, #c2dece);
-  --wd-brand-900: var(--wd-workspace-brand-dark-900, #d9ebe1);
-  --wd-brand-950: var(--wd-workspace-brand-dark-950, #ecf5f0);
+  --wd-identity-color-0: var(--wd-workspace-identity-dark-0, #303b49);
+  --wd-identity-color-1: var(--wd-workspace-identity-dark-1, #493d35);
+  --wd-identity-color-2: var(--wd-workspace-identity-dark-2, #3d354d);
+  --wd-identity-color-3: var(--wd-workspace-identity-dark-3, #49343d);
+  --wd-identity-color-4: var(--wd-workspace-identity-dark-4, #30413e);
+  --wd-identity-color-5: var(--wd-workspace-identity-dark-5, #474137);
+  --wd-brand-50: var(--wd-workspace-brand-dark-50, #25282b);
+  --wd-brand-100: var(--wd-workspace-brand-dark-100, #303438);
+  --wd-brand-200: var(--wd-workspace-brand-dark-200, #3e444a);
+  --wd-brand-300: var(--wd-workspace-brand-dark-300, #565e66);
+  --wd-brand-400: var(--wd-workspace-brand-dark-400, #78818a);
+  --wd-brand-500: var(--wd-workspace-brand-dark-500, #9aa3ab);
+  --wd-brand-600: var(--wd-workspace-brand-dark-600, #aab1b8);
+  --wd-brand-700: var(--wd-workspace-brand-dark-700, #c3c9ce);
+  --wd-brand-800: var(--wd-workspace-brand-dark-800, #d6dadd);
+  --wd-brand-900: var(--wd-workspace-brand-dark-900, #e4e7e9);
+  --wd-brand-950: var(--wd-workspace-brand-dark-950, #eef0f1);
   --wd-color-action-on-primary: var(--wd-workspace-brand-dark-on, #111111);
-  --wd-aqua-500: #7fbfc6;
-  --wd-color-canvas: #141715;
-  --wd-color-surface: #1b1f1d;
-  --wd-color-surface-subtle: #1f2321;
-  --wd-color-surface-muted: #262b28;
-  --wd-color-surface-hover: #2d332f;
-  --wd-color-surface-pressed: #353c38;
-  --wd-color-surface-selected: #273229;
-  --wd-color-composer-surface: #2b302d;
-  --wd-color-text: #f2f4f1;
-  --wd-color-text-secondary: #bdc3bd;
-  --wd-color-text-tertiary: #9aa19b;
-  --wd-color-text-disabled: #70776f;
-  --wd-color-text-inverse: #141715;
-  --wd-color-icon: #cbd1cb;
-  --wd-color-icon-subtle: #a3aaa3;
-  --wd-color-border: #343a36;
-  --wd-color-border-strong: #4d544f;
-  --wd-color-border-control: #5f6761;
+  --wd-aqua-500: var(--wd-workspace-accent-dark-aqua, #7fbfc6);
+  /* Lower-luminance solids (≥ 5.6:1 on the dark cards) over darker tints (≥ 4.8:1 for the solid as text). */
+  --wd-color-viz-1: #79a5d6;
+  --wd-color-viz-2: #a495d2;
+  --wd-color-viz-3: #76b192;
+  --wd-color-viz-4: #c4a353;
+  --wd-color-viz-5: #d08c84;
+  --wd-color-viz-6: #69acb5;
+  --wd-color-viz-1-soft: #2b323a;
+  --wd-color-viz-2-soft: #322f39;
+  --wd-color-viz-3-soft: #2a342f;
+  --wd-color-viz-4-soft: #373225;
+  --wd-color-viz-5-soft: #392e2d;
+  --wd-color-viz-6-soft: #283334;
+  /* Elevation steps: canvas, then each surface a little lighter, so cards separate without borders. */
+  --wd-color-canvas: #191919;
+  --wd-color-surface: #191919;
+  --wd-color-surface-subtle: #202020;
+  --wd-color-surface-muted: #292929;
+  --wd-color-brand-surface: var(--wd-workspace-brand-surface-dark, #202020);
+  --wd-color-skeleton-sheen: color-mix(in srgb, var(--wd-color-text) 7%, transparent);
+  --wd-color-surface-hover: #303030;
+  --wd-color-surface-pressed: #373737;
+  --wd-color-surface-selected: #2e2e2e;
+  --wd-color-composer-surface: #242424;
+  --wd-color-floating-surface: color-mix(in srgb, var(--wd-color-surface) 96%, transparent);
+  /* Primary text sits just off white; the secondary steps keep 4.5:1 on the muted surface. */
+  --wd-color-text: #dedede;
+  --wd-color-text-secondary: #a9a9a9;
+  --wd-color-text-tertiary: #929292;
+  --wd-color-text-disabled: #6e6e6e;
+  --wd-color-text-inverse: #191919;
+  --wd-color-icon: #bdbdbd;
+  --wd-color-icon-subtle: #969696;
+  --wd-color-border: #3a3a3a;
+  --wd-color-border-strong: #4f4f4f;
+  --wd-color-table-border: #333333;
+  --wd-color-table-selected: #2a3340;
+  --wd-color-table-header: #212121;
+  --wd-color-table-header-ink: #d6d6d6;
+  --wd-color-border-control: #484848;
+  --wd-color-border-choice: #8c8c8c;
   --wd-color-overlay: rgb(0 0 0 / 68%);
-  --wd-color-workspace-canvas: #1b1f1d;
-  --wd-color-workspace-toolbar: #1b1f1d;
-  --wd-color-sidebar: #151917;
-  --wd-color-sidebar-hover: #232826;
-  --wd-color-sidebar-active: #2c332e;
-  --wd-color-structural-divider: #2f3531;
-  --wd-color-breadcrumb: #bdc3bd;
-  --wd-color-action-primary: var(--wd-workspace-brand-dark-600, #8fbba2);
-  --wd-color-action-primary-hover: var(--wd-workspace-brand-dark-700, #a8cdb8);
-  --wd-color-action-primary-pressed: var(--wd-workspace-brand-dark-800, #c2dece);
-  --wd-color-action-primary-subtle: var(--wd-workspace-brand-dark-50, #17211b);
-  --wd-color-action-on-primary: var(--wd-workspace-brand-dark-on, #111111);
-  --wd-color-link: var(--wd-workspace-brand-dark-700, #a8cdb8);
-  --wd-color-link-hover: var(--wd-workspace-brand-dark-800, #c2dece);
-  --wd-color-focus: var(--wd-workspace-brand-dark-700, #a8cdb8);
+  --wd-color-workspace-canvas: #191919;
+  --wd-color-workspace-toolbar: #191919;
+  --wd-color-sidebar: #191919;
+  --wd-color-sidebar-hover: #272727;
+  --wd-color-sidebar-active: #2e2e2e;
+  --wd-color-structural-divider: #303030;
+  --wd-color-breadcrumb: #a9a9a9;
+  --wd-color-action-primary: var(--wd-workspace-action-dark-primary, #dedede);
+  --wd-color-action-primary-hover: var(--wd-workspace-action-dark-hover, #cbcbcb);
+  --wd-color-action-primary-pressed: var(--wd-workspace-action-dark-pressed, #b8b8b8);
+  --wd-color-action-primary-subtle: var(--wd-workspace-action-dark-subtle, #303030);
+  --wd-color-action-on-primary: var(--wd-workspace-action-dark-on, #191919);
+  --wd-color-link: var(--wd-workspace-action-dark-primary, #dedede);
+  --wd-color-link-hover: var(--wd-workspace-action-dark-hover, #cbcbcb);
+  --wd-color-focus: var(--wd-workspace-action-dark-primary, #dedede);
   --wd-focus-ring: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 30%, transparent);
   --wd-field-focus-border: var(--wd-color-focus);
   --wd-field-focus-shadow: 0 0 0 3px color-mix(in srgb, var(--wd-color-focus) 30%, transparent);
-  --wd-color-success: #8fd1b0;
-  --wd-color-success-subtle: #1c3328;
-  --wd-color-warning: #e6c07a;
-  --wd-color-warning-subtle: #3d3220;
-  --wd-color-danger: #eba3a6;
-  --wd-color-danger-subtle: #422829;
-  --wd-color-danger-solid: #cf6169;
-  --wd-color-on-danger: #1f080a;
-  --wd-color-info: #93c5d2;
-  --wd-color-info-subtle: #1c333a;
+  /* Status tones are desaturated and dimmed so chips read as calm tinted pills; every text
+     value keeps at least 5.6:1 on its own tint and on the surfaces. */
+  --wd-color-success: #7fbb98;
+  --wd-color-success-subtle: #1e2d25;
+  --wd-color-warning: #cfae6e;
+  --wd-color-warning-subtle: #332c1d;
+  --wd-color-danger: #d98e91;
+  --wd-color-danger-subtle: #382527;
+  --wd-color-danger-solid: #b9555c;
+  --wd-color-on-danger: #ffffff;
+  --wd-color-info: #80b0be;
+  --wd-color-info-subtle: #1e2c31;
   --wd-shadow-xs: 0 1px 2px rgb(0 0 0 / 20%);
   --wd-shadow-sm: 0 1px 2px rgb(0 0 0 / 22%), 0 4px 14px rgb(0 0 0 / 18%);
   --wd-shadow-md: 0 18px 46px rgb(0 0 0 / 38%), 0 3px 10px rgb(0 0 0 / 24%);
 }
 
 [data-theme="high-contrast"],
+[data-theme="high-contrast"] [data-wd-theme="document"],
 [data-wd-theme="high-contrast"] {
   color-scheme: light;
   --wd-identity-base: #ffffff;
@@ -360,9 +564,11 @@
   --wd-color-surface: #ffffff;
   --wd-color-surface-subtle: #ffffff;
   --wd-color-surface-muted: #f0f0f0;
+  --wd-color-brand-surface: #f0f0f0;
   --wd-color-surface-hover: #e5e5e5;
   --wd-color-surface-pressed: #d8d8d8;
   --wd-color-surface-selected: #e2ebe5;
+  --wd-color-floating-surface: var(--wd-color-surface);
   --wd-color-text: #000000;
   --wd-color-text-secondary: #242424;
   --wd-color-text-tertiary: #3d3d3d;
@@ -373,6 +579,7 @@
   --wd-color-border: #575757;
   --wd-color-border-strong: #000000;
   --wd-color-border-control: #000000;
+  --wd-color-border-choice: #000000;
   --wd-color-workspace-canvas: #ffffff;
   --wd-color-workspace-toolbar: #ffffff;
   --wd-color-sidebar: #ffffff;
@@ -400,6 +607,15 @@
    a DesignSystemProvider can override the semantic tokens. */
 [data-theme],
 [data-wd-theme] {
+  /* The tenant's fonts arrive on the provider's element, so the families resolve there, not once on :root. */
+  --wd-font-sans: var(--wd-workspace-font-body, var(--font-jakarta, "Plus Jakarta Sans")), ui-sans-serif, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --wd-font-display: var(--wd-workspace-font-heading, var(--wd-font-sans));
+  --wd-brand-gradient: var(--wd-color-action-primary);
+  --wd-illustration-ink: var(--wd-color-text-tertiary);
+  --wd-illustration-fill: var(--wd-color-surface-muted);
+  --wd-illustration-paper: var(--wd-color-surface);
+  --wd-illustration-accent: var(--wd-color-action-primary);
   --wd-ink: var(--wd-color-text);
   --wd-ink-soft: var(--wd-color-text-secondary);
   --wd-muted: var(--wd-color-text-secondary);
@@ -441,7 +657,8 @@
   --wd-control-md: 2rem;
   --wd-control-lg: 2.5rem;
   --wd-control-standard: 2rem;
-  --wd-table-row: 2rem;
+  --wd-table-row: 2.25rem;
+  --wd-table-header-row: 2.25rem;
 }
 
 @media (prefers-reduced-motion: reduce) {

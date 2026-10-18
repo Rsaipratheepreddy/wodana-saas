@@ -1,0 +1,49 @@
+/* The steps table (plan §6.9a): CeCe's shape. The frame, header band and hairlines come from the shared table
+   (record-tables.css); here only the matrix itself. Tokens only; logical properties only. */
+.title { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; overflow-wrap: anywhere; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); min-inline-size: 0; }
+.paths { min-inline-size: 12rem; }
+.spacer { flex: 1; }
+.version { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); font-variant-numeric: tabular-nums; }
+
+.frame { max-inline-size: 100%; }
+.table { min-inline-size: 100%; }
+.table th, .table td { vertical-align: top; }
+.table thead th { white-space: nowrap; }
+.letter { margin-inline-end: var(--wd-space-1); color: var(--wd-color-text-secondary); }
+/* The step names stay in view while the paths scroll sideways (a phone, or five paths). */
+.stepColumn { position: sticky; inset-inline-start: 0; z-index: 1; min-inline-size: 13rem; max-inline-size: 18rem; background: var(--wd-color-surface); }
+thead .stepColumn { background: inherit; }
+.stageRow th { padding-block: var(--wd-space-1-5); background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.stepCell { display: flex; align-items: flex-start; gap: var(--wd-space-1); min-inline-size: 0; }
+
+.rowButton, .cellButton {
+  display: grid; justify-items: start; gap: var(--wd-space-1); box-sizing: border-box; inline-size: 100%; min-inline-size: 0;
+  padding: var(--wd-space-1); border: 1px solid transparent; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text);
+  font: inherit; text-align: start; cursor: pointer;
+}
+.rowButton { flex: 1; }
+.rowButton strong { font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.rowButton small, .lead { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-tight); }
+.rowButton:hover, .cellButton:hover { background: var(--wd-color-surface-hover); }
+.rowButton:focus-visible, .cellButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.rowButton[data-invalid], .cellButton[data-invalid] { border-color: var(--wd-color-danger); }
+.cellButton { min-inline-size: 8rem; }
+.cellButton[data-rule="skipped"] { color: var(--wd-color-text-tertiary); }
+.owner { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.closingRow th, .closingRow td { background: var(--wd-color-surface-subtle); }
+
+.leadFields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--wd-space-3); }
+
+/* Moving jobs to the new version. */
+.jobs { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.job { display: grid; gap: var(--wd-space-1); padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-table-border); }
+.jobTitle { overflow-wrap: anywhere; }
+.jobMeta { padding-inline-start: var(--wd-space-6); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.jobWarn { padding-inline-start: var(--wd-space-6); color: var(--wd-color-warning); font-size: var(--wd-text-xs); }
+
+@media (max-width: 40rem) {
+  .paths { min-inline-size: 0; flex: 1 1 100%; }
+  .stepColumn { min-inline-size: 9rem; }
+  .leadFields { grid-template-columns: minmax(0, 1fr); }
+}

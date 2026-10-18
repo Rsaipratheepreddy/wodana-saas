@@ -76,6 +76,27 @@ test.describe("design system reference", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });
+  test("every table sits in the shared rounded frame and its floating controls follow dark mode", async ({ page }, testInfo) => {
+    if (testInfo.project.name !== "desktop") return;
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto("/design-system#data");
+    const grid = page.locator(".wd-data-grid").first();
+    await expect(grid).not.toHaveAttribute("data-appearance", /.*/);
+    const frame = await grid.locator(".wd-table-scroll").first().evaluate((element) => {
+      const style = getComputedStyle(element);
+      const header = getComputedStyle(element.querySelector("th")!);
+      return { border: style.borderTopWidth, radius: style.borderTopLeftRadius, headerBackground: header.backgroundColor, surface: style.backgroundColor, sticky: header.position };
+    });
+    expect(frame.border).toBe("1px");
+    expect(frame.radius).not.toBe("0px");
+    expect(frame.headerBackground).not.toBe(frame.surface);
+    expect(frame.sticky).toBe("sticky");
+    await page.getByRole("button", { name: "Use dark theme" }).click();
+    await grid.getByRole("button", { name: "Filter", exact: true }).click();
+    const panel = page.locator(".wd-record-panel");
+    await expect(panel).toHaveAttribute("data-wd-theme", "dark");
+    expect(await panel.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgb(255, 255, 255)");
+  });
   test("closed selects expose only the disclosure indicator", async ({ page }) => {
     await page.goto("/design-system#forms");
     const select = page.locator(".wd-select-button").first();
@@ -205,7 +226,7 @@ test.describe("design system reference", () => {
     await expect(page.getByText("Drawings approved", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Continue to Purchase order", exact: true }).click();
     await expect(page.getByRole("button", { name: "Continue to Receive", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /Kitchen joinery — Rev 04/ }).click();
+    await page.getByRole("button", { name: /Kitchen joinery Rev 04/ }).click();
     await expect(page.getByText("Document selected", { exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "AI review", exact: true }).click();
     await page.getByRole("button", { name: "91% confidence", exact: true }).click();

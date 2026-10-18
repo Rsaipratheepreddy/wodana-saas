@@ -8,6 +8,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ProjectFilesService } from "./project-files.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
 import { Public } from "../auth/public.decorator";
+import { AllowWhenReadOnly } from "../auth/tenant-write-block.guard";
 import { VendorOrderService } from "./vendor-order.service";
 import {
   Body,
@@ -28,7 +29,6 @@ import { HrmsAccessService } from "../hrms/hrms-access.service";
 import {
   AssignmentDto,
   PortfolioCalendarQueryDto,
-  ReleaseProjectDto,
   ScheduleAvailabilityQueryDto,
   WorkLocationDto,
 } from "./projects.dto";
@@ -37,6 +37,7 @@ import { ExecutionService } from "./execution.service";
 import { ProjectsService } from "./projects.service";
 import { ProjectWorkflowService } from "./project-workflow.service";
 import { ProjectScheduleService } from "./project-schedule.service";
+import { ProjectFactoryBatchesService } from "./project-factory-batches.service";
 import { CrmNotificationsModule } from "../crm/notifications/crm-notifications.module";
 import { RestoreConfigurationRevisionDto } from "../workspaces/dto/restore-configuration-revision.dto";
 @ApiTags("projects-sites")
@@ -51,7 +52,16 @@ export class ProjectsController {
     private readonly stock: ProjectStockService,
     private readonly workflows: ProjectWorkflowService,
     private readonly schedule: ProjectScheduleService,
+    private readonly factoryBatches: ProjectFactoryBatchesService,
   ) {}
+  @Get("factory-batches")
+  listFactoryBatches(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query("projectId") projectId?:string){
+    return this.factoryBatches.state(actor,workspaceId,projectId);
+  }
+  @Post("factory-batches")
+  factoryBatchCommand(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Body() body:unknown){
+    return this.factoryBatches.command(actor,workspaceId,body);
+  }
   @Get("workflow-templates")
   workflowTemplates(
     @CurrentActor() actor: RequestActor,
@@ -152,6 +162,20 @@ export class ProjectsController {
   ) {
     return this.stock.command(a, w, p, b);
   }
+  @Get("approvals") approvals(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Query() query: Record<string,unknown>,
+  ) { return this.execution.approvalQueue(actor,workspaceId,query); }
+  @Get("task-board") taskBoard(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query() query:Record<string,unknown>){
+    return this.execution.taskBoard(actor,workspaceId,query);
+  }
+  @Get("work-queue") workQueue(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string,@Query() query:Record<string,unknown>){
+    return this.execution.workQueue(actor,workspaceId,query);
+  }
+  @Get("supply-queue") supplyQueue(@CurrentActor() actor:RequestActor,@Param("workspaceId",ParseUUIDPipe) workspaceId:string){
+    return this.execution.supplyQueue(actor,workspaceId);
+  }
   @Get("portfolio") portfolio(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
@@ -172,7 +196,7 @@ export class ProjectsController {
   ) {
     return this.schedule.availability(actor, workspaceId, query);
   }
-  @Post(":projectId/bookings/preview") previewBooking(
+  @AllowWhenReadOnly() @Post(":projectId/bookings/preview") previewBooking(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Param("projectId", ParseUUIDPipe) projectId: string,
@@ -226,13 +250,6 @@ export class ProjectsController {
   ) {
     return this.execution.fieldCommand(actor, w, id, body);
   }
-  @Post("planning") planning(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) w: string,
-    @Body() body: unknown,
-  ) {
-    return this.execution.planning(actor, w, body);
-  }
   @Get(":projectId/execution") executionState(
     @CurrentActor() actor: RequestActor,
     @Param("workspaceId", ParseUUIDPipe) w: string,
@@ -260,13 +277,6 @@ export class ProjectsController {
     @Query() query: ProjectAttendanceDto,
   ) {
     return this.service.siteAttendance(actor, workspaceId, query);
-  }
-  @Post("from-pre-project") release(
-    @CurrentActor() actor: RequestActor,
-    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
-    @Body() body: ReleaseProjectDto,
-  ) {
-    return this.service.release(actor, workspaceId, body.caseId);
   }
   @Get("assignments") assignments(
     @CurrentActor() actor: RequestActor,
@@ -333,6 +343,7 @@ class InternalProjectRemindersController {
     HrmsAccessService,
     ProjectWorkflowService,
     ProjectScheduleService,
+    ProjectFactoryBatchesService,
   ],
   exports: [ProjectsService, ProjectNotificationsService],
 })

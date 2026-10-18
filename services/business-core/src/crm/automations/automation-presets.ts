@@ -4,7 +4,8 @@ export const AUTOMATION_PRESETS = [
     definitionCode: "new_enquiry_assignment",
     eventType: null,
     name: "New enquiry ownership",
-    description: "Assign every new enquiry using the CRM queue and create its first response action.",
+    // Assignment and takeover are Sales settings and always run; this only adds the task (so Off never means unassigned).
+    description: "Adds a first-response task to each new enquiry. Who owns it, and when it moves to the next person, follow Sales settings whether this is on or off.",
     setupHref: "/workspace/crm/leads?section=assignment",
     availableChannels: ["in_app"],
   },
@@ -13,7 +14,7 @@ export const AUTOMATION_PRESETS = [
     definitionCode: "sla_breach_escalation",
     eventType: null,
     name: "Missed response escalation",
-    description: "Create an urgent action when the configured response target is missed.",
+    description: "Adds an urgent task when the response target is missed. Moving the enquiry to the next person follows Sales settings whether this is on or off.",
     setupHref: "/workspace/crm/leads?section=sla",
     availableChannels: ["in_app"],
   },
@@ -25,6 +26,16 @@ export const AUTOMATION_PRESETS = [
     description: "Remind the request owner when an unanswered revision-bound client decision reaches its due date.",
     setupHref: "/workspace/pre-projects/variations",
     availableChannels: ["in_app"],
+  },
+  {
+    // Approvals that wait get chased (AU-3, approvals/approval-chasers.ts): on unless a workspace turned it off.
+    code: "approval_reminders",
+    definitionCode: null,
+    eventType: "approvals.reminder",
+    name: "Approval reminders",
+    description: "Remind whoever decides an approval that has waited, and tell the owners when it waits much longer.",
+    setupHref: "/workspace/approvals",
+    availableChannels: ["in_app", "email"],
   },
   {
     code: "weekly_progress",

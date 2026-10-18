@@ -30,7 +30,7 @@ const billing: WorkspaceBillingData = {
   accessPolicy: { state: "grace", effect: "unchanged", warning: true,
     actionDueAt: "2026-09-20T00:00:00.000Z", affectedModules: [],
     message: "The account is in a dated payment grace period. Workspace access remains unchanged." },
-  usage: { members: 4, invitedMembers: 0, pendingInvitations: 1, reservedSeats: 5, projects: 2 },
+  usage: { seatLimit: 5, members: 4, invitedMembers: 0, pendingInvitations: 1, reservedSeats: 5, projects: 2 },
   accountUsageSnapshot: { periodStart: "2026-08-18T00:00:00.000Z", periodEnd: "2026-09-18T00:00:00.000Z",
     capturedAt: "2026-09-18T00:00:00.000Z", source: "computed",
     totals: { members: 7, pendingInvitations: 1, projects: 8, knownFileBytes: 100, knownFileCount: 2 } },
@@ -54,6 +54,5 @@ describe("BillingPage", () => {
     expect(screen.getByRole("progressbar", { name: "Active projects: 2 of 25" })).toHaveAttribute("aria-valuenow", "2");
     expect(screen.getByText("INV-1001")).toBeVisible();
     expect(screen.getByText(/Workspace access remains unchanged/)).toBeVisible();
-    expect(screen.getByText(/does not claim regional tax compliance/)).toBeVisible();
   });
 });

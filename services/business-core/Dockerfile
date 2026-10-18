@@ -18,7 +18,9 @@ WORKDIR /workspace/services/business-core
 COPY services/business-core/drizzle.config.ts ./
 COPY services/business-core/drizzle ./drizzle
 COPY services/business-core/src/database ./src/database
-CMD ["npm", "run", "db:migrate"]
+COPY services/business-core/scripts/apply-migrations.mjs ./scripts/apply-migrations.mjs
+# Applies every migration not yet recorded (by its journal `when`), so late-merged branches still run.
+CMD ["node", "scripts/apply-migrations.mjs"]
 
 FROM dependencies AS production-dependencies
 RUN npm prune --omit=dev --workspace @wodana/business-core --include-workspace-root
@@ -30,7 +32,13 @@ COPY --from=production-dependencies /workspace/node_modules /workspace/node_modu
 COPY --from=production-dependencies /workspace/services/business-core/node_modules /workspace/services/business-core/node_modules
 COPY --from=production-dependencies /workspace/services/business-core/package.json /workspace/services/business-core/package.json
 COPY --from=builder /workspace/services/business-core/dist /workspace/services/business-core/dist
+# PDF fonts (Noto, OFL); dist/proposals/pdf-text.js reads them from ../../assets/fonts.
+COPY services/business-core/assets /workspace/services/business-core/assets
 COPY packages/contracts /workspace/packages/contracts
+# The Palm Living seed (dist/seed/palm-showcase) reads the tenant's documents from /workspace/docs.
+COPY docs/fixtures /workspace/docs/fixtures
+COPY docs/projects/palm-living/proposal-kit.json /workspace/docs/projects/palm-living/proposal-kit.json
+COPY apps/mobile/assets/brand/palm-living-logo.png /workspace/docs/brand/palm-living-logo.png
 RUN mkdir -p /app/.data && chown node:node /app/.data
 USER node
 EXPOSE 8000

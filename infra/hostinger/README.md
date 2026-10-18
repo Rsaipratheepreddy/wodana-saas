@@ -14,7 +14,8 @@ configuration only; adding these files does not deploy or change a server.
 - Next.js serves the tenant, client, and internal portals.
 - Business Core owns PostgreSQL records and runs migrations before startup.
 - Intelligence API handles OAuth callbacks and signed QuickBooks/WhatsApp webhooks.
-- Intelligence Worker runs CRM automation, provider delivery, and accounting reconciliation.
+- Intelligence Worker (required) runs provider delivery (email, WhatsApp, push), CRM automation, SLA and
+  takeover timers, reminders and accounting reconciliation.
 - PostgreSQL, Redis AOF data, and local object files use named persistent volumes.
 
 Redis is durable because it contains encrypted tenant provider credentials, OAuth state, queues, and
@@ -85,6 +86,43 @@ unrelated containers and checks API readiness plus landing/login. It refuses imp
 legacy takeover. If the host continues to use native Nginx, retain that proxy and use a host-specific
 verified update procedure instead.
 
+## Start a fresh v2 database (R1, September 2026)
+
+v1 migrations were squashed into `services/business-core/drizzle/0000_v2_baseline.sql`, so an existing
+`wodana_release` history no longer matches the journal. The current `wodana_release` holds dummy UAT
+data only, and the owner approved replacing it. Run these steps only with that approval, in a
+maintenance window:
+
+1. Take and restore-test a final backup (`backup.native-host.sh`) and keep the previous release
+   directory for rollback.
+2. Stop Business Core and the intelligence worker so nothing writes during the swap.
+3. Recreate the database and the app-role grants, which are per database:
+
+   ```bash
+   sudo -u postgres dropdb --if-exists wodana_release
+   sudo -u postgres createdb wodana_release   # owned by postgres, which applies migrations
+   sudo -u postgres env POSTGRES_USER=postgres POSTGRES_DB=wodana_release \
+     POSTGRES_APP_USER=wodana_app POSTGRES_APP_PASSWORD='<existing app password>' \
+     sh infra/postgres/001-create-app-role.sh
+   sudo -u postgres psql -d wodana_release -v ON_ERROR_STOP=1 -c \
+     'CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint);'
+   ```
+
+4. Deploy with `APPLY_PENDING_MIGRATIONS=1`. The deploy script rehearses the baseline and every later
+   migration in a rolled-back transaction, then applies them and compares the history with the journal.
+5. Provision the Palm Living tenant through the operator portal and send the owner invitation.
+   Do not restore UAT rows into the new database.
+
+Rollback: restore the step 1 backup into `wodana_release` and restart the previous release.
+
+## UAT delivery guard
+
+While a host holds UAT data, put the same `DELIVERY_ALLOWLIST` (exact emails, `*@domain`, E.164
+numbers) and `ENVIRONMENT=uat` in both `core.env` and `intelligence.env`. Email, WhatsApp and push
+then reach only listed recipients; the rest are recorded as suppressed with `not_allowlisted`.
+Remove both at go-live: with `ENVIRONMENT=production`, Business Core and the worker refuse to start
+while the list is set.
+
 ## Operations
 
 Install the systemd units only on the server. The backup timer captures PostgreSQL, Redis provider
@@ -103,5 +141,25 @@ Inspect without changing state:
 ```bash
 docker compose --env-file .env.production -f infra/hostinger/compose.production.yaml ps
 curl -fsS https://api.DOMAIN/api/v1/health/ready
-curl -fsS https://api.DOMAIN/api/v1/health/ready
 ```
+
+`checks.worker` in that response is the intelligence worker's heartbeat (`ok`, `stale (Ns)`,
+`not-reporting`), with `checks.workerRelease` and `checks.workerDelivery` (`live`). The worker delivers
+every email, WhatsApp and push and runs every SLA, takeover and reminder timer, so in production a
+stale or silent worker makes Business Core **not ready** (HTTP 503, `criticalFailures: ["worker"]`).
+A freshly started core allows three minutes for its worker to report. Workspace owners see the same
+state, per channel, in Settings → Connections → Delivery.
+
+## Releases on the native host
+
+`deploy-web.native-host.sh` ships the worker with every core release (`DEPLOY_CORE=1` implies
+`DEPLOY_INTELLIGENCE=1`; set an unused `INTELLIGENCE_PORT`). The live Intelligence port, its release
+directory and the running worker are found automatically; override them with `CURRENT_INTELLIGENCE_*`
+when needed. The script stops the previous worker, starts the new one, and waits until the core's
+readiness shows `workerRelease` equal to the new release with `workerDelivery: live` before it switches
+the proxy. A worker that doesn't come up restarts the previous one and leaves the proxy alone. Every
+release, web-only ones included, fails its readiness step when no worker beats.
+
+`intelligence.env` needs `ENVIRONMENT=production` and `NOTIFICATION_ADAPTER_MODE=live` (a production
+worker refuses to start otherwise). The container healthcheck is
+`python -m wodana_intelligence.worker.healthcheck`.

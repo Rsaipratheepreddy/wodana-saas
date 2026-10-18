@@ -54,7 +54,6 @@ export class ItemSpecificationService {
    const dimensions=preserveSurveyDimensions(input.dimensions,previous.rows[0]?.content?.dimensions??[]).map(d=>{
     if('siteSurvey' in d&&d.siteSurvey)return d;
     if(d.approximate==null&&d.measured==null)throw new BadRequestException(`Enter an approximate or measured value for ${d.name}.`);
-    if(d.measured!=null&&!d.evidence.trim())throw new BadRequestException(`Add a measurement source for ${d.name}.`);
     return {...d,approximateMetres:normalizeItemDimension(d.approximate,d.unit),measuredMetres:normalizeItemDimension(d.measured,d.unit),verification:'unverified'};
    });
    const designRefs=[];

@@ -43,7 +43,11 @@ describe("structured commercial finance ledger", () => {
     expect(commercialCommandPermission("verify_credit")).toBe(
       "commercial.finance.verify",
     );
+    expect(commercialCommandPermission("review_deal_finance")).toBe(
+      "commercial.finance.verify",
+    );
     expect(commercialCommandPermission("approve")).toBe("commercial.approve");
+    expect(commercialCommandPermission("decide_owner_review")).toBe("commercial.deal.approve");
     expect(commercialCommandPermission("report_payment_receipt")).toBe(
       "pre_projects.edit",
     );
@@ -139,6 +143,29 @@ describe("structured commercial finance ledger", () => {
       status: "finance_verified",
       verifiedBy: "Finance manager",
     });
+  });
+
+  it("keeps the separation rule by person: two people with the same name are still two people", () => {
+    const data = emptyCommercial(), milestone = payment();
+    data.financeContext = bindFinanceContext(null, entity, "AED", at);
+    data.payments.push(milestone);
+    const receipt = reportManualReceipt(data, milestone, { reference: "BANK-43", evidence: "Row 43" }, "Sara", at, "user-sara");
+    expect(receipt.reportedById).toBe("user-sara");
+    expect(() => verifyReceipt(data, milestone, "Sara K.", at, "user-sara")).toThrow(/another finance-authorized person/i);
+    verifyReceipt(data, milestone, "Sara", at, "user-other-sara");
+    expect(receipt).toMatchObject({ status: "finance_verified", verifiedById: "user-other-sara" });
+  });
+
+  it("verifies money exactly in the contract currency (no float drift, 3-decimal currencies)", () => {
+    const kwd = { ...entity, legalEntityBaseCurrency: "KWD" };
+    const data = emptyCommercial(), milestone = { ...payment(), currency: "KWD", amount: 0.1 + 0.2 + 1234.567 };
+    data.financeContext = bindFinanceContext(null, kwd, "KWD", at);
+    data.payments.push(milestone);
+    const receipt = reportManualReceipt(data, milestone, { reference: "K-1", evidence: "Row" }, "Sara", at, "user-sara");
+    // 1234.867 exactly, three places: not 1234.87, and not 1234.8670000000002.
+    expect(receipt.amount).toBe(1234.867);
+    verifyReceipt(data, milestone, "Layla", at, "user-layla");
+    expect(milestone.status).toBe("verified");
   });
 
   it("creates a legal-entity credit-note record for a verified deduction", () => {

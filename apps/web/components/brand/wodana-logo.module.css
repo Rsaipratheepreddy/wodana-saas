@@ -1,83 +1,40 @@
+/* One size drives the logo: its height. The artwork keeps its own proportions. */
 .logo {
-  display: inline-flex;
-  align-items: center;
+  --logo-height: 2rem;
+  display: inline-grid;
+  justify-items: start;
   flex-shrink: 0;
   color: var(--wd-color-text);
+  line-height: 1;
   text-decoration: none;
 }
 
-.wordmark {
-  display: grid;
-  min-inline-size: 0;
-  justify-items: start;
-  line-height: 1.15;
-}
-
 .artwork {
-  position: relative;
-  inline-size: 7.75rem;
-  aspect-ratio: 1973 / 587;
-  overflow: hidden;
-  line-height: 0;
-}
-
-.artwork::before,
-.artwork::after {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: "";
-  -webkit-mask: url("/brand/wodana/wodana-logo-v5.png") center / 100% 100% no-repeat;
-  mask: url("/brand/wodana/wodana-logo-v5.png") center / 100% 100% no-repeat;
-}
-
-.artwork::before {
-  background: linear-gradient(145deg, #a3bfae 0%, #46705a 45%, #2f4b3d 100%);
-  clip-path: inset(0 72.5% 0 0);
-}
-
-:global([data-theme="dark"]) .artwork::before,
-:global([data-wd-theme="dark"]) .artwork::before {
-  background-image: linear-gradient(42deg, #6a8f7b 0%, #8fbba2 54%, #d9ebe1 100%);
-}
-
-.artwork::after {
-  background: var(--wd-color-text);
-  clip-path: inset(0 0 0 27.5%);
-}
-
-.logoImage {
   display: block;
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: contain;
-  opacity: 0;
+  block-size: var(--logo-height);
+  inline-size: auto;
+  max-inline-size: none;
+  overflow: visible;
 }
 
-.wordmark small {
+.subtitle {
+  margin-block-start: var(--wd-space-1);
   color: var(--wd-color-text-tertiary);
   font-size: var(--wd-text-2xs);
 }
 
-.logo[data-size="large"] .artwork {
-  inline-size: 9.25rem;
+.logo[data-size="large"] {
+  --logo-height: 2.5rem;
 }
 
-.logo[data-size="small"] .artwork {
-  inline-size: 4.75rem;
+.logo[data-size="small"] {
+  --logo-height: 1.375rem;
 }
 
-.logo[data-size="compact"] .artwork {
-  inline-size: 3.35rem;
+.logo[data-size="compact"] {
+  --logo-height: 1rem;
 }
 
-.logo[data-size="micro"] .artwork {
-  inline-size: 2.8rem;
-}
-
-@media (forced-colors: active) {
-  .artwork::before,
-  .artwork::after {
-    background: CanvasText;
-  }
+.logo[data-size="micro"] {
+  --logo-height: 0.875rem;
 }

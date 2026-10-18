@@ -3,8 +3,8 @@
 The login page now uses the approved rounded Wodana wordmark with Woddy alongside the name. The original concept remains archived; older logo files are retained for recovery.
 
 Assets:
-- ../../apps/web/public/brand/wodana/wodana-logo-v4.png — transparent login wordmark.
-- ../../apps/web/public/brand/wodana/woddy-mark-v4.png — transparent icon master.
+- ../../packages/brand/logo/wodana-mark.svg — the house mark; the wordmark is set live in Plus Jakarta Sans.
+- ../../packages/brand/logo/ — rendered lockups (light and dark) and app icons, copied to the apps by `node packages/brand/sync.mjs`.
 - ../../apps/web/app/icon.tsx — publicly available, statically generated 64 × 64 PNG favicon using the icon master. No auth dependency.
 
 The imagegen skill and built-in image-generation tool were used to prepare transparent assets. No CLI image generation was used. Login typography, theme, tenant branding, and authentication behavior are unchanged. This request does not replace the separate animated Woddy chat avatar.

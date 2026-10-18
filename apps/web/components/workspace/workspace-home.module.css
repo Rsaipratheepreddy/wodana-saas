@@ -1,0 +1,75 @@
+/* Home: a calm overview. The greeting and the role's one primary action; at most one block that needs attention;
+   at most four figures; then Today. Sections sit on a soft tone with golden-ratio rhythm; colour marks meaning only
+   (late, today, waiting). */
+.home { min-inline-size: 0; display: grid; gap: var(--wd-phi-4); align-content: start; padding: var(--wd-space-6) var(--wd-space-6) var(--wd-phi-5); color: var(--wd-color-text); }
+.home :global(.wd-page-header) { margin: 0; flex-wrap: wrap; }
+.home a:focus-visible, .home button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+
+/* A section: a soft surface, one heading, then its rows. */
+.section { min-inline-size: 0; padding: var(--wd-space-4) var(--wd-space-5) var(--wd-space-3); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); }
+.sectionHeader { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-space-8); margin-block-end: var(--wd-space-1); }
+.sectionHeader h2 { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.count { display: inline-grid; place-items: center; min-inline-size: var(--wd-space-5); padding: 0 var(--wd-space-1-5); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+.sectionLink { margin-inline-start: auto; }
+.textLink { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); text-decoration: none; }
+.textLink:hover { color: var(--wd-color-text); }
+
+/* Loading, failure and empty inside a section. */
+.skeleton { display: grid; gap: var(--wd-space-4); padding-block: var(--wd-space-2); }
+.skeletonRow { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--wd-space-3); }
+.skeletonRow > span { display: grid; gap: var(--wd-space-1-5); }
+.inlineError { display: flex; align-items: center; gap: var(--wd-space-2); padding-block: var(--wd-space-2); font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+.inlineError > svg { flex: none; color: var(--wd-color-warning); }
+.inlineError > span { flex: 1; }
+.state { padding-block: var(--wd-space-2) var(--wd-space-3); }
+.state :global(.wd-empty-state) { padding-block: var(--wd-space-4); }
+.nextUp { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); text-decoration: none; unicode-bidi: plaintext; }
+.nextUp:hover { color: var(--wd-color-text); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Rows. */
+.list { display: grid; margin: 0; padding: 0; list-style: none; }
+.list > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.copy { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.copy strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+.copy strong :global(.wd-badge) { margin-inline-start: var(--wd-space-1-5); vertical-align: middle; }
+.copy small { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--wd-space-2); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.copy small > svg { flex: none; color: var(--wd-color-text-tertiary); }
+.copy em { font-style: normal; font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
+
+/* Today: a soft mark says late (red), today (amber) or waiting on you (blue); one action ends the row. */
+.focusRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-2-5); }
+.mark { display: grid; place-items: center; inline-size: var(--wd-space-8); block-size: var(--wd-space-8); border-radius: var(--wd-radius-round); background: var(--wd-color-info-subtle); color: var(--wd-color-info); }
+.focusRow[data-urgency="overdue"] .mark { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.focusRow[data-urgency="today"] .mark { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+.focusRow[data-urgency="overdue"] em { color: var(--wd-color-danger); }
+.focusRow > :global(.wd-button) { justify-self: end; }
+/* A daily report to review: its lead photo, and the client's words on two lines. */
+.reportThumb { inline-size: var(--wd-space-10); block-size: var(--wd-space-10); object-fit: cover; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); }
+.copy small.reportSummary { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* Key numbers: up to four soft tiles in one row, each a link to its list. */
+.numbers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.number { display: grid; align-content: start; gap: var(--wd-space-1); box-sizing: border-box; block-size: 100%; padding: var(--wd-space-4) var(--wd-space-5); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); color: var(--wd-color-text); text-decoration: none; }
+a.number:hover { background: var(--wd-color-surface-hover); }
+.numberLabel { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.numberValue { font-size: var(--wd-text-2xl); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); font-variant-numeric: tabular-nums; unicode-bidi: plaintext; }
+.numberFoot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); min-block-size: var(--wd-space-5); }
+.numberFoot small { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
+.numberFoot small[data-tone="success"] { color: var(--wd-color-success); }
+.numberFoot small[data-tone="warning"] { color: var(--wd-color-warning); }
+.numberFoot small[data-tone="danger"] { color: var(--wd-color-danger); }
+/* The chart's exact values stay available to screen readers without widening the page. */
+.spark { position: relative; display: inline-flex; overflow: hidden; inline-size: var(--wd-space-16); block-size: var(--wd-space-5); }
+.spark :global(.wd-sparkline) { inline-size: 100%; block-size: 100%; }
+
+/* Narrower screens: two figures to a row. */
+@media (max-width: 64rem) {
+  .numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Phone: a 16px gutter. */
+@media (max-width: 40rem) {
+  .home { gap: var(--wd-phi-3); padding: var(--wd-space-4) var(--wd-space-4) var(--wd-phi-5); }
+  .section { padding-inline: var(--wd-space-4); }
+  .focusRow { gap: var(--wd-space-2-5); }
+}

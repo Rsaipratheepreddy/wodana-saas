@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forwardedDeviceHeaders } from "@/lib/auth/device-request";
-import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath } from "@/lib/workspace/module-rollout";
+import { deferredModuleForPath, isCrmFirstWorkspace, moduleForWorkspacePath, opensAsQs } from "@/lib/workspace/module-rollout";
+import { accessRuleForPath, canSetUpWorkspace, meetsRule } from "@/lib/workspace/access";
 
 const ACCESS_COOKIE = "wodana_access";
 const REFRESH_COOKIE = "wodana_refresh";
 type BootstrapProfile = {
   nextAction?: unknown;
-  memberships?: Array<{ workspaceId: string; workspaceSlug: string; allowedModules?: string[]; roles?: string[]; onboarding?: { status?: string } }>;
+  memberships?: Array<{ workspaceId: string; workspaceSlug: string; allowedModules?: string[]; allowedPermissions?: string[]; roles?: string[]; onboarding?: { status?: string } }>;
 };
 
 const ALL_WORKSPACE_MODULES = ["workspace", "crm", "pre-project", "projects", "hrms"] as const;
 
-function needsOnboarding(profile: BootstrapProfile | null, membership?: { onboarding?: { status?: string } }) {
-  if (membership?.onboarding) return membership.onboarding.status !== "completed";
+/** Only the person who sets the workspace up is sent to the setup; everyone else opens the workspace meanwhile. */
+function needsOnboarding(profile: BootstrapProfile | null, membership?: { roles?: string[]; onboarding?: { status?: string } }) {
+  if (membership?.onboarding) return membership.onboarding.status !== "completed" && canSetUpWorkspace(membership.roles);
   return profile?.nextAction === "start_onboarding" || profile?.nextAction === "resume_onboarding";
 }
 
@@ -29,7 +31,14 @@ function workspaceRedirect(profile: BootstrapProfile | null, request: NextReques
   // Legacy business-core releases do not include module grants in /me. Keep
   // their established access working until an explicit entitlement list exists.
   const allowedModules = ownerAccess ? ALL_WORKSPACE_MODULES : membership?.allowedModules ?? ALL_WORKSPACE_MODULES;
-  if (!membership || !allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))) {
+  if (!membership || (!allowedModules.includes(moduleForWorkspacePath(request.nextUrl.pathname))
+    && !opensAsQs(request.nextUrl.pathname, allowedModules, membership.allowedPermissions))) {
+    return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
+  }
+  // Areas such as Finance also need the permissions their pages load with. Older releases without
+  // permission lists in /me keep their module-level access.
+  const rule = accessRuleForPath(request.nextUrl.pathname);
+  if (rule && Array.isArray(membership.allowedPermissions) && !meetsRule(rule, { permissions: membership.allowedPermissions, roles: membership.roles })) {
     return NextResponse.redirect(new URL("/workspace-access-denied", request.url));
   }
   if (deferred && membership && isCrmFirstWorkspace(membership.workspaceSlug)) {
@@ -69,7 +78,8 @@ export async function proxy(request: NextRequest) {
   const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
   if (accessToken) {
     const current = await fetch(apiUrl("/me"), {
-      headers: { authorization: `Bearer ${accessToken}` },
+      // The page being opened: while viewing as someone, the audit keeps the pages the viewer went to.
+      headers: { authorization: `Bearer ${accessToken}`, "x-wodana-page": request.nextUrl.pathname },
       cache: "no-store",
       signal: AbortSignal.timeout(12_000),
     }).catch(() => null);
@@ -99,7 +109,7 @@ export async function proxy(request: NextRequest) {
       request.cookies.set(ACCESS_COOKIE, session.accessToken);
       request.cookies.set(REFRESH_COOKIE, session.refreshToken);
       const current = await fetch(apiUrl("/me"), {
-        headers: { authorization: `Bearer ${session.accessToken}` },
+        headers: { authorization: `Bearer ${session.accessToken}`, "x-wodana-page": request.nextUrl.pathname },
         cache: "no-store",
         signal: AbortSignal.timeout(12_000),
       }).catch(() => null);

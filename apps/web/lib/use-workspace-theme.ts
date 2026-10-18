@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
+import { THEME_STORAGE_KEY } from "@/lib/theme-bootstrap";
 
 type WorkspaceTheme = "dark" | "light";
-const THEME_STORAGE_KEY = "wodana-theme";
 const THEME_CHANGE_EVENT = "wodana-theme-change";
 
 function themeSnapshot(): WorkspaceTheme {
@@ -33,8 +33,12 @@ function subscribeToTheme(onStoreChange: () => void) {
 export function useWorkspaceTheme() {
   const theme = useSyncExternalStore(subscribeToTheme, themeSnapshot, () => "light");
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+  // The root layout's inline bootstrap puts the theme on <html> before paint. This keeps it there when the
+  // device's preference or another tab's choice changes, and after React's development remount clears it. It
+  // writes what is stored, not the value rendered while hydrating (always light), so a dark page never blinks.
+  useLayoutEffect(() => {
+    const current = themeSnapshot();
+    if (document.documentElement.dataset.theme !== current) document.documentElement.dataset.theme = current;
   }, [theme]);
 
   const toggleTheme = () => {

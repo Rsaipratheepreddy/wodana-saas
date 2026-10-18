@@ -1,19 +1,26 @@
 "use client";
+import { RecordHistory } from "../history/record-history";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
 import { useWoddyRecord } from "@/components/crm/woddy-chat";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { QuotationList } from "./quotation-list";
-import { FileText, History, Plus, RefreshCw } from "lucide-react";
+import { SERVICE_PATHS } from "@/lib/commercial/service-paths";
+import { History, Plus } from "lucide-react";
 import {
   Button,
   ControlledModalDialog,
+  FormDialog,
+  FormNotSaved,
   DesignSystemProvider,
   IconButton,
+  PageShell,
   SelectField,
   useConfirmationDialog,
-  useDesignSystem,
+  useDesignSystem, EmptyState, formatDate
 } from "@/design-system";
 import { usePreProject } from "@/components/pre-project/pre-project-context";
 import type { PreProjectCase } from "@/lib/pre-project/types";
@@ -26,7 +33,8 @@ import {
   money,
   statusLabel,
 } from "@/lib/commercial/client";
-import { ClientAccess } from "./client-access";
+import { ClientContacts } from "@/components/client-portal/client-contacts";
+import { ChangeRequestsPanel } from "@/components/change-requests/change-requests-panel";
 import { ScopeImport } from "./scope-import";
 import { PreProjectSectionLoading } from "../pre-project/section-loading";
 import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
@@ -38,19 +46,27 @@ import {
   ApprovalRelease,
 } from "./commercial-workflows";
 import { PreExecutionFlow } from "./pre-execution-flow";
-import { CaseSpine } from "@/components/pre-project/case-spine";
+import { QuotationBuilderPreview } from "./quotation-builder-preview";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
-const QuotationStudio = dynamic(() => import('./quotation-studio').then(module => module.QuotationStudio), { loading: PreProjectSectionLoading });
-const labels: Record<string, string> = {
-  "client-portal": "Client portal",
-  boq: "BOQ & costing",
-  quotations: "Quotations",
-  contracts: "Agreement & payments",
-  "payment-plan": "Agreement & payments",
-  variations: "Change requests",
-  approvals: "Approvals & release",
-  "execution-release": "Approvals & release",
+/** A section's page; inside another page (an approval's review) it has no title of its own. */
+function SectionPage({ nested, title, children }: { nested: boolean; title: string; children: ReactNode }) {
+  return nested ? <>{children}</> : <PageShell kind="record" title={title}>{children}</PageShell>;
+}
+
+/**
+ * Each section's one page title (PageShell): the name of its tab in the case's bar (Agreement, Payments, Client
+ * access…), so the bar names it once and the title stays for screen readers.
+ */
+const labels: Record<string, MessageKey> = {
+  "client-portal": tKey("Client access"),
+  boq: tKey("Design Quote"),
+  quotations: tKey("Quotes"),
+  contracts: tKey("Agreement"),
+  "payment-plan": tKey("Payments"),
+  variations: tKey("Change requests"),
+  approvals: tKey("Approvals"),
+  "execution-release": tKey("Release readiness"),
 };
 export function CommercialPage({
   initial,
@@ -58,17 +74,41 @@ export function CommercialPage({
   section,
   search,
   quotationId,
+  reviewOnly = false,
+  quotationPresentation = "table",
+  embedded = false,
+  projectId,
+  openRequestId,
+  openPaymentId,
 }: {
   initial: CommercialState;
   record: PreProjectCase;
   section: string;
   search: string;
   quotationId?: string;
+  reviewOnly?: boolean;
+  quotationPresentation?: "cards" | "table";
+  embedded?: boolean;
+  projectId?: string;
+  /** A change request to open as the page loads (a notification's link). */
+  openRequestId?: string;
+  /** A payment milestone whose client payment report opens as the page loads (a notification's link). */
+  openPaymentId?: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const quotationList = section === "quotations" && !quotationId;
-  const rootHref = `/workspace/pre-projects/cases/${record.id}/quotations${search ? `?${search}` : ""}`;
+  const projectPlanningHref = (part: string, quote?: string) => {
+    if (!projectId) return "";
+    const query = new URLSearchParams({ tab: "planning", planningTab: part });
+    if (quote) query.set("quote", quote);
+    return `/workspace/projects/${projectId}?${query}`;
+  };
+  const rootHref = projectId
+    ? projectPlanningHref("quotations")
+    : `/workspace/pre-projects/cases/${record.id}/quotations${search ? `?${search}` : ""}`;
   const quoteHref = (id: string) => {
+    if (projectId) return projectPlanningHref("quotations", id);
     const query = new URLSearchParams(search);
     query.set("quote", id);
     return `/workspace/pre-projects/cases/${record.id}/quotations?${query}`;
@@ -79,7 +119,7 @@ export function CommercialPage({
       : initial.data.quotes.at(-1)) ?? null;
   useWoddyRecord("commercial", record.id, record.title);
   useWorkspaceFocus(
-    section === "quotations" && quotationId ? record.title : undefined,
+    !reviewOnly && section === "quotations" && quotationId ? record.title : undefined,
     rootHref,
   );
   const design = useDesignSystem(),
@@ -97,6 +137,9 @@ export function CommercialPage({
     dirty = Boolean(
       draft && saved && JSON.stringify(draft) !== JSON.stringify(saved),
     );
+  // The QS approves a deal quotation only where the firm's QS rules send it to the QS; any other one is approved as priced.
+  const qsEstimateNeeded = Boolean(state.data.servicePath && draft?.kind === "quotation"
+    && (state.qsEstimateQuoteIds === undefined || state.qsEstimateQuoteIds.includes(draft.id)));
   useEffect(() => {
     setSelected({ record, search });
   }, [record, search, setSelected]);
@@ -124,7 +167,7 @@ export function CommercialPage({
       )
         return;
       event.preventDefault(); event.stopPropagation();
-      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", onConfirm: () => window.location.assign(anchor.href) });
+      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", cancelLabel: t("Keep editing"), onConfirm: () => window.location.assign(anchor.href) });
     };
     document.addEventListener("click", leave, true);
     window.addEventListener("beforeunload", warn);
@@ -211,53 +254,26 @@ export function CommercialPage({
   }
   function choose(id: string) {
     const applyChoice = () => {
-      if (section === "quotations") router.push(quoteHref(id));
+      if (section === "quotations") router.push(reviewOnly ? `/workspace/pre-projects/cases/${record.id}/approvals?review=${encodeURIComponent(`quote:${id}`)}` : quoteHref(id));
       setSelectedQuote(id);
       setDraft(state.data.quotes.find((q) => q.id === id) ?? null);
     };
     if (dirty) {
-      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", onConfirm: applyChoice });
+      requestConfirmation({ title: "Discard unsaved quotation edits?", body: "The saved quotation will remain unchanged. Your current edits will be lost.", confirmLabel: "Discard edits", cancelLabel: t("Keep editing"), onConfirm: applyChoice });
       return;
     }
     applyChoice();
   }
   const quotePage = ["boq", "quotations"].includes(section),
     root = `/workspace/pre-projects/cases/${state.caseId}`,
-    showReadinessFlow = ["contracts", "payment-plan", "variations", "approvals", "execution-release"].includes(section);
+    showReadinessFlow = ["approvals", "execution-release"].includes(section);
   return (
     <DesignSystemProvider {...design} className={colors.theme}>
+      <SectionPage nested={reviewOnly} title={t(labels[section] ?? labels.quotations)}>
       <section
-        className={`${s.page} ${section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
+        className={`${s.page} ${s.inShell} ${reviewOnly ? s.reviewPage : ""} ${section === "quotations" && !quotationId ? s.quotationTablePage : ""} ${!reviewOnly && section === "quotations" && quotationId && draft ? s.studioPage : ""}`}
       >
-        {section === "quotations" && quotationId && draft && (
-          <h1 className={s.visuallyHidden}>Quotations</h1>
-        )}
-        {!(section === "quotations" && quotationId && draft) && (
-          <><CaseSpine compact record={record} search={search} section={section} />
-          <header className={s.header}>
-            <div>
-              <h1>{labels[section]}</h1>
-            </div>
-            <div className={s.actions}>
-              <IconButton
-                aria-label="Reload commercial"
-                size="compact"
-                isDisabled={busy}
-                onPress={() => {
-                  const reloadLatest = () => void reload().catch((e) => setError(e.message));
-                  if (dirty) {
-                    requestConfirmation({ title: "Discard edits and reload?", body: "Your unsaved quotation edits will be replaced by the latest saved version.", confirmLabel: "Reload saved version", onConfirm: reloadLatest });
-                    return;
-                  }
-                  reloadLatest();
-                }}
-              >
-                <RefreshCw size={16} />
-              </IconButton>
-            </div>
-          </header></>
-        )}
-        {showReadinessFlow ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
+        {showReadinessFlow && !embedded && (!state.data.servicePath || state.data.servicePath.scope.mainQuotation) ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
         {error && (
           <p role="alert" className={s.error}>
             {error}
@@ -268,8 +284,26 @@ export function CommercialPage({
             {notice}
           </p>
         )}
+        {quotationList && state.servicePathEnabled && !state.data.quotes.length && (
+          <section className={s.flowChooser} aria-label={t("Enquiry service path")}>
+            <div>
+              <h2>{t("Service path")}</h2>
+              <p>{state.data.servicePath
+                ? "Confirmed for this enquiry. Create the quotation when its requirements are ready."
+                : "Choose what the client is buying before preparing the first quotation. This keeps inapplicable project stages out of the way."}</p>
+            </div>
+            {state.data.servicePath
+              ? <span className={s.flowSelected}>{SERVICE_PATHS.find(path => JSON.stringify(path.scope) === JSON.stringify(state.data.servicePath?.scope))?.label ?? "Custom service path"}</span>
+              : <div className={s.flowChoices}>{SERVICE_PATHS.map(path => (
+                  <Button key={path.label} size="compact" isDisabled={busy || !state.canEdit} onPress={() => void run("set_service_path", { scope: path.scope })}>
+                    {path.label}
+                  </Button>
+                ))}</div>}
+          </section>
+        )}
         {quotationList ? (
           <QuotationList
+            initialPresentation={quotationPresentation}
             state={state}
             busy={busy}
             create={() => void run("create")}
@@ -277,20 +311,17 @@ export function CommercialPage({
             open={(id) => router.push(quoteHref(id))}
           />
         ) : section === "quotations" && quotationId && !draft ? (
-          <div className={s.empty}>
-            <h2>Quotation not found</h2>
-            <Link href={rootHref}>Back to quotations</Link>
-          </div>
+          <EmptyState illustration="search" title={t("Quotation not found")} action={<Link className="wd-button" data-size="compact" data-variant="primary" href={rootHref}>{t("Back to quotations")}</Link>} />
         ) : quotePage ? (
           draft ? (
             <>
-              <div className={s.toolbar} data-quotation-toolbar={section === "quotations" || undefined}>
+              <div className={s.toolbar} data-quotation-toolbar={!reviewOnly && section === "quotations" || undefined}>
                 <div className={s.actions}>
                   {section !== "quotations" ? <strong>
                     {draft.kind === "variation" ? "Variation" : "Quotation"}
                   </strong> : null}
                   <SelectField
-                    label={<span className="wd-visually-hidden">Quotation version</span>}
+                    label={<span className="wd-visually-hidden">{t("Quotation version")}</span>}
                     items={state.data.quotes.map((q) => ({ id: q.id, label: `V${q.number} · ${statusLabel[q.status]}` }))}
                     selectedKey={selected}
                     onSelectionChange={(key) => choose(String(key))}
@@ -299,8 +330,9 @@ export function CommercialPage({
                   {section !== "quotations" ? <span className={s.status} data-status={draft.status}>
                     {statusLabel[draft.status]}
                   </span> : null}
+                  {draft.qsEstimate && <span className={s.muted}>{t("QS checked ·")}{" "}{draft.qsEstimate.reviewedBy}</span>}
                   {dirty ? (
-                    <span className={s.muted}>Unsaved edits</span>
+                    <span className={s.muted}>{t("Unsaved edits")}</span>
                   ) : (
                     notice && (
                       <span role="status" className={s.muted}>
@@ -309,7 +341,7 @@ export function CommercialPage({
                     )
                   )}
                 </div>
-                {state.canEdit && draft.status === "draft" && draft.direction !== "deduction" && section === "quotations" ? <QuotationScopeComposer
+                {!reviewOnly && state.canEdit && draft.status === "draft" && draft.direction !== "deduction" && section === "quotations" ? <QuotationScopeComposer
                   key={draft.id}
                   compact
                   workspaceId={state.workspaceId}
@@ -322,7 +354,7 @@ export function CommercialPage({
                 /> : null}
                 <div className={s.actions}>
                   <IconButton
-                    aria-label="Version history"
+                    aria-label={t("Version history")}
                     size="compact"
                     onPress={() => setDialog("history")}
                   >
@@ -335,8 +367,7 @@ export function CommercialPage({
                       target="_blank"
                       rel="noreferrer"
                     >
-                      Print / PDF
-                    </a>
+                      {t("Print / PDF")}</a>
                   )}
                   {state.canEdit && draft.status === "draft" && (
                     <>
@@ -346,23 +377,21 @@ export function CommercialPage({
                         hidden={section === "quotations"}
                         onPress={() => setDialog("scope")}
                       >
-                        Import scope
-                      </Button>
+                        {t("Import scope")}</Button>
                       <Button
                         size="compact"
                         isDisabled={busy || !dirty}
+                        hidden={reviewOnly}
                         onPress={() => void run("save")}
                       >
-                        Save changes
-                      </Button>
+                        {t("Save changes")}</Button>
                       <Button
                         size="compact"
                         variant="primary"
                         isDisabled={busy || !draft.lines.length}
                         onPress={() => void run("submit")}
                       >
-                        Submit for review
-                      </Button>
+                        {t("Submit for review")}</Button>
                     </>
                   )}
                   {state.canEdit &&
@@ -374,18 +403,25 @@ export function CommercialPage({
                         isDisabled={busy}
                         onPress={() => void run("return")}
                       >
-                        Return to draft
-                      </Button>
+                        {t("Return to draft")}</Button>
                     )}
-                  {state.canApprove && draft.status === "internal_review" && (
+                  {qsEstimateNeeded && state.canEstimate && draft.status === "internal_review" && (
+                    <Button
+                      size="compact"
+                      variant="primary"
+                      isDisabled={busy}
+                      onPress={() => void run("qs_approve")}
+                    >
+                      {t("Approve QS estimate")}</Button>
+                  )}
+                  {(!state.data.servicePath || (draft.kind === "quotation" && !qsEstimateNeeded)) && state.canApprove && draft.status === "internal_review" && (
                     <Button
                       size="compact"
                       variant="primary"
                       isDisabled={busy}
                       onPress={() => void run("approve")}
                     >
-                      Approve pricing
-                    </Button>
+                      {t("Approve pricing")}</Button>
                   )}
                   {state.canEdit && draft.status === "internal_approved" && (
                     <Button
@@ -394,7 +430,7 @@ export function CommercialPage({
                       isDisabled={busy}
                       onPress={() => setDialog("issue")}
                     >
-                      Issue quotation
+                      {reviewOnly ? "Send to client" : "Issue quotation"}
                     </Button>
                   )}
                   {state.canEdit && draft.status === "issued" && (
@@ -403,13 +439,11 @@ export function CommercialPage({
                       isDisabled={busy}
                       onPress={() => void run("withdraw")}
                     >
-                      Withdraw
-                    </Button>
+                      {t("Withdraw")}</Button>
                   )}
                   {state.canEdit && draft.status === "accepted" && (
                     <Link className={s.primary} href={`${root}/variations`}>
-                      Start change case
-                    </Link>
+                      {t("Request a change")}</Link>
                   )}
                   {state.canEdit &&
                     !["draft", "internal_review", "internal_approved", "accepted"].includes(
@@ -421,12 +455,11 @@ export function CommercialPage({
                         isDisabled={busy}
                         onPress={() => void run("revise")}
                       >
-                        Create revision
-                      </Button>
+                        {t("Create revision")}</Button>
                     )}
                 </div>
               </div>
-              {section==="boq"&&<div className={s.boqContext}><span>01 <strong>Scope & costing</strong></span><span>02 <Link href={quoteHref(draft.id)}>Quotation builder →</Link></span><span>03 <Link href={`${root}/contracts`}>Agreement & payments →</Link></span><small>One set of room items. Costs stay internal.</small></div>}
+              
               {section === "boq" && <>
               <QuotationsChangeSummary
                 draft={draft}
@@ -438,7 +471,7 @@ export function CommercialPage({
               />
               <QuotationsReadonlyNote quote={draft} />
               </>}
-              <fieldset
+              {reviewOnly ? <><Link className={s.button} href={quoteHref(draft.id)}>{t("Open quotation editor →")}</Link><QuotationBuilderPreview fitWidth initialPageId="scope" quote={{ ...draft, letterhead: draft.letterhead ?? state.portalLetterhead ?? null }} brand={state.portalBrand} customerName={record.customerName}/></> : <fieldset
                 disabled={busy}
                 style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
               >
@@ -447,7 +480,6 @@ export function CommercialPage({
                   onImportScope={() => setDialog("scope")}
                   state={state}
                   customerName={record.customerName}
-                  studio={section === "quotations"}
                   workspaceId={state.workspaceId}
                   caseId={state.caseId}
                   canOverridePrice={Boolean(state.canOverridePrice)}
@@ -458,57 +490,41 @@ export function CommercialPage({
                   readOnly={!state.canEdit || draft.status !== "draft"}
                   requests={state.data.requests}
                 />
-              </fieldset>
+              </fieldset>}
             </>
           ) : (
-            <div className={s.empty}>
-              <FileText size={30} />
-              <h2>
-                {section === "boq"
-                  ? "Build your BOQ"
-                  : "Create your first quotation"}
-              </h2>
-              <p>
-                Import your included scope, choose materials and set rates. The
-                same items carry into your quotation.
-              </p>
-              {state.canEdit && (
-                <Button
-                  size="compact"
-                  variant="primary"
-                  isDisabled={busy}
-                  onPress={() => void run("create")}
-                >
-                  <Plus size={15} />
-                  Create quotation
-                </Button>
-              )}
-            </div>
+            <EmptyState title={section === "boq" ? "Prepare quotation items" : "Create your first quotation"} description={t("Import the included scope, choose materials and set rates. The same items carry into the quotation.")}
+              action={state.canEdit ? <Button size="compact" variant="primary" isDisabled={busy} onPress={() => void run("create")}><Plus size={15} />{t("Create quotation")}</Button> : undefined} />
           )
         ) : section === "client-portal" ? (
-          <ClientAccess state={state} reload={reload} />
-        ) : section === "variations" ? (
+          <ClientContacts workspaceId={state.workspaceId} caseId={state.caseId} portalUrl={state.portalSlug ? `/portal/${state.portalSlug}` : null} portalEnabled={Boolean(state.portalEnabled)} locale={design.locale} onChanged={reload} />
+        ) : section === "variations" ? (<>
+          {/* Priced change requests after the contract (plan §6.20, R11), above the client's conversations. */}
+          <ChangeRequestsPanel workspaceId={state.workspaceId} caseId={state.caseId} />
           <CommercialRequests
             state={state}
             run={run}
             busy={busy}
             error={error}
+            openRequestId={openRequestId}
           />
-        ) : ["contracts", "payment-plan"].includes(section) ? (
+        </>) : ["contracts", "payment-plan"].includes(section) ? (
           <AgreementPayments
+            initialView={section === "payment-plan" ? "payments" : "agreement"}
+            openPaymentId={openPaymentId}
             state={state}
             run={run}
             busy={busy}
             error={error}
           />
         ) : (
-          <ApprovalRelease state={state} run={run} busy={busy} root={root} />
+          <ApprovalRelease initialView="owner" state={state} run={run} busy={busy} root={root} sectionHref={projectId ? part => projectPlanningHref(part === "contracts" || part === "payment-plan" ? "agreement" : part === "designs" ? "design" : part === "variations" ? "change-requests" : part === "execution-release" ? "approvals" : part) : undefined} />
         )}
         {draft&&<ScopeImport workspaceId={state.workspaceId} caseId={state.caseId} quote={draft} open={dialog==="scope"} onClose={()=>setDialog("")} busy={busy} run={run}/>}
         <ControlledModalDialog
           isOpen={dialog === "history"}
           onOpenChange={(open) => !open && setDialog("")}
-          title="Version & activity history"
+          title={t("Version & activity history")}
         >
           <ul className={s.history}>
             {state.data.quotes
@@ -529,78 +545,48 @@ export function CommercialPage({
                   </Button>
                   <p className={s.muted}>
                     {q.decidedBy
-                      ? `${q.decidedBy} · ${q.decidedAt?.slice(0, 10)}`
+                      ? `${q.decidedBy}${q.decidedAt ? ` · ${formatDate(q.decidedAt, { locale: design.locale, timeZone: design.timeZone })}` : ""}`
                       : q.issuedAt
-                        ? `Issued ${q.issuedAt.slice(0, 10)}`
-                        : "Internal draft"}
+                        ? t("Issued {date}", { date: formatDate(q.issuedAt, { locale: design.locale, timeZone: design.timeZone }) })
+                        : t("Internal draft")}
                   </p>
                 </li>
               ))}
           </ul>
-          <h3>Activity</h3>
-          <ul className={s.history}>
-            {state.data.audit
-              .slice()
-              .reverse()
-              .map((a) => (
-                <li key={a.id}>
-                  <strong>{a.action.replaceAll("_", " ")}</strong>
-                  <p className={s.muted}>
-                    {a.actor} · {new Date(a.at).toLocaleString()}
-                  </p>
-                  {a.note && <p>{a.note}</p>}
-                </li>
-              ))}
-          </ul>
+          <h3>{t("History")}</h3>
+          <RecordHistory workspaceId={state.workspaceId} recordType="quotation" recordId={state.caseId} />
         </ControlledModalDialog>
-        <ControlledModalDialog
+        <FormDialog
           isOpen={dialog === "issue"}
-          onOpenChange={(open) => !open && setDialog("")}
-          title="Issue this quotation"
-          footer={
-            <Button
-              size="compact"
-              variant="primary"
-              isDisabled={busy || !approver}
-              onPress={() => void run("issue", { approverId: approver })}
-            >
-              Issue V{draft?.number}
-            </Button>
-          }
+          onClose={() => setDialog("")}
+          title={t("Issue this quotation")}
+          description={t("Publishing to the portal does not send a WhatsApp message.")}
+          isSubmitting={busy}
+          error={error || undefined}
+          isSubmitDisabled={!approver}
+          submitLabel={t("Issue V{number}", { number: draft?.number ?? "" })}
+          onSubmit={async () => { if (!(await run("issue", { approverId: approver }))) throw new FormNotSaved(); }}
         >
-          <div className={s.form}>
+          <SelectField
+            isRequired
+            label={t("Client approver")}
+            placeholder={t("Choose an approver")}
+            items={state.contacts
+              .filter((c) => c.active && c.role === "approver")
+              .map((c) => ({ id: c.id, label: `${c.name} · ${c.phone}` }))}
+            selectedKey={approver || null}
+            onSelectionChange={(key) => setApprover(String(key))}
+          />
+          {!state.contacts.some((c) => c.active && c.role === "approver") && (
             <p>
-              Freeze this version and make it available for the client’s
-              decision. Any previous pending version is replaced.
-            </p>
-            <SelectField
-              label="Client approver"
-              placeholder="Choose an approver"
-              items={state.contacts
-                .filter((c) => c.active && c.role === "approver")
-                .map((c) => ({ id: c.id, label: `${c.name} · ${c.phone}` }))}
-              selectedKey={approver || null}
-              onSelectionChange={(key) => setApprover(String(key))}
-            />
-            {!state.contacts.some((c) => c.active && c.role === "approver") && (
-              <p>
-                Add an approver in the{" "}
-                <Link href={`${root}/client-portal`}>Client portal tab</Link>{" "}
-                first.
-              </p>
-            )}
-            {error && (
-              <p role="alert" className={s.error}>
-                {error}
-              </p>
-            )}
-            <p className={s.muted}>
-              Publishing to the portal does not send a WhatsApp message.
-            </p>
-          </div>
-        </ControlledModalDialog>
+              {t("Add an approver in the")}{" "}
+              <Link href={`${root}/client-portal`}>{t("Client portal tab")}</Link>{" "}
+              {t("first.")}</p>
+          )}
+        </FormDialog>
         {confirmationDialog}
       </section>
+      </SectionPage>
     </DesignSystemProvider>
   );
 }
@@ -622,33 +608,29 @@ function QuotationsChangeSummary({
   draft: Quote;
   previous?: Quote;
 }) {
+  const t = useT();
   const changes = changedLines(draft, previous);
   return previous && changes.length ? (
-    <details className={s.section}>
-      <summary>
-        {changes.length} item changes since V{previous.number}
-      </summary>
+    <section className={s.section}>
+      <h3>
+        {changes.length} {t("item changes since V")}{previous.number}
+      </h3>
       <ul>
         {changes.map((c, i) => (
           <li key={i}>{c}</li>
         ))}
       </ul>
-    </details>
+    </section>
   ) : null;
 }
 
 function Editor(
   props: React.ComponentProps<typeof QuotationEditor> & {
-    studio: boolean;
     onSave: () => Promise<boolean>;
     onImportScope: () => void;
     state: CommercialState;
     customerName: string;
   },
 ) {
-  return props.studio ? (
-    <QuotationStudio key={props.quote.id} {...props} initialMode="design" />
-  ) : (
-    <QuotationEditor {...props} />
-  );
+  return <QuotationEditor {...props} />;
 }

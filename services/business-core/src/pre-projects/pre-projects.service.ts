@@ -1,12 +1,18 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import { assignDesignerToCase } from "../crm/opportunities/dedicated-designer";
+import { carryTeamToCase, readCaseTeam } from "../project-core/project-team";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../auth/actor";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import { ensureJobForSource } from "../jobs/job-identity.store";
+import { ensureSiteLocation } from "../crm/opportunities/site-location";
 import { canonicalHash } from "../crm/shared/crm-types";
 import { transitionEngagement, type EngagementLifecycleState } from "./engagement-lifecycle";
+import { casePlan, casePlans } from "./case-plan";
+import { caseQuoteFacts } from "../commercial/case-quote-facts";
+import { readCaseProjects } from "./case-projects";
 import { ListPreProjectsDto, StartFromQualifiedLeadDto, TransitionEngagementDto, UpdateEngagementProfileDto } from "./pre-projects.dto";
 
 const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "createdAt", c.updated_at AS "updatedAt",
@@ -20,14 +26,30 @@ const caseSelect = `SELECT c.id, c.status::text AS status, c.created_at AS "crea
   c.cancelled_at AS "cancelledAt", c.cancelled_by AS "cancelledBy", c.released_at AS "releasedAt",
   c.released_by AS "releasedBy", engagement_owner.display_name AS "engagementOwnerName",
   o.conversion_origin AS "conversionOrigin", o.converted_at AS "convertedAt",
-  o.qualification_evidence AS "qualificationEvidence", o.qualification_evidence_hash AS "qualificationEvidenceHash"
+  o.qualification_evidence AS "qualificationEvidence", o.qualification_evidence_hash AS "qualificationEvidenceHash",
+  project.id AS "projectId",
+  o.reference AS "reference", o.owner_membership_id AS "salesMembershipId", enquiry_type.name AS "enquiryTypeName",
+  discovery.property_location AS "siteAddress", discovery.latitude::float8 AS "siteLatitude", discovery.longitude::float8 AS "siteLongitude",
+  EXISTS (SELECT 1 FROM project_workflow_templates workflow
+    WHERE workflow.workspace_id = c.workspace_id AND workflow.status = 'active'
+      AND workflow.is_default AND workflow.code = 'design_build_deal_first') AS "servicePathEnabled",
+  -- The day the client signed off the design (PLM-053): the case is priced next, whatever quotation came last.
+  (SELECT to_char(journey.approved_on, 'YYYY-MM-DD') FROM design_journeys journey
+    WHERE journey.workspace_id = c.workspace_id AND journey.case_id = c.id) AS "designApprovedOn",
+  -- A design-only job (Full ID) ended with that approval: nothing is priced next.
+  coalesce((SELECT journey.design_complete FROM design_journeys journey
+    WHERE journey.workspace_id = c.workspace_id AND journey.case_id = c.id), false) AS "designComplete"
   FROM pre_project_cases c
   JOIN crm_opportunities o ON o.id = c.opportunity_id AND o.workspace_id = c.workspace_id
   JOIN crm_parties p ON p.id = o.party_id AND p.workspace_id = c.workspace_id
   LEFT JOIN workspace_memberships m ON m.id = o.owner_membership_id AND m.workspace_id = c.workspace_id
   LEFT JOIN users u ON u.id = m.user_id
   LEFT JOIN workspace_memberships engagement_membership ON engagement_membership.id = c.owner_membership_id AND engagement_membership.workspace_id = c.workspace_id
-  LEFT JOIN users engagement_owner ON engagement_owner.id = engagement_membership.user_id`;
+  LEFT JOIN users engagement_owner ON engagement_owner.id = engagement_membership.user_id
+  LEFT JOIN delivery_projects project ON project.workspace_id = c.workspace_id AND project.case_id = c.id
+  LEFT JOIN crm_opportunity_discovery discovery ON discovery.workspace_id = c.workspace_id AND discovery.opportunity_id = c.opportunity_id
+  LEFT JOIN crm_flow_versions flow_version ON flow_version.workspace_id = o.workspace_id AND flow_version.id = o.flow_version_id
+  LEFT JOIN crm_flows enquiry_type ON enquiry_type.workspace_id = flow_version.workspace_id AND enquiry_type.id = flow_version.flow_id`;
 
 type LifecycleRow = EngagementLifecycleState & {
   id: string;
@@ -42,7 +64,7 @@ export class PreProjectsService {
   list(actor: RequestActor, workspaceId: string, query: ListPreProjectsDto) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => {
       const status = query.status === "archived" ? "cancelled" : (query.status ?? "all");
-      const values = [workspaceId, query.search?.trim() ?? "", status];
+      const values = [workspaceId, query.search?.trim() ?? "", status, query.pendingDeal === "true"];
       // Qualified leads are visible immediately, including records qualified before this release.
       // A linked case replaces its incoming lead row; cancelled cases never reappear as new leads.
       const records = `WITH records AS (
@@ -56,7 +78,12 @@ export class PreProjectsService {
           NULL::uuid, false, NULL::varchar, NULL::timestamptz, NULL::uuid, NULL::timestamptz, NULL::uuid,
           manager.display_name, opportunity.conversion_origin, opportunity.converted_at,
           COALESCE(opportunity.qualification_evidence, lead.qualification_evidence),
-          COALESCE(opportunity.qualification_evidence_hash, lead.qualification_evidence_hash)
+          COALESCE(opportunity.qualification_evidence_hash, lead.qualification_evidence_hash),
+          NULL::uuid, opportunity.reference, opportunity.owner_membership_id, NULL::varchar, NULL::varchar, NULL::float8, NULL::float8,
+          EXISTS (SELECT 1 FROM project_workflow_templates workflow
+            WHERE workflow.workspace_id = lead.workspace_id AND workflow.status = 'active'
+              AND workflow.is_default AND workflow.code = 'design_build_deal_first'),
+          NULL::text, false
         FROM crm_leads lead
         JOIN crm_enquiries enquiry ON enquiry.id = lead.enquiry_id AND enquiry.workspace_id = lead.workspace_id
         JOIN crm_parties party ON party.id = lead.party_id AND party.workspace_id = lead.workspace_id
@@ -66,9 +93,19 @@ export class PreProjectsService {
         WHERE lead.workspace_id = $1 AND lead.status = 'qualified'
           AND NOT EXISTS (SELECT 1 FROM pre_project_cases existing JOIN crm_opportunities linked ON linked.id = existing.opportunity_id AND linked.workspace_id = existing.workspace_id WHERE existing.workspace_id = lead.workspace_id AND linked.lead_id = lead.id)
       )`;
-      const where = ` WHERE ($2 = '' OR strpos(lower(title || ' ' || "customerName"), lower($2)) > 0) AND ($3 = 'all' OR status = $3)`;
+      const where = ` WHERE ($2 = '' OR strpos(lower(title || ' ' || "customerName"), lower($2)) > 0) AND ($3 = 'all' OR status = $3) AND (NOT $4 OR "projectId" IS NULL)`;
       const total = await client.query(`${records} SELECT count(*)::int AS total FROM records${where}`, values);
-      const items = await client.query(`${records} SELECT * FROM records${where} ORDER BY "updatedAt" DESC, id DESC LIMIT 24 OFFSET $4`, [...values, ((query.page ?? 1) - 1) * 24]);
+      const items = await client.query(`${records} SELECT * FROM records${where} ORDER BY "updatedAt" DESC, id DESC LIMIT 24 OFFSET $5`, [...values, ((query.page ?? 1) - 1) * 24]);
+      // The phases each case goes through on its path (PLM-121/126), so the list names the stage the case shows.
+      const caseIds = items.rows.filter((row) => !row.qualifiedLead).map((row) => String(row.id));
+      const plans = await casePlans(client, workspaceId, caseIds);
+      for (const row of items.rows) if (plans.has(String(row.id))) row.plan = plans.get(String(row.id));
+      // Its quotations and agreement, so the list names the stage and next step the case's overview shows (a sent quote waits for the client).
+      const commercial = await caseQuoteFacts(client, workspaceId, caseIds);
+      for (const row of items.rows) if (commercial.has(String(row.id))) row.commercial = commercial.get(String(row.id));
+      // Its project, the same for every viewer: Planning places the case by it, not by the projects the viewer is on.
+      const projects = await readCaseProjects(client, workspaceId, items.rows.filter((row) => row.projectId).map((row) => String(row.id)));
+      for (const row of items.rows) if (projects.has(String(row.id))) row.project = projects.get(String(row.id));
       const canCreate = await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.create")
         && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.view");
       const canStartLead = canCreate && await this.access.hasPermission(client, workspaceId, user.userId, "crm.opportunities.manage")
@@ -145,8 +182,13 @@ export class PreProjectsService {
         WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
+      await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
+      // PLM-100: the team tagged on the enquiry and the opportunity joins the case, role by role.
+      const team = await carryTeamToCase(client, workspaceId, String(created.rows[0].id), user.userId);
+      // Site check-in works for the job straight away when the property's position is known.
+      await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId });
       const result = await this.read(client, workspaceId, created.rows[0].id);
-      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id } });
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, leadId: lead.id, team } });
       return result;
     });
   }
@@ -154,8 +196,23 @@ export class PreProjectsService {
   get(actor: RequestActor, workspaceId: string, id: string) {
     return this.access.withPermission(actor, workspaceId, "pre_projects.view", async (client, user) => ({
       ...await this.read(client, workspaceId, id),
+      // PLM-121/126/098: the stages, tabs and next step the case's enquiry type and path call for.
+      plan: await casePlan(client, workspaceId, id),
+      // PLM-100: the case's team by role (a person or "not applicable"), as tagged on the enquiry and the opportunity.
+      team: await readCaseTeam(client, workspaceId, id),
       canManageLifecycle: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.manage_lifecycle"),
+      canEditDetails: await this.canEditDetails(client, workspaceId, id, user.userId),
     }));
+  }
+
+  /** Whoever manages cases, and the case's own owner, may change its details (owner, target, priority, risk). */
+  private async canEditDetails(client: PoolClient, workspaceId: string, caseId: string, userId: string) {
+    if (await this.access.hasPermission(client, workspaceId, userId, "pre_projects.manage_lifecycle")) return true;
+    const owner = await client.query(
+      `SELECT 1 FROM pre_project_cases engagement
+         JOIN workspace_memberships membership ON membership.workspace_id = engagement.workspace_id AND membership.id = engagement.owner_membership_id AND membership.status = 'active'
+        WHERE engagement.workspace_id = $1 AND engagement.id = $2 AND membership.user_id = $3`, [workspaceId, caseId, userId]);
+    return Boolean(owner.rowCount);
   }
 
   start(actor: RequestActor, workspaceId: string, opportunityId: string) {
@@ -175,14 +232,21 @@ export class PreProjectsService {
         WHERE opportunity.workspace_id = $1 AND opportunity.id = $2
         RETURNING id`, [workspaceId, opportunityId, user.userId]);
       await ensureJobForSource(client, workspaceId, { type: "case", id: String(created.rows[0].id) }, user.userId);
+      await assignDesignerToCase(client, workspaceId, String(created.rows[0].id));
+      // PLM-100: the team tagged on the enquiry and the opportunity joins the case, role by role.
+      const team = await carryTeamToCase(client, workspaceId, String(created.rows[0].id), user.userId);
+      // Site check-in works for the job straight away when the property's position is known.
+      await ensureSiteLocation(client, { workspaceId, opportunityId, actorUserId: user.userId });
       const result = await this.read(client, workspaceId, created.rows[0].id);
-      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId } });
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "pre_project.case_started.v1", entityType: "pre_project_case", entityId: result.id, after: { id: result.id, opportunityId, team } });
       return result;
     });
   }
 
   updateProfile(actor: RequestActor, workspaceId: string, id: string, input: UpdateEngagementProfileDto) {
-    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view", "pre_projects.manage_lifecycle"], async (client, user) => {
+    return this.access.withPermissions(actor, workspaceId, ["pre_projects.view"], async (client, user) => {
+      if (!(await this.canEditDetails(client, workspaceId, id, user.userId)))
+        throw new ForbiddenException("Only the case owner or someone who manages cases can change these details.");
       const hash = canonicalHash({ action: "update_profile", caseId: id, ...input });
       const replay = await this.replay(client, workspaceId, id, input.requestId, "update_profile", hash);
       if (replay) return replay;

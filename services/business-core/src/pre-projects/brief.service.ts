@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { startInspirationTimer } from "../design/design-journey.store";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { isDeepStrictEqual } from "node:util";
 import { noteDocumentText, validateNoteDocument } from "../crm/leads/note-document";
 import { createHash } from "node:crypto";
@@ -8,9 +9,11 @@ import { RequestActor } from "../auth/actor";
 import { CrmEventsService } from "../crm/shared/crm-events.service";
 import { WorkspaceAccessService } from "../workspaces/workspace-access.service";
 import { BrandAssetStorageService } from "../workspaces/brand-asset-storage.service";
-import { ArchiveBriefEntryDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
+import { ArchiveBriefEntryDto, MoodboardPinDto, SaveBriefDto, SaveBriefEntryDto, SaveRoomDto } from "./brief.dto";
 import { syncOneTreeFromCase } from "../jobs/one-tree.store";
 import { discoveryCoverage } from "./discovery-coverage";
+import { budgetOf } from "../value-engineering/value-engineering.domain";
+import { budgetChanged } from "../value-engineering/value-engineering.store";
 
 export const BRIEF_MAX_BYTES = 20 * 1024 * 1024;
 export function assertBriefUpload(file?:BriefUpload): asserts file is BriefUpload {
@@ -34,16 +37,19 @@ type CatalogSnapshot={catalogName:string;id:string;name:string;kind:string;code:
 type Context = { status: string; description: string | null; amount: string | null; currencyCode: string | null; leadId: string | null; qualificationEvidence: unknown };
 type BriefUpload = { buffer: Buffer; originalname: string; mimetype: string; size: number };
 const entrySelect = `SELECT (SELECT content || jsonb_build_object('version',s.version,'createdAt',s.created_at,'designRefs',COALESCE((SELECT jsonb_agg(ref || jsonb_build_object('currentStatus',v.status)) FROM jsonb_array_elements(s.content->'designRefs') ref JOIN pre_project_design_versions v ON v.workspace_id=s.workspace_id AND v.case_id=s.case_id AND v.id=(ref->>'versionId')::uuid),'[]'::jsonb)) FROM pre_project_item_specifications s WHERE s.workspace_id=e.workspace_id AND s.case_id=e.case_id AND s.entry_id=e.id ORDER BY s.version DESC LIMIT 1) AS specification,e.id,e.kind,e.title,e.note,e.note_document AS document,e.pinned,e.category,e.priority,e.source,e.version,
-  e.room_id AS "roomId",r.name AS "roomName",e.scope_status AS "scopeStatus",e.review_status AS "reviewStatus",
+  e.room_id AS "roomId",r.name AS "roomName",e.scope_status AS "scopeStatus",e.scope_note AS "scopeNote",e.review_status AS "reviewStatus",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('role',l.role,'recordId',l.record_id,'snapshot',l.snapshot)) FROM pre_project_scope_links l WHERE l.workspace_id=e.workspace_id AND l.entry_id=e.id),'[]'::jsonb) AS "catalogLinks",
   e.quantity::float AS quantity,e.unit,e.reference_url AS "referenceUrl",e.avoid,
+  COALESCE((SELECT jsonb_agg(rl.requirement_id ORDER BY rl.created_at) FROM pre_project_entry_requirement_links rl WHERE rl.workspace_id=e.workspace_id AND rl.entry_id=e.id),'[]'::jsonb) AS "requirementIds",
+  (SELECT jsonb_build_object('x',mp.x,'y',mp.y,'width',mp.width,'z',mp.z,'sentiment',mp.sentiment) FROM pre_project_moodboard_pins mp WHERE mp.workspace_id=e.workspace_id AND mp.entry_id=e.id) AS board,
   e.created_at AS "createdAt",e.updated_at AS "updatedAt",e.archived_at AS "archivedAt",
-  u.display_name AS "createdByName",
+  COALESCE(u.display_name,cg.confirmed_name,cg.name) AS "createdByName",e.client_grant_id IS NOT NULL AS "fromClient",
   COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id,'name',a.original_name,'mimeType',a.mime_type,'byteSize',a.byte_size,'hasPreview',a.preview_key IS NOT NULL) ORDER BY a.created_at,a.id)
     FROM pre_project_entry_assets l JOIN pre_project_brief_assets a ON a.id=l.asset_id AND a.workspace_id=l.workspace_id AND a.case_id=l.case_id
     WHERE l.entry_id=e.id AND l.workspace_id=e.workspace_id AND l.case_id=e.case_id),'[]'::jsonb) AS assets
   FROM pre_project_brief_entries e LEFT JOIN pre_project_rooms r ON r.id=e.room_id AND r.workspace_id=e.workspace_id AND r.case_id=e.case_id
-  JOIN users u ON u.id=e.created_by`;
+  LEFT JOIN users u ON u.id=e.created_by
+  LEFT JOIN client_portal_grants cg ON cg.workspace_id=e.workspace_id AND cg.id=e.client_grant_id`;
 
 @Injectable()
 export class BriefService {
@@ -73,7 +79,7 @@ export class BriefService {
       const measurements = await client.query(`SELECT entry_id AS "entryId",status FROM pre_project_site_records WHERE workspace_id=$1 AND case_id=$2 AND kind='measurement' AND entry_id IS NOT NULL`, [workspaceId, caseId]);
       return { caseId, workspaceId, brief: { ...defaults, ...saved.rows[0]?.content, version: saved.rows[0]?.version ?? 0, updatedAt: saved.rows[0]?.updatedAt ?? null }, rooms: rooms.rows, entries: entries.rows,
         coverage: discoveryCoverage(rooms.rows, entries.rows, measurements.rows),
-        canEdit: context.status === "active" && await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"), caseStatus: context.status,
+        canEdit: await this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.edit"), caseStatus: context.status,
         fromCrm: !saved.rowCount, crmContext: { description: context.description, opportunityAmount: context.amount, currencyCode: context.currencyCode } };
     });
   }
@@ -96,6 +102,9 @@ export class BriefService {
         ON CONFLICT(case_id) DO UPDATE SET content=$3,version=pre_project_briefs.version+1,updated_by=$4,updated_at=now()
         RETURNING content,version,updated_at AS "updatedAt"`, [caseId, workspaceId, content, userId]);
       await this.event(client, workspaceId, caseId, userId, "brief_saved", caseId, current.rows[0]?.content, content);
+      // PLM-147: the client's budget changed while value engineering is open: the lead designer and the QS hear it.
+      await budgetChanged(client, { workspaceId, caseId, actorUserId: userId,
+        before: budgetOf(current.rows[0]?.content?.budgetAmount, current.rows[0]?.content?.currencyCode), after: budgetOf(budgetAmount, currencyCode) });
       await syncOneTreeFromCase(client, workspaceId, caseId, userId);
       return { ...result.rows[0].content, version: result.rows[0].version, updatedAt: result.rows[0].updatedAt };
     });
@@ -129,6 +138,12 @@ export class BriefService {
     });
   }
   async writeEntry(client:PoolClient,workspaceId:string,caseId:string,userId:string,input:SaveBriefEntryDto) {
+      if (input.requirementIds?.length) {
+        // Moodboard pins can inform specific requirements of the same case.
+        if (input.kind !== 'inspiration') throw new BadRequestException('Only moodboard items link to requirements.');
+        const found = await client.query(`SELECT id FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND kind='requirement' AND archived_at IS NULL AND id=ANY($3::uuid[])`, [workspaceId,caseId,input.requirementIds]);
+        if (found.rowCount !== input.requirementIds.length) throw new BadRequestException('Choose requirements from this project.');
+      }
       const current = await client.query(`SELECT id,version,archived_at,note,note_document,pinned FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND id=$3`, [workspaceId, caseId, input.id]);
       if (input.version > 0 && !current.rowCount) throw new NotFoundException("Record not found");
       const original = current.rows[0];
@@ -197,18 +212,46 @@ export class BriefService {
         await client.query(`INSERT INTO pre_project_brief_entries(workspace_id,case_id,id,kind,title,room_id,note,category,priority,scope_status,review_status,quantity,unit,reference_url,avoid,source,created_by,updated_by)
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)`, [workspaceId,caseId,input.id,...fields,userId]);
       }
+      // A new moodboard pin is meant for the client: it shows in their portal unless the team keeps it to themselves.
+      if (!current.rowCount && input.kind === "inspiration" && input.sharedWithClient !== false)
+        await client.query(`INSERT INTO pre_project_moodboard_shares (workspace_id, case_id, entry_id, shared_by) VALUES ($1, $2, $3, $4) ON CONFLICT (workspace_id, entry_id) DO NOTHING`,
+          [workspaceId, caseId, input.id, userId]);
       await client.query(`UPDATE pre_project_brief_entries SET note_document=$4,pinned=$5,archived_at=CASE WHEN $6 THEN COALESCE(archived_at,now()) ELSE NULL END WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,document ?? null,pinned,archived]);
+      // The reason goes with the decision; an included requirement needs none.
+      if (input.scopeNote !== undefined || input.scopeStatus === 'included')
+        await client.query(`UPDATE pre_project_brief_entries SET scope_note=$4 WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,input.id,input.scopeStatus === 'included' ? '' : input.scopeNote ?? '']);
       // A design linked to a scope item follows that item's room, without losing its file history.
       await client.query(`UPDATE pre_project_designs SET room_id=$4,version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND scope_entry_id=$3 AND room_id IS DISTINCT FROM $4::uuid`,[workspaceId,caseId,input.id,input.roomId??null]);
       await client.query(`DELETE FROM pre_project_scope_links WHERE workspace_id=$1 AND entry_id=$2`,[workspaceId,input.id]);
       for(const link of resolved) await client.query(`INSERT INTO pre_project_scope_links(workspace_id,case_id,entry_id,role,record_id,snapshot) VALUES($1,$2,$3,$4,$5,$6)`,[workspaceId,caseId,input.id,link.role,link.recordId,link.snapshot]);
+      if (input.requirementIds !== undefined) {
+        await client.query(`DELETE FROM pre_project_entry_requirement_links WHERE workspace_id=$1 AND entry_id=$2`, [workspaceId,input.id]);
+        for (const requirementId of input.requirementIds) await client.query(`INSERT INTO pre_project_entry_requirement_links(workspace_id,case_id,entry_id,requirement_id) VALUES($1,$2,$3,$4)`, [workspaceId,caseId,input.id,requirementId]);
+      }
       await client.query(`DELETE FROM pre_project_entry_assets WHERE workspace_id=$1 AND case_id=$2 AND entry_id=$3`, [workspaceId,caseId,input.id]);
       for (const assetId of input.assetIds) await client.query(`INSERT INTO pre_project_entry_assets(workspace_id,case_id,entry_id,asset_id) VALUES($1,$2,$3,$4)`, [workspaceId,caseId,input.id,assetId]);
       await this.event(client,workspaceId,caseId,userId,current.rowCount ? "entry_updated" : "entry_added",input.id,{ version: input.version },input);
       await syncOneTreeFromCase(client, workspaceId, caseId, userId);
+      // PLM-077: the inspiration week starts with the first inspiration on the case.
+      if (input.kind === "inspiration" && !archived) await startInspirationTimer(client, workspaceId, caseId);
       return this.entry(client,workspaceId,caseId,input.id);
   }
 
+  /** Moodboard layout: where each pin sits and whether it's something to love or avoid. Moving a pin never rewrites the pin. */
+  saveMoodboardLayout(actor: RequestActor, workspaceId: string, caseId: string, pins: MoodboardPinDto[]) {
+    return this.edit(actor, workspaceId, caseId, async (client, userId) => {
+      const ids = [...new Set(pins.map((pin) => pin.entryId))];
+      const found = ids.length ? await client.query(`SELECT id FROM pre_project_brief_entries WHERE workspace_id=$1 AND case_id=$2 AND kind='inspiration' AND id=ANY($3::uuid[])`, [workspaceId, caseId, ids]) : { rowCount: 0 };
+      if (found.rowCount !== ids.length) throw new BadRequestException('Choose moodboard items from this project.');
+      for (const pin of pins) {
+        await client.query(`INSERT INTO pre_project_moodboard_pins(workspace_id,case_id,entry_id,x,y,width,z,sentiment,updated_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          ON CONFLICT (workspace_id,entry_id) DO UPDATE SET x=excluded.x,y=excluded.y,width=excluded.width,z=excluded.z,sentiment=excluded.sentiment,updated_by=excluded.updated_by,updated_at=now()`,
+          [workspaceId, caseId, pin.entryId, Math.round(pin.x), Math.round(pin.y), Math.round(pin.width), pin.z, pin.sentiment, userId]);
+      }
+      await this.event(client, workspaceId, caseId, userId, 'moodboard_arranged', caseId, {}, { pins: pins.length });
+      return { saved: pins.length };
+    });
+  }
   archiveEntry(actor: RequestActor, workspaceId: string, caseId: string, id: string, input: ArchiveBriefEntryDto) {
     return this.edit(actor,workspaceId,caseId,async (client,userId) => {
       const current = await this.entry(client,workspaceId,caseId,id);
@@ -280,13 +323,25 @@ export class BriefService {
     const result=await client.query(`SELECT c.status,o.description,o.amount,COALESCE(o.currency_code,w.default_currency) AS "currencyCode",o.lead_id AS "leadId",o.qualification_evidence AS "qualificationEvidence" FROM pre_project_cases c JOIN workspaces w ON w.id=c.workspace_id JOIN crm_opportunities o ON o.id=c.opportunity_id AND o.workspace_id=c.workspace_id WHERE c.workspace_id=$1 AND c.id=$2${lock ? " FOR UPDATE OF c" : ""}`,[workspaceId,caseId]);
     if (!result.rowCount) throw new NotFoundException("Pre-execution not found"); return result.rows[0];
   }
-  edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string)=>Promise<T>) {
-    return this.access.withPermissions(actor,workspaceId,["pre_projects.view","pre_projects.edit"],async (client,user)=>{
-      const record=await this.case(client,workspaceId,caseId,true);
-      if (record.status!=="active") throw new ConflictException("This pre-execution is read-only. Resume or reopen it before making changes.");
-      const result=await work(client,user.userId);
+  /**
+   * A change to the case's working records: pre_projects.view and pre_projects.edit. With `alternative`, someone holding
+   * that permission instead of edit gets in too, with `limited` true: the step itself narrows what they may do (the
+   * assigned design reviewer recording their decision, QA-004).
+   */
+  edit<T>(actor: RequestActor, workspaceId: string, caseId: string, work: (client: PoolClient,userId: string,limited: boolean)=>Promise<T>, alternative?: string) {
+    const run = async (client: PoolClient, userId: string, limited: boolean) => {
+      // Working records remain revisionable throughout execution. Commercial
+      // acceptance and execution release retain their own immutable snapshots.
+      await this.case(client,workspaceId,caseId,true);
+      const result=await work(client,userId,limited);
       await client.query(`UPDATE pre_project_cases SET updated_at=now() WHERE workspace_id=$1 AND id=$2`,[workspaceId,caseId]);
       return result;
+    };
+    if (!alternative) return this.access.withPermissions(actor,workspaceId,["pre_projects.view","pre_projects.edit"],(client,user)=>run(client,user.userId,false));
+    return this.access.withPermission(actor,workspaceId,"pre_projects.view",async (client,user)=>{
+      const limited=!(await this.access.hasPermission(client,workspaceId,user.userId,"pre_projects.edit"));
+      if (limited && !(await this.access.hasPermission(client,workspaceId,user.userId,alternative))) throw new ForbiddenException("Permissions required: pre_projects.view, pre_projects.edit");
+      return run(client,user.userId,limited);
     });
   }
   version(actual:number,expected:number) { if (actual!==expected) throw new ConflictException("Someone updated this record. Your changes have been kept in the form. Close it and reopen the latest record before applying them."); }

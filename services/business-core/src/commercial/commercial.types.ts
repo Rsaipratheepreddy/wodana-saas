@@ -1,3 +1,4 @@
+import type { DocumentLetterhead } from "../workspaces/entity-letterhead";
 export type CatalogSelection = {
   role: string;
   recordId: string;
@@ -106,6 +107,13 @@ export type QuotationTemplate = {
   status?: "active" | "archived";
   content: Pick<Quote, "rooms" | "lines" | "currency" | "discount" | "taxRate" | "inclusions" | "terms" | "exclusions" | "paymentTerms" | "presentation">;
 };
+export type QuoteRichTextNode = {
+  type: string;
+  text?: string;
+  content?: QuoteRichTextNode[];
+  marks?: { type: string }[];
+  attrs?: { level?: number; start?: number };
+};
 export type QuoteCanvasElement = {
   id: string;
   type: "text" | "image";
@@ -114,6 +122,7 @@ export type QuoteCanvasElement = {
   width: number;
   height: number;
   text?: string;
+  richText?: QuoteRichTextNode;
   src?: string;
   color?: string;
   fontSize?: number;
@@ -130,6 +139,12 @@ export type QuoteCanvasPage = {
 };
 export type QuotePresentation = {
   version: 1;
+  template?: 'palm-reference-v1';
+  details?: Partial<Record<'companyName' | 'clientName' | 'clientPhone' | 'clientEmail' | 'projectName' | 'location' | 'reference' | 'date' | 'preparedBy' | 'estimator' | 'manager' | 'clientLogo' | 'companyLogo', string>>;
+  /** Logical sections in reading order; scope expands into item pages. */
+  pageOrder?: string[];
+  hiddenPages?: string[];
+  scopeColumns?: { hidden: string[]; custom: { id: string; name: string; values: Record<string, string> }[] };
   pageBackground: string;
   textColor: string;
   accentColor: string;
@@ -144,7 +159,8 @@ export type QuoteLine = {
   finish: string;
   quantity: number;
   unit: string;
-  unitCost: number;
+  /** Null when the builder couldn't find every part's cost. */
+  unitCost: number | null;
   rate: number;
   variant?: string;
   photo?: string;
@@ -170,6 +186,28 @@ export type QuoteLine = {
   optional?: boolean;
   /** Internal authorization evidence for a line with no confirmed scope or catalogue source. */
   manualReason?: string;
+  /** Builder fields (plan §6.8): the line's area and work package, its kind, discount and tax. */
+  kind?: string;
+  description?: string;
+  areaId?: string;
+  fromAreaId?: string;
+  workPackageId?: string;
+  catalogItemId?: string;
+  formula?: string;
+  length?: number;
+  width?: number;
+  height?: number;
+  count?: number;
+  markupPercent?: number;
+  discountKind?: "percent" | "amount";
+  discountValue?: number;
+  taxCode?: string;
+  lineTaxRate?: number;
+  optionGroup?: string;
+  /** A variation's change to the agreed scope: add, remove (a credit) or move a live BOQ line. */
+  changeOp?: "add" | "omit" | "move";
+  boqLineId?: string;
+  components?: Array<Record<string, unknown>>;
 };
 /** Selling-price breakdown per ONE item unit. Never contains internal purchase costs. */
 export type QuotationMaterialRow = {
@@ -191,7 +229,9 @@ export type QuoteStatus =
   | "changes_requested"
   | "declined"
   | "superseded"
-  | "withdrawn";
+  | "withdrawn"
+  /** Its validity ended before the client decided (set by the daily run, Q-6); "Extend validity" sends it again. */
+  | "expired";
 export type QuoteDecisionEvidence = {
   decision: "accept" | "changes" | "decline";
   /** Hash of the immutable, issued quotation the client reviewed. */
@@ -205,8 +245,24 @@ export type QuoteDecisionEvidence = {
   decidedAt: string;
   decidedBy: string;
   note?: string;
+  /** Set when staff recorded the decision (signed copy, email…), not the client on the portal. */
+  recordedBy?: string;
+  recordedById?: string;
+  method?: "signed_document" | "email" | "in_person" | "phone" | "message";
+  /** The case file the client decided in (a signed copy, the email or message), when staff recorded it. */
+  evidence?: { id: string; name: string; mimeType: string; byteSize: number; hasPreview: boolean };
 };
 export type Quote = {
+  /** Separate client and payment rounds for Palm's design and main proposal. */
+  round?: "design" | "main";
+  qsEstimate?: {
+    quoteHash: string;
+    cost: number;
+    sellingTotal: number;
+    reviewedAt: string;
+    reviewedById: string;
+    reviewedBy: string;
+  };
   rooms?: { id:string; name:string; catalog?:CatalogSelection }[];
   direction?:"addition"|"deduction";
   familyId?:string;
@@ -236,6 +292,9 @@ export type Quote = {
   terms: string;
   exclusions: string;
   lines: QuoteLine[];
+  /** Set by the builder: the workspace's pricing policy and the quote's discounts. */
+  pricing?: { currencyDecimals: number; pricesIncludeTax: boolean; rounding: "line" | "document" };
+  discounts?: Array<{ scope: "quote" | "area" | "trade"; target: string; kind: "percent" | "amount"; value: number | string; reason?: string }>;
   requestIds: string[];
   paymentTerms: PaymentTerm[];
   paymentTemplate?: { id: string; version: number; name: string };
@@ -247,9 +306,15 @@ export type Quote = {
   decidedAt?: string;
   decidedBy?: string;
   clientDecision?: QuoteDecisionEvidence;
+  /** Each time its validity was extended without a new review (Q-7). */
+  validityExtensions?: Array<{ from: string; to: string; at: string; by: string; byId: string }>;
   hash?: string;
   total: number;
   brand?: PortalBrand;
+  /** The issuing business's letterhead, frozen with the brand when the quote is issued (PLM-112). */
+  letterhead?: DocumentLetterhead | null;
+  /** The change request a variation prices (plan §6.20): the change moves it through review, sending and the decision. */
+  changeRequestId?: string;
 };
 export type CommercialComment = {
   id: string;
@@ -321,6 +386,8 @@ export type ChangeRequest = {
   resolution: string;
   comments: CommercialComment[];
   createdAt: string;
+  /** Who raised it, for the team: the client contact (their portal name) or the team member. Never shown to the client. */
+  raisedBy?: { name: string; client: boolean };
   control?: ControlledChange;
   decisionRequest?: {
     ownerMembershipId: string;
@@ -371,6 +438,7 @@ export type ClientChangeRequest = Omit<
   };
 };
 export type Agreement = {
+  files?: { id: string; name: string; mimeType: string; byteSize: number; hasPreview: boolean; addedAt: string; addedBy: string }[];
   quoteId: string;
   /** Exact accepted quotation snapshot bound to this agreement. */
   quoteHash?: string;
@@ -437,8 +505,11 @@ export type FinanceReceipt = {
   providerDocumentId?: string;
   reportedAt: string;
   reportedBy: string;
+  /** Who reported a manual receipt (the separation rule and hand-off notices use the person, not the name). */
+  reportedById?: string;
   verifiedAt?: string;
   verifiedBy?: string;
+  verifiedById?: string;
   rejectedAt?: string;
   rejectionReason?: string;
 };
@@ -507,8 +578,15 @@ export type OwnerReview = {
   id: string;
   quoteId: string;
   quoteHash: string;
-  status: "submitted" | "approved" | "returned" | "rejected";
+  status: "submitted" | "pending_finance" | "pending_approval" | "approved" | "returned" | "rejected";
   commission: number;
+  commissionLines?: import("./deal-submission").CommissionLine[];
+  finalCommissionLines?: import("./deal-submission").CommissionLine[];
+  paymentProofUrl?: string;
+  financeNote?: string;
+  financeReviewedAt?: string;
+  financeReviewedBy?: string;
+  financeReviewedById?: string;
   checklist: OwnerReviewChecklist;
   submissionNote: string;
   submittedAt: string;
@@ -536,6 +614,11 @@ export type DealFile = {
   cost: number;
   margin: number;
   commission: number;
+  commissionLines?: import("./deal-submission").CommissionLine[];
+  paymentProofUrl?: string;
+  opportunityId?: string;
+  opportunityReference?: string | null;
+  enquiryReference?: string | null;
   status: "active";
   approvedAt: string;
   approvedBy: string;
@@ -568,6 +651,21 @@ export type MaterialApproval = {
   decisionChallengeId?: string;
 };
 export type CommercialData = {
+  /** Palm's selected service path. Frozen when its first quotation is created. */
+  servicePath?: {
+    scope: import("../projects/service-path-route").ServicePathScope;
+    selectedAt: string;
+    selectedBy: string;
+    /** Minimum design deposit from the workspace's design settings, frozen when the path is chosen: an amount, or a share of the design fee. */
+    designMinimumDeposit?: import("../design/design-packages.domain").MinimumDeposit | null;
+  };
+  /** First paid design round retained when a second, main round starts in the same Deal. */
+  designRound?: {
+    quoteId: string;
+    agreement: Agreement;
+    ownerReview: OwnerReview;
+    dealFile: DealFile;
+  };
   financeContext?: CommercialFinanceContext | null;
   financeDocuments?: FinanceDocument[];
   receipts?: FinanceReceipt[];
@@ -592,6 +690,24 @@ export type CommercialData = {
     projectId?: string;
   };
 };
+/**
+ * The firm's proposal kit: the words, contact block and pictures its client proposals are built
+ * from. Everything is optional. Layout, type and page colours stay Wodana's; pictures only fill
+ * fixed slots (introduction, three terms pictures, closing, a small monogram).
+ */
+export type ProposalKit = {
+  introduction: string;
+  letterNote: string;
+  defaultTerms: string;
+  defaultExclusions: string;
+  contactDetails: string;
+  website: string;
+  introductionImage: string | null;
+  closingImage: string | null;
+  monogramImage: string | null;
+  termsImages: string[];
+  version: number;
+};
 export type PortalBrand = {
   name: string;
   logo: string;
@@ -610,6 +726,8 @@ export type PortalSettings = {
   brand: PortalBrand;
   testMode: boolean;
   canManage?: boolean;
+  /** The firm's company gallery, when published. */
+  gallerySlug?: string | null;
 };
 export type PortalGrant = {
   id: string;
@@ -620,23 +738,57 @@ export type PortalGrant = {
   testContact: boolean;
 };
 export type CommercialState = {
+  servicePathEnabled?: boolean;
+  enquiryType?: string | null;
   workspaceId: string;
   caseId: string;
   title: string;
+  opportunityId?: string;
+  opportunityStatus?: string;
+  /** The newest payment proof attached on the opportunity (PLM-122): it wins the deal and is the Deal File's proof. */
+  paymentProofId?: string | null;
+  opportunityReference?: string | null;
+  enquiryReference?: string | null;
+  opportunityValue?: number | null;
   customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  customerAddress?: string;
   currency: string;
   data: CommercialData;
+  /** The quotation number each quote's family was issued under (PLM-QUO-2026-00001), by quote id, once it was sent. */
+  quoteReferences?: Record<string, string>;
+  /** PLM-146: the quotations marked as a budget range the client asked for. */
+  budgetRangeQuoteIds?: string[];
   contacts: PortalGrant[];
   canEdit: boolean;
   canApprove: boolean;
+  canEstimate?: boolean;
+  /** Deal quotations in review that the firm's QS rules send to the QS estimate; any other one is approved as priced. */
+  qsEstimateQuoteIds?: string[];
+  canApproveDeal?: boolean;
+  /** Who is looking (their user id), for the separation-of-duties rules the page shows. */
+  viewerId?: string;
   canVerifyFinance: boolean;
   canOverridePrice?: boolean;
   canViewCosts?: boolean;
   canEditCosts?: boolean;
   canRelease: boolean;
   canManagePortal: boolean;
+  /** Names the case's client contacts and decision-makers (portal managers and whoever sends quotes). */
+  canManageContacts?: boolean;
+  /** Who holds each step after the client accepts (a few names each), so people who can't act see who can. */
+  stepHolders?: { verifyAgreement: string[]; verifyPayment: string[]; approveDeal: string[]; startProject: string[] };
+  /** The Deal File's approval on the E3 engine: its steps, who decided, and whether the viewer may decide now. */
+  dealApproval?: (import("../approvals/approval-policy").ApprovalStatus & { canDecide: boolean; decideVia: string | null; onBehalfOf: string | null }) | null;
+  /** PLM-066 / PLM-102 / PLM-123: the Deal File's money, closing and contents, read from the records. */
+  dealInsight?: import("./deal-file-insight").DealInsight | null;
   portalSlug: string | null;
   portalBrand?: PortalBrand;
+  /** The business a new quotation is issued by, for its letterhead in the preview (PLM-112). */
+  portalLetterhead?: DocumentLetterhead | null;
+  /** The firm's proposal kit, when the proposal screen has loaded it. */
+  proposalKit?: ProposalKit;
   portalEnabled?: boolean;
   testMode?: boolean;
   releaseReadiness?: {

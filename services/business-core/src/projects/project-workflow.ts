@@ -4,6 +4,8 @@ import type {
   ProjectData,
   ProjectRole,
 } from "./execution.types";
+import { workPackageReadiness } from "./project-package-readiness";
+import { deliveryQuantityReadiness } from "./project-delivery-quantities";
 
 export const PROJECT_WORKFLOW_PHASES = [
   "planning",
@@ -17,6 +19,8 @@ export type ProjectWorkflowPhase = (typeof PROJECT_WORKFLOW_PHASES)[number];
 export const PROJECT_WORKFLOW_GATE_KEYS = [
   "project_manager_assigned",
   "tasks_planned",
+  "site_visit_recorded",
+  "production_plan_ready",
   "all_tasks_closed",
   "all_snags_closed",
   "all_handovers_accepted",
@@ -48,6 +52,7 @@ export type ProjectWorkflowStage = {
   phase: ProjectWorkflowPhase;
   ownerRole: ProjectRole | null;
   exitGates: ProjectWorkflowGateKey[];
+  releaseStart?: boolean;
 };
 
 export type ProjectWorkflowTemplateInput = {
@@ -73,7 +78,7 @@ export type ProjectWorkflowGateResult = {
 
 export type ProjectWorkflowHistoryEntry = {
   id: string;
-  action: "adopted" | "advanced" | "returned" | "completed" | "reopened";
+  action: "adopted" | "released" | "advanced" | "returned" | "completed" | "reopened";
   fromStageKey: string | null;
   toStageKey: string;
   at: string;
@@ -199,8 +204,8 @@ export function parseProjectWorkflowTemplate(
     throw new BadRequestException("Workflow template version is invalid.");
   if (typeof value.isDefault !== "boolean")
     throw new BadRequestException("Choose whether this is the default workflow.");
-  if (!Array.isArray(value.stages) || value.stages.length < 2 || value.stages.length > 12)
-    throw new BadRequestException("Add between 2 and 12 workflow stages.");
+  if (!Array.isArray(value.stages) || value.stages.length < 2 || value.stages.length > 18)
+    throw new BadRequestException("Add between 2 and 18 workflow stages.");
 
   const stages = value.stages.map((entry, index): ProjectWorkflowStage => {
     const stage = object(entry, `Workflow stage ${index + 1}`);
@@ -215,6 +220,8 @@ export function parseProjectWorkflowTemplate(
     );
     if (new Set(exitGates).size !== exitGates.length)
       throw new BadRequestException(`Workflow stage ${index + 1} repeats a gate.`);
+    if (stage.releaseStart !== undefined && typeof stage.releaseStart !== "boolean")
+      throw new BadRequestException(`Workflow stage ${index + 1} release entry is invalid.`);
     return {
       key: slug(stage.key, `Workflow stage ${index + 1} key`),
       visibleName: text(stage.visibleName, `Workflow stage ${index + 1} name`, 80),
@@ -227,11 +234,14 @@ export function parseProjectWorkflowTemplate(
       phase: member(stage.phase, PROJECT_WORKFLOW_PHASES, `Workflow stage ${index + 1} phase`),
       ownerRole,
       exitGates,
+      ...(stage.releaseStart === true ? { releaseStart: true } : {}),
     };
   });
 
   if (new Set(stages.map((stage) => stage.key)).size !== stages.length)
     throw new BadRequestException("Every workflow stage needs a unique key.");
+  if (stages.filter((stage) => stage.releaseStart).length > 1 || stages.some((stage) => stage.releaseStart && stage.phase !== "active"))
+    throw new BadRequestException("Choose one active stage to start after commercial release.");
   const phaseIndex = (phase: ProjectWorkflowPhase) => PROJECT_WORKFLOW_PHASES.indexOf(phase);
   if (stages[0].phase !== "planning" || stages.at(-1)?.phase !== "completed")
     throw new BadRequestException(
@@ -303,9 +313,12 @@ export function adoptProjectWorkflow(
   at: string,
   byId: string,
   byName: string,
+  options: { commercialRelease?: boolean } = {},
 ): ProjectWorkflowState {
   const selected = frozenTemplate(template);
-  const first = selected.stages[0];
+  const first = options.commercialRelease
+    ? selected.stages.find((stage) => stage.releaseStart) ?? selected.stages[0]
+    : selected.stages[0];
   return {
     template: selected,
     currentStageKey: first.key,
@@ -318,10 +331,37 @@ export function adoptProjectWorkflow(
         at,
         byId,
         byName,
-        `Adopted ${selected.name} version ${selected.version}.`,
+        options.commercialRelease && first !== selected.stages[0]
+          ? `Adopted ${selected.name} version ${selected.version} at ${first.visibleName} after approved planning and commercial release. Earlier decisions remain in the linked case.`
+          : `Adopted ${selected.name} version ${selected.version}.`,
       ),
     ],
   };
+}
+
+/** Promote a pre-release planning project without fabricating stage-by-stage approvals. */
+export function enterCommercialReleaseStage(
+  workflow: ProjectWorkflowState,
+  at: string,
+  byId: string,
+  byName: string,
+): boolean {
+  const current = currentStage(workflow);
+  const releaseIndex = workflow.template.stages.findIndex((stage) => stage.releaseStart);
+  if (releaseIndex < 0 || current.index >= releaseIndex) return false;
+  const releaseStage = workflow.template.stages[releaseIndex];
+  workflow.history.push(historyEntry(
+    "released",
+    current.stage.key,
+    releaseStage.key,
+    at,
+    byId,
+    byName,
+    `Approved planning and commercial release completed. Earlier decisions remain in the linked case; delivery starts at ${releaseStage.visibleName}.`,
+  ));
+  workflow.currentStageKey = releaseStage.key;
+  workflow.currentStageStartedAt = at;
+  return true;
 }
 
 export function ensureProjectWorkflow(data: ProjectData): ProjectWorkflowState {
@@ -362,6 +402,23 @@ export function projectWorkflowGateResults(
           task.status !== "cancelled" &&
           Boolean(task.ownerId && task.start && task.end),
       );
+    else if (key === "site_visit_recorded")
+      passed = Boolean(data.siteVisit?.visitedOn && data.siteVisit.scopeSummary && data.siteVisit.evidenceReference);
+    else if (key === "production_plan_ready") {
+      const packages = (data.workPackages ?? []).filter((item) => item.status !== "cancelled");
+      const productionPackages = packages.filter((item) =>
+        item.supplyMethod === "make" ||
+        item.supplyMethod === "subcontract" ||
+        item.workLocation === "factory" ||
+        ["factory", "vendor", "mixed"].includes(item.deliveryRoute),
+      );
+      passed = productionPackages.length > 0 && productionPackages.every((item) =>
+        ["ready", "in_progress", "completed"].includes(item.status) &&
+        item.deliveryQuantities?.status === "confirmed" &&
+        !deliveryQuantityReadiness(data, item) &&
+        (item.status !== "ready" || workPackageReadiness(data, item).length === 0),
+      );
+    }
     else if (key === "all_tasks_closed")
       passed =
         data.tasks.length > 0 &&
@@ -524,6 +581,8 @@ export function completeProjectWorkflow(
   const finalIndex = workflow.template.stages.length - 1;
   if (data.controls?.onHold)
     throw new ConflictException("Release the project hold before completion.");
+  if (workflow.template.stages.some((stage) => stage.releaseStart) && current.index !== finalIndex - 1)
+    throw new ConflictException(`Move through the remaining project stages before completion. Next: ${workflow.template.stages[current.index + 1].visibleName}.`);
   const seen = new Set<ProjectWorkflowGateKey>();
   const gateResults = workflow.template.stages
     .slice(current.index, finalIndex)

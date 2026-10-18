@@ -52,7 +52,7 @@ describe("CRM lead conversion integrity", () => {
   });
 
   it("copies frozen lead qualification evidence and the chosen reassigned owner into a new linked opportunity", async () => {
-    const evidence = { version: 1, leadId: "lead", selection: "global", form: { id: "form", version: 2 } };
+    const evidence = { version: 1, leadId: "lead", serviceType: "interior_design", selection: "global", form: { id: "form", version: 2 } };
     const evidenceHash = "a".repeat(64);
     const lead = {
       id: "lead", version: 4, status: "qualified", party_id: "party", enquiry_id: "enquiry", owner_membership_id: "owner-1",
@@ -84,6 +84,38 @@ describe("CRM lead conversion integrity", () => {
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.lead.qualified.v1" }));
   });
 
+  it("blocks conversion of a legacy qualified enquiry whose frozen type is still unresolved", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("SELECT * FROM crm_leads")) return { rows: [{ id: "lead", version: 4, status: "qualified", party_id: "party", qualification_evidence: { serviceType: "not_sure" }, qualification_evidence_hash: "a".repeat(64) }], rowCount: 1 };
+      if (sql.includes("SELECT id,conversion_request_hash")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: "not_sure" }], rowCount: 1 };
+      if (sql.includes("FROM crm_qualification_forms") || sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    await expect(setup(query).service.qualifyLead({} as never, "workspace", "lead", input))
+      .rejects.toThrow("Choose a specific enquiry type");
+    expect(query.mock.calls.some(([sql]) => /^\s*(INSERT|UPDATE)\b/.test(sql))).toBe(false);
+  });
+
+  it("uses fresh qualification evidence after a legacy qualified enquiry type is corrected", async () => {
+    const lead = { id: "lead", version: 4, status: "qualified", party_id: "party", enquiry_id: "enquiry", qualification_evidence: { serviceType: "not_sure" }, qualification_evidence_hash: "a".repeat(64) };
+    const query = vi.fn(async (sql: string, _params: unknown[] = []) => {
+      if (sql.includes("SELECT * FROM crm_leads")) return { rows: [lead], rowCount: 1 };
+      if (sql.includes("SELECT id,conversion_request_hash")) return { rows: [], rowCount: 0 };
+      if (sql.includes("SELECT enquiry.service_type")) return { rows: [{ service_type: "interior_design" }], rowCount: 1 };
+      if (sql.includes("FROM crm_qualification_forms") || sql.includes("FROM crm_lead_qualification_values")) return { rows: [], rowCount: 0 };
+      if (sql.includes("UPDATE crm_leads SET status='qualified'")) return { rows: [{ ...lead, version: 5 }], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const { service } = setup(query);
+    const create = vi.spyOn(service as never, "createInTransaction" as never).mockResolvedValue({ id: "opportunity", party_id: "party", lead_id: "lead", status: "open" } as never);
+    await service.qualifyLead({} as never, "workspace", "lead", input);
+    expect(create).toHaveBeenCalledWith(expect.anything(), "workspace", { ...input, leadId: "lead" }, "user", true, expect.objectContaining({
+      qualificationEvidence: expect.objectContaining({ serviceType: "interior_design" }),
+    }));
+    expect(query.mock.calls.find(([sql]) => sql.includes("UPDATE crm_leads SET status='qualified'"))?.[1]?.[3]).toMatchObject({ serviceType: "interior_design" });
+  });
+
   it("reopens the same lost opportunity with a new next action and keeps its identity", async () => {
     const before = {
       id: "opportunity", version: 3, status: "lost", party_id: "party", lead_id: "lead",
@@ -106,5 +138,30 @@ describe("CRM lead conversion integrity", () => {
       "stage", "open", 20, "pipeline", "Client returned", null, "workspace", "opportunity", 3, new Date(nextActionAt),
     ]);
     expect(events.record).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: "crm.opportunity.stage_changed.v1", entityId: "opportunity" }));
+  });
+
+  it("does not leave an open opportunity in a terminal Won stage", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_opportunities opportunity")) return { rows: [{ id: "opportunity", version: 3, status: "open", pipeline_id: "pipeline", stage_id: "proposal" }], rowCount: 1 };
+      if (sql.includes("SELECT * FROM crm_pipeline_stages")) return { rows: [{ id: "won-stage", code: "won", entry_requirements: {} }], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    await expect(setup(query).service.transition({} as never, "workspace", "opportunity", {
+      version: 3, stageId: "won-stage", status: "open",
+    })).rejects.toThrow("won stage requires a won outcome");
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_opportunities SET"))).toBe(false);
+  });
+
+  it("requires the configured Won stage when closing an opportunity as won", async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes("FROM crm_opportunities opportunity")) return { rows: [{ id: "opportunity", version: 3, status: "open", pipeline_id: "pipeline", stage_id: "proposal" }], rowCount: 1 };
+      if (sql.includes("SELECT * FROM crm_pipeline_stages")) return { rows: [{ id: "proposal", code: "proposal", entry_requirements: {} }], rowCount: 1 };
+      if (sql.includes("SELECT id FROM crm_pipeline_stages")) return { rows: [{ id: "won-stage" }], rowCount: 1 };
+      throw new Error(`Unexpected query: ${sql}`);
+    });
+    await expect(setup(query).service.transition({} as never, "workspace", "opportunity", {
+      version: 3, stageId: "proposal", status: "won", reason: "Signed agreement",
+    })).rejects.toThrow("Choose the won stage");
+    expect(query.mock.calls.some(([sql]) => sql.includes("UPDATE crm_opportunities SET"))).toBe(false);
   });
 });

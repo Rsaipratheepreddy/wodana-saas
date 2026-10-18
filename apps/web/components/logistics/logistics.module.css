@@ -1,0 +1,54 @@
+/* Factory and logistics calendar: one toolbar row, one frame of days. Bookings use semantic tokens only:
+   deliveries info, installations success, permit collection warning, production and factory slots brand; overdue danger. */
+.toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); min-inline-size: 0; margin-block-end: var(--wd-space-3); }
+.period { display: flex; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; }
+.stepper { display: flex; align-items: center; gap: var(--wd-space-0-5); }
+.periodTitle { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); white-space: nowrap; unicode-bidi: plaintext; }
+.controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--wd-space-2); min-inline-size: 0; }
+.filter :global(.wd-field) { gap: 0; }
+.filter :global(.wd-select-button) { min-block-size: var(--wd-button-height-compact); block-size: var(--wd-button-height-compact); min-inline-size: 8rem; font-size: var(--wd-text-xs); }
+.controls :global(.wd-list-tabs) { border: 0; }
+
+.frame { min-inline-size: 0; overflow: auto; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.loading { padding: var(--wd-space-4); }
+.board { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-inline-size: 42rem; }
+.weekday { padding: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); text-align: center; }
+.day { display: flex; flex-direction: column; gap: var(--wd-space-1); min-inline-size: 0; min-block-size: 8rem; padding: var(--wd-space-1-5); border-block-end: 1px solid var(--wd-color-structural-divider); border-inline-end: 1px solid var(--wd-color-structural-divider); }
+.board[data-mode="week"] .day { min-block-size: 22rem; }
+.day:nth-child(7n) { border-inline-end: 0; }
+.day[data-off] { background: var(--wd-color-surface-subtle); }
+.day[data-drop] { background: var(--wd-color-action-primary-subtle); }
+.day[data-outside] .date:not([data-today]) { color: var(--wd-color-text-tertiary); }
+.date { align-self: flex-start; display: inline-grid; place-items: center; min-inline-size: var(--wd-space-6); block-size: var(--wd-space-6); padding-inline: var(--wd-space-1); border: 0; border-radius: var(--wd-radius-pill); background: transparent; color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); cursor: pointer; }
+.date:hover { background: var(--wd-color-surface-hover); }
+.date[data-today] { background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
+.date:disabled { cursor: default; }
+.date:disabled:hover { background: transparent; }
+
+.chip { --chip-accent: var(--wd-color-info); --chip-tint: var(--wd-color-info-subtle);
+  display: flex; flex-direction: column; align-items: flex-start; gap: var(--wd-space-0-5); min-inline-size: 0; padding: var(--wd-space-1) var(--wd-space-1-5);
+  border: 0; border-inline-start: 3px solid var(--chip-accent); border-radius: var(--wd-radius-xs); background: var(--chip-tint); color: var(--wd-color-text);
+  font: inherit; font-size: var(--wd-text-xs); line-height: 1.3; text-align: start; cursor: pointer; }
+.chip[draggable="true"] { cursor: grab; }
+.chip[data-kind="installation"] { --chip-accent: var(--wd-color-success); --chip-tint: var(--wd-color-success-subtle); }
+.chip[data-kind="permit"] { --chip-accent: var(--wd-color-warning); --chip-tint: var(--wd-color-warning-subtle); }
+.chip:is([data-kind="production"], [data-kind="factory_slot"]) { --chip-accent: var(--wd-color-action-primary); --chip-tint: var(--wd-color-action-primary-subtle); }
+.chip:is([data-overdue], [data-blocked]) { --chip-accent: var(--wd-color-danger); --chip-tint: var(--wd-color-danger-subtle); }
+.chip[data-completed] { opacity: 0.6; }
+.chip:hover { filter: brightness(0.97); }
+.chip:focus-visible, .date:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.chip strong { font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; unicode-bidi: plaintext; }
+.chip small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); overflow-wrap: anywhere; unicode-bidi: plaintext; }
+
+.details { display: grid; gap: var(--wd-space-3); }
+.badges { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.warnings { display: grid; gap: var(--wd-space-1); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-warning-subtle); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.warnings ul { margin: 0; padding-inline-start: var(--wd-space-4); }
+
+/* A phone shows the days one under another. */
+@media (max-width: 48rem) {
+  .board { grid-template-columns: minmax(0, 1fr); min-inline-size: 0; }
+  .weekday { display: none; }
+  .day, .board[data-mode="week"] .day { min-block-size: 0; border-inline-end: 0; }
+  .day[data-empty] { display: none; }
+}

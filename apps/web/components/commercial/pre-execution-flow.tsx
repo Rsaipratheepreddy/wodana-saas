@@ -1,11 +1,17 @@
+import { useT } from "@/lib/i18n/i18n-provider";
 import Link from "next/link";
 import { CircleCheck, CircleDot, ShieldCheck } from "lucide-react";
+import { useDesignSystem } from "@/design-system";
 import {
+  activeDeliveryQuote,
   agreementIsOperational,
   commercialReleaseInputsReady,
   commercialReleaseReady,
   materialApprovalsComplete,
+  materialListSignedOff,
+  paymentHasFinanceVerifiedReceipt,
   releasePaymentIsOperational,
+  requestBlocksRelease,
 } from "@/lib/commercial/release";
 import type { CommercialState } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -23,36 +29,39 @@ export function PreExecutionFlow({
   root: string;
   compact?: boolean;
 }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const data = state.data;
-  const accepted = data.quotes.find(
-    (quote) => quote.kind === "quotation" && quote.status === "accepted",
-  );
+  const accepted = activeDeliveryQuote(data);
   const requiredPayments = data.payments.filter(
-    (payment) => payment.requiredForRelease,
+    (payment) => payment.requiredForRelease && (!data.servicePath || payment.sourceQuoteId === accepted?.id),
   );
-  const verifiedPayments = requiredPayments.filter(releasePaymentIsOperational).length;
+  const verifiedPayments = requiredPayments.filter((payment) =>
+    releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment)).length;
   const agreementReady =
     agreementIsOperational(data.agreement) && data.agreement?.quoteId === accepted?.id;
   const paymentsReady =
     requiredPayments.length > 0 &&
-    requiredPayments.every(releasePaymentIsOperational);
-  const openChanges = data.requests.filter(
-    (request) => !["resolved", "declined", "withdrawn"].includes(request.status),
-  ).length;
+    requiredPayments.every((payment) =>
+      releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment));
+  const openChanges = data.requests.filter(requestBlocksRelease).length;
   const materialsReady = Boolean(
-    accepted && materialApprovalsComplete(accepted, data.materialApprovals),
+    accepted && (data.servicePath ? materialListSignedOff(data, accepted) : materialApprovalsComplete(accepted, data.materialApprovals)),
   );
   const ownerAndDealReady = Boolean(
     accepted &&
+      state.opportunityStatus === "won" &&
       data.ownerReview?.status === "approved" &&
       data.ownerReview.quoteId === accepted.id &&
       data.dealFile?.quoteId === accepted.id,
   );
   const designReady = Boolean(
     accepted &&
-      state.releaseReadiness &&
-      state.releaseReadiness.designsRequired > 0 &&
-      state.releaseReadiness.designsApproved === state.releaseReadiness.designsRequired,
+      (data.servicePath && !data.servicePath.scope.design || Boolean(
+        state.releaseReadiness &&
+        state.releaseReadiness.designsRequired > 0 &&
+        state.releaseReadiness.designsApproved === state.releaseReadiness.designsRequired,
+      )),
   );
   const releaseChecks = [
     Boolean(accepted),
@@ -78,49 +87,49 @@ export function PreExecutionFlow({
   const steps = [
     {
       href: `${root}/contracts`,
-      title: "Agreement & payments",
-      eyebrow: "Commercial baseline",
-      status: agreementReady && paymentsReady ? "Ready" : accepted ? "In progress" : "Waiting",
+      title: t("Agreement & payments"),
+      eyebrow: t("Commercial baseline"),
+      status: agreementReady && paymentsReady ? t("Ready") : accepted ? t("In progress") : t("Waiting"),
       detail: accepted
-        ? `${agreementReady ? "Agreement verified" : "Agreement pending"} · ${verifiedPayments}/${requiredPayments.length} release payments verified`
-        : "Accept a quotation to begin",
+        ? `${agreementReady ? t("Agreement verified") : t("Agreement pending")} · ${t("{verified}/{required} release payments verified", { verified: verifiedPayments, required: requiredPayments.length })}`
+        : t("Accept a quotation to begin"),
       state: agreementState,
       current: ["contracts", "payment-plan"].includes(section),
     },
     {
       href: `${root}/variations`,
-      title: "Change control",
-      eyebrow: "Change control",
-      status: openChanges ? `${openChanges} open` : "Clear",
+      title: t("Change control"),
+      eyebrow: t("Change control"),
+      status: openChanges ? t("{count} open", { count: openChanges }) : t("Clear"),
       detail: openChanges
-        ? "Resolve scope, price, and schedule impact before release"
+        ? t("Resolve scope, price, and schedule impact before release")
         : data.requests.length
-          ? `${data.requests.length} requests resolved or closed`
-          : "No unresolved client changes",
+          ? t("{count} requests resolved or closed", { count: data.requests.length })
+          : t("No unresolved client changes"),
       state: openChanges ? "attention" : "complete",
       current: section === "variations",
     },
     {
       href: `${root}/execution-release`,
-      title: "Approvals & release",
-      eyebrow: "Execution gate",
-      status: releasedReady ? "Released" : releaseState === "ready" ? "Ready to release" : `${checksDone}/7 ready`,
+      title: t("Approvals & release"),
+      eyebrow: t("Execution gate"),
+      status: releasedReady ? t("Released") : releaseState === "ready" ? t("Ready to release") : t("{done}/7 ready", { done: checksDone }),
       detail: releasedReady && data.release
-        ? `Released ${new Date(data.release.at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
-        : "Owner, materials, agreement, payments, and changes checked together",
+        ? t("Released {date}", { date: new Date(data.release.at).toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric", timeZone }) })
+        : t("Owner, materials, agreement, payments, and changes checked together"),
       state: releaseState,
       current: approvalSections.has(section),
     },
   ];
 
   return (
-    <nav className={s.preExecutionFlow} aria-label="Pre-execution readiness timeline" data-compact={compact || undefined}>
+    <nav className={s.preExecutionFlow} aria-label={t("Planning readiness timeline")} data-compact={compact || undefined}>
       <div className={s.flowIntro}>
         <div>
-          <span>Release readiness</span>
-          {!compact ? <strong>From accepted scope to execution release</strong> : null}
+          <span>{t("Release readiness")}</span>
+          {!compact ? <strong>{t("From accepted scope to execution release")}</strong> : null}
         </div>
-        <small>{checksDone} of 7 checks complete</small>
+        <small>{t("{done} of 7 checks complete", { done: checksDone })}</small>
       </div>
       <ol>
         {steps.map((step) => (

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .next/
 .next-*/
 .next.*/
@@ -37,4 +37,7 @@ infra/hostinger/data/
 # Private deployment handoffs may contain scoped vendor access links
 /output/
 /tmp/
-.claude/
+
+# Generated evidence and local exports
+/outputs/
+docs/qa-projects/delivery-*/

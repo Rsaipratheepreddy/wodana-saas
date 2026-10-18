@@ -1,0 +1,60 @@
+.section { display: flex; flex-direction: column; gap: var(--wd-space-4); min-inline-size: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.spacer { flex: 1 1 auto; }
+.muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.stack { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.groupTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
+.cell { display: flex; flex-direction: column; gap: var(--wd-space-1); min-inline-size: 0; }
+.cell small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); }
+.amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.link { color: var(--wd-color-link); text-decoration: none; display: inline-flex; align-items: center; gap: var(--wd-space-1); }
+.link:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+
+/* Version history (E5-2): who, when, where from, evidence, the client's word. */
+.history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.version { display: grid; grid-template-columns: var(--wd-space-6) minmax(0, 1fr); column-gap: var(--wd-space-3); padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-border); }
+.version:last-child { border-block-end: 0; }
+.versionNumber { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--wd-color-text-secondary); }
+.version[data-current] .versionNumber { color: var(--wd-color-text); }
+.facts { margin: 0; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: var(--wd-space-1) var(--wd-space-3); font-size: var(--wd-text-sm); }
+.facts dt { color: var(--wd-color-text-secondary); }
+.facts dd { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
+
+/* Presentations: one round per card, its options as cards the client picks from. */
+.rounds { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-3); }
+.option { display: flex; flex-direction: column; gap: var(--wd-space-2); padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); min-inline-size: 0; }
+button.option { inline-size: 100%; font: inherit; color: inherit; text-align: start; cursor: pointer; }
+button.option:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.cards > li { display: flex; flex-direction: column; gap: var(--wd-space-2); min-inline-size: 0; }
+.option[data-chosen] { border-color: var(--wd-color-success); box-shadow: inset 0 0 0 1px var(--wd-color-success); }
+.thumb { aspect-ratio: 4 / 3; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); display: grid; place-items: center; overflow: hidden; color: var(--wd-color-text-secondary); }
+.thumb img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.optionTitle { font-weight: 500; overflow-wrap: anywhere; }
+.optionRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--wd-space-2); align-items: end; padding-block-end: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-border); }
+
+/* The guided site visit: one step at a time, made for a phone on site. */
+.flow { display: flex; flex-direction: column; gap: var(--wd-space-4); }
+.steps { list-style: none; margin: 0; padding: 0; padding-block-end: var(--wd-space-3); display: flex; gap: var(--wd-space-2); overflow-x: auto; scrollbar-width: none; }
+.steps button { display: inline-flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text-secondary); font: inherit; font-size: var(--wd-text-sm); white-space: nowrap; cursor: pointer; }
+.steps button[aria-current="step"] { border-color: var(--wd-color-action-primary); color: var(--wd-color-text); background: var(--wd-color-action-primary-subtle); }
+.steps button[data-done] { color: var(--wd-color-text); }
+.stepIcon { display: inline-grid; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-round); background: var(--wd-color-surface-muted); font-variant-numeric: tabular-nums; }
+.steps button[data-done] .stepIcon { background: var(--wd-color-success); color: var(--wd-color-text-inverse); }
+.checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.checks li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-border); min-block-size: var(--wd-button-height-large); }
+.checks li:last-child { border-block-end: 0; }
+.checkName { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; overflow-wrap: anywhere; }
+.checks li[data-ok] .checkName svg { color: var(--wd-color-success); }
+.footer { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+
+/* Design comments (both ways): pins on the picture, threads beside it. */
+.canvas { position: relative; border-radius: var(--wd-radius-md); overflow: hidden; background: var(--wd-color-surface-muted); }
+.canvas img { display: block; inline-size: 100%; block-size: auto; }
+.canvasButton { display: block; inline-size: 100%; padding: 0; border: 0; background: none; cursor: crosshair; }
+.canvasButton:disabled { cursor: default; }
+.canvasButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.pin { position: absolute; transform: translate(-50%, -50%); inline-size: var(--wd-space-6); block-size: var(--wd-space-6); border-radius: var(--wd-radius-round); border: 2px solid var(--wd-color-surface); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); font-size: var(--wd-text-xs); font-weight: 600; display: grid; place-items: center; cursor: pointer; }
+.pin[data-client] { background: var(--wd-color-info); }
+.pin[data-resolved] { opacity: 0.5; }

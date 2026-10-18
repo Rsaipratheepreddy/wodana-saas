@@ -1,0 +1,76 @@
+{
+  "description": "A sample workspace profile for ops-cli.integration.spec.ts: every section, generic values.",
+  "enquiryTypes": { "archive": ["early_ideas", "no_such_type"] },
+  "vehicles": [
+    { "name": "Delivery van", "plate": "VAN 100", "type": "Van" },
+    { "name": "Pick-up truck", "plate": "PU 200" }
+  ],
+  "routes": [
+    {
+      "default": true,
+      "addStages": [
+        { "name": "Site survey", "key": "survey", "ownerRole": "site_supervisor", "after": "Kickoff", "checks": [{ "kind": "confirm", "label": "Site measured" }] },
+        { "name": "Permit collection", "before": "Delivery and installation", "checks": ["permit_collected"] }
+      ],
+      "addChecks": [
+        { "stage": "Technical drawings", "checks": ["drawings_uploaded", "factory_slot_booked"] }
+      ]
+    }
+  ],
+  "factory": {
+    "productionSteps": ["Scheduled", { "kind": "in_production", "label": "On the bench" }, "Ready"],
+    "clientPaymentReminderDays": 5,
+    "permits": { "requiredForDeliveriesAndInstallations": true, "furnitureDeliveriesNeedOne": true, "missingAlertWorkingDays": 4, "expiryReminderDays": 10 }
+  },
+  "quotations": { "validityDays": 14, "qsReview": true, "qsPrices": "rules", "qsItemTypes": ["assembly"], "qsWorkPackages": ["Joinery", "Missing package"] },
+  "firstResponse": { "minutes": 90, "workingCalendar": { "days": ["mon", "tue", "wed", "thu"], "start": "08:00", "end": "17:00" } },
+  "financeRequests": {
+    "inbox": "finance@example.test",
+    "autoStageInvoiceRequests": true,
+    "paymentMethods": [
+      { "name": "Bank transfer", "refundDays": 10, "guidance": "Refund to the paying account.", "needsBankDetails": true },
+      { "name": "Card", "refundDays": null }
+    ]
+  },
+  "approvals": { "payableRequest": { "firstApproverRole": "finance_team", "secondApproverRole": "Operations", "thresholdAmount": "50000" } },
+  "rolePermissions": [
+    { "roles": ["finance_team"], "permissions": ["reports.management.view"] },
+    { "roles": ["administrator"], "permissions": ["reports.management.view"] }
+  ],
+  "design": { "renderInternalDays": 20, "renderClientDays": 30, "revisionsIncluded": 3,
+    "steps": { "kickoffDays": 4, "siteMeasureDays": 3, "conceptOptionsMax": 2 }, "team": { "junior_designer": null, "material_coordinator": "material_coordinator" },
+    "projectRoles": [{ "key": "designer", "label": "Lead designer" }, { "key": "material_coordinator", "label": "Material Coordinator" }] },
+  "orderPaths": [
+    { "enquiryType": "furniture", "path": "take_home_now", "takeFrom": "Showroom", "leadDays": { "min": 0, "max": 1 } },
+    { "enquiryType": "furniture", "path": "bespoke", "boqRequired": true }
+  ],
+  "clientUpdates": { "mode": "portal", "frequency": "weekly" },
+  "projects": { "requireApproval": true, "requirePayment": true },
+  "catalogCategories": [
+    {
+      "catalog": "Main catalogue",
+      "merge": [{ "from": "TABLE", "into": "Dining" }],
+      "deleteEmpty": ["Old stuff", "Never there"],
+      "deleteEmptyDuplicates": true,
+      "rename": [{ "from": "SOFA", "to": "Sofas" }],
+      "parent": [{ "category": "Sofas", "parent": "Living" }, { "category": "Dining", "parent": "Living" }]
+    },
+    { "catalog": "No such catalogue", "deleteEmptyDuplicates": true }
+  ],
+  "finishes": {
+    "categories": [{ "key": "tiles", "label": "Tiles" }, { "key": "appliances", "label": "Appliances", "clientSignature": true }],
+    "specificationGate": true, "finishesToQsDays": 4, "materialEditors": ["lead_designer", "sales_admin"],
+    "priceBands": [{ "label": "Budget", "maxAmount": "50" }, { "label": "Premium", "minAmount": "200" }]
+  },
+  "inbox": {
+    "closingMessages": { "received": null, "form": "Hi {{name}}, please fill in {{form_link}} and we will call you." },
+    "closingFormUrl": "https://forms.example.test/enquiry",
+    "closingAfterHours": 4
+  },
+  "sales": { "timelineCheckTeams": ["PRODUCTION", "NO_SUCH_TEAM"] },
+  "enquiryRequirements": [
+    { "field": "targetCompletion", "requiredAt": "book_intro" },
+    { "field": "email", "requiredAt": "convert", "enquiryTypes": ["furniture"] },
+    { "field": "email", "requiredAt": "book_intro" }
+  ]
+}

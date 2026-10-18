@@ -6,6 +6,7 @@ import { CrmEventsService } from "../shared/crm-events.service";
 import { decodeCursor, encodeCursor } from "../shared/crm-types";
 import { CompleteActivityDto, CreateActivityDto, CreateAppointmentDto, ListActivitiesQueryDto, UpdateActivityDto, UpdateAppointmentDto } from "./dto/activities.dto";
 import { CrmSlaLifecycleService } from "../leads/crm-sla-lifecycle.service";
+import { confirmAppointment } from "../conversations/inbox/client-followups";
 
 @Injectable()
 export class CrmActivitiesService {
@@ -93,7 +94,7 @@ export class CrmActivitiesService {
       if (!input.partyId && !input.leadId && !input.opportunityId) throw new UnprocessableEntityException("Activity requires a party, lead, or opportunity");
       this.validateInteractionDirection(input.type, input.interactionDirection);
       await this.assertTargets(client, workspaceId, input);
-      if (input.appointment && input.type !== "meeting") throw new UnprocessableEntityException("Appointments require a meeting activity");
+      if ((input.appointment || input.durationMinutes !== undefined) && !["call", "meeting", "task"].includes(input.type)) throw new UnprocessableEntityException("Time ranges require a call, meeting, or task");
       const dueAt = this.date(input.appointment?.startsAt ?? input.dueAt, "dueAt");
       this.validateNextAction(input.type, Boolean(input.isNextAction), dueAt);
       if (input.isNextAction) await this.clearNextAction(client, workspaceId, input.leadId, input.opportunityId);
@@ -115,7 +116,9 @@ export class CrmActivitiesService {
         ],
       );
       const response = result.rows[0] as Record<string, unknown>;
-      if (input.appointment) response.appointment = await this.saveAppointment(client, workspaceId, String(response.id), input.appointment);
+      if (input.durationMinutes !== undefined && !dueAt) throw new UnprocessableEntityException("A duration requires a start time");
+      const appointment = input.appointment ?? (input.durationMinutes !== undefined ? { startsAt: new Date(String(dueAt)).toISOString(), endsAt: new Date(new Date(String(dueAt)).getTime() + input.durationMinutes * 60000).toISOString(), timezone: "UTC" } : undefined);
+      if (appointment) response.appointment = await this.saveAppointment(client, workspaceId, String(response.id), appointment);
       if (input.isNextAction) await this.syncParentNextAction(client, workspaceId, response);
       await this.touchLead(client, workspaceId, String(response.id));
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.activity.created.v1", entityType: "crm_activity", entityId: String(response.id), after: response });
@@ -137,10 +140,12 @@ export class CrmActivitiesService {
       if (input.ownerMembershipId) await this.requireMembership(client, workspaceId, input.ownerMembershipId);
       const dueAt = input.dueAt !== undefined ? this.date(input.dueAt ?? undefined, "dueAt") : before.due_at;
       this.validateNextAction(String(before.type), input.isNextAction ?? Boolean(before.is_next_action), dueAt);
-      if (input.dueAt !== undefined) {
+      if (input.dueAt !== undefined || input.durationMinutes !== undefined) {
         const scheduled = await client.query(`SELECT id FROM crm_appointments WHERE workspace_id = $1 AND activity_id = $2 FOR UPDATE`, [workspaceId, activityId]);
-        if (scheduled.rowCount && !dueAt) throw new UnprocessableEntityException("A scheduled meeting requires a start time");
-        if (scheduled.rowCount) await client.query(`UPDATE crm_appointments SET ends_at = ends_at + ($1::timestamptz - starts_at), starts_at = $1::timestamptz, version = version + 1 WHERE workspace_id = $2 AND activity_id = $3 AND starts_at <> $1::timestamptz`, [dueAt, workspaceId, activityId]);
+        if ((scheduled.rowCount || input.durationMinutes !== undefined) && !dueAt) throw new UnprocessableEntityException("A scheduled follow-up requires a start time");
+        if (input.durationMinutes !== undefined && !["call", "meeting", "task"].includes(String(before.type))) throw new UnprocessableEntityException("Time ranges require a call, meeting, or task");
+        if (scheduled.rowCount) await client.query(`UPDATE crm_appointments SET ends_at = CASE WHEN $4::int IS NULL THEN ends_at + ($1::timestamptz - starts_at) ELSE $1::timestamptz + make_interval(mins => $4::int) END, starts_at = $1::timestamptz, version = version + 1 WHERE workspace_id = $2 AND activity_id = $3`, [dueAt, workspaceId, activityId, input.durationMinutes ?? null]);
+        else if (input.durationMinutes !== undefined) await this.saveAppointment(client, workspaceId, activityId, { startsAt: new Date(String(dueAt)).toISOString(), endsAt: new Date(new Date(String(dueAt)).getTime() + input.durationMinutes * 60000).toISOString(), timezone: "UTC" });
       }
       if (input.isNextAction ?? before.is_next_action) await this.assertOpenTargets(client, workspaceId, before.lead_id, before.opportunity_id);
       if (input.isNextAction) {
@@ -170,7 +175,11 @@ export class CrmActivitiesService {
         ],
       );
       if (!result.rowCount) throw new ConflictException("Activity changed; reload and try again");
-      const response = this.mapActivity(result.rows[0] as Record<string, unknown>);
+      const response: Record<string, unknown> = this.mapActivity(result.rows[0] as Record<string, unknown>);
+      if (input.dueAt !== undefined || input.durationMinutes !== undefined) {
+        const appointment = await client.query(`SELECT id, starts_at AS "startsAt", ends_at AS "endsAt", timezone, location, version FROM crm_appointments WHERE workspace_id = $1 AND activity_id = $2`, [workspaceId, activityId]);
+        response.appointment = appointment.rows[0] ?? null;
+      }
       if (before.is_next_action || response.isNextAction) await this.syncParentNextAction(client, workspaceId, response);
       await this.touchLead(client, workspaceId, activityId);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "crm.activity.updated.v1", entityType: "crm_activity", entityId: activityId, before: this.mapActivity(before), after: response });
@@ -218,7 +227,7 @@ export class CrmActivitiesService {
   createAppointment(actor: RequestActor, workspaceId: string, activityId: string, input: CreateAppointmentDto) {
     return this.access.withPermission(actor, workspaceId, "crm.activities.manage", async (client, actorUser) => {
       const activity = await this.lockActivity(client, workspaceId, activityId);
-      if (activity.type !== "meeting") throw new UnprocessableEntityException("Appointments require a meeting activity");
+      if (!["call", "meeting", "task"].includes(String(activity.type))) throw new UnprocessableEntityException("Time ranges require a call, meeting, or task");
       if (activity.status !== "pending") throw new ConflictException("Only pending meetings can be scheduled");
       const exists = await client.query(`SELECT id FROM crm_appointments WHERE workspace_id = $1 AND activity_id = $2`, [workspaceId, activityId]);
       if (exists.rowCount) throw new ConflictException("This meeting is already scheduled. Edit its appointment instead.");
@@ -260,6 +269,8 @@ export class CrmActivitiesService {
       if (version !== undefined) {
         const updated = await client.query(`UPDATE crm_appointments SET starts_at = $1, ends_at = $2, timezone = $3, location = $4, version = version + 1 WHERE workspace_id = $5 AND activity_id = $6 AND version = $7 RETURNING id, starts_at AS "startsAt", ends_at AS "endsAt", timezone, location, version`, [startsAt, endsAt, input.timezone, input.location ?? {}, workspaceId, activityId, version]);
         if (!updated.rowCount) throw new ConflictException("Appointment changed; reload before rescheduling");
+        // A meeting moved: the client gets the new time.
+        await confirmAppointment(client, workspaceId, activityId);
         return updated.rows[0] as Record<string, unknown>;
       }
       const result = await client.query(
@@ -281,6 +292,8 @@ export class CrmActivitiesService {
           JSON.stringify(input.attendeeMembershipIds ?? []),
         ],
       );
+      // A meeting with a client: they get its confirmation on WhatsApp (when the firm has it on).
+      await confirmAppointment(client, workspaceId, activityId);
       return result.rows[0] as Record<string, unknown>;
   }
 

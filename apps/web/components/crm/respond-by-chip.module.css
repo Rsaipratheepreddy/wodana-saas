@@ -1,0 +1,16 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wd-space-1);
+  max-inline-size: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wd-color-text-secondary);
+  font-size: var(--wd-text-2xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.chip > span { overflow: hidden; text-overflow: ellipsis; }
+.chip[data-state="warning"] { color: var(--wd-color-warning); }
+.chip[data-state="breached"] { color: var(--wd-color-danger); font-weight: var(--wd-weight-medium); }

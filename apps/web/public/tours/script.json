@@ -1,0 +1,813 @@
+{
+  "voice": {
+    "name": "Brady J",
+    "id": "3svOJAOhuPHXwQC2H5eq",
+    "model": "eleven_multilingual_v2"
+  },
+  "characters": {
+    "en": 11146
+  },
+  "note": "Record `voice` (name-free). `text` is the caption: {name}, {client} and {project} are filled from the screen, so recordings never say them. The player plays `audio` when the file exists and otherwise paces the caption on screen.",
+  "lines": [
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 1,
+      "stepId": "greeting",
+      "language": "en",
+      "text": "Hi {name}! Let's follow one job from enquiry to handover.",
+      "voice": "Hi there! I'm Woddy. Let's follow one job from the first enquiry to the handover, and see who does what along the way. I'll do the clicking, and nothing gets saved.",
+      "audio": "public/tours/audio/en/full-journey/greeting.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 2,
+      "stepId": "enquiry",
+      "language": "en",
+      "text": "A new enquiry lands in one list.",
+      "voice": "It starts with a raw enquiry: a call, a WhatsApp message or a form on your website. Sales sees every one of them in this list, with where it came from and who is following up.",
+      "audio": "public/tours/audio/en/full-journey/enquiry.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 3,
+      "stepId": "qualify",
+      "language": "en",
+      "text": "Qualify it: a stage, an owner and a follow-up.",
+      "voice": "Sales qualifies it. The stage, the owner and the next follow-up sit at the top, so the job is assigned to someone and nobody forgets to call back.",
+      "audio": "public/tours/audio/en/full-journey/qualify.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 4,
+      "stepId": "convert",
+      "language": "en",
+      "text": "Convert it into an opportunity.",
+      "voice": "When the need is clear, Sales converts the enquiry into an opportunity, with a value and a next step, and planning can start. This is a demo, so I'll close it without saving.",
+      "audio": "public/tours/audio/en/full-journey/convert.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 5,
+      "stepId": "planning",
+      "language": "en",
+      "text": "Planning starts with the client's requirements.",
+      "voice": "Every job now has a planning case, in the order the work happens. Requirements come first: every room and every wish in the client's own words, so the designer and the estimator start from the same brief.",
+      "audio": "public/tours/audio/en/full-journey/planning.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 6,
+      "stepId": "site-visit",
+      "language": "en",
+      "text": "The site visit: measurements, photos and plans.",
+      "voice": "The designer visits the site. Measurements, photos and plans are kept here, so nobody prices a wall they haven't measured.",
+      "audio": "public/tours/audio/en/full-journey/site-visit.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 7,
+      "stepId": "moodboard",
+      "language": "en",
+      "text": "The moodboard sets the look.",
+      "voice": "The moodboard sets the look: the materials, colours and references the client likes, agreed before any drawing starts.",
+      "audio": "public/tours/audio/en/full-journey/moodboard.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 8,
+      "stepId": "design",
+      "language": "en",
+      "text": "Designs: an internal review, then the client's approval.",
+      "voice": "Designs get an internal review first, then go to the client for approval. Anything waiting for a review sits in Approvals, so nothing is left unseen.",
+      "audio": "public/tours/audio/en/full-journey/design.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 9,
+      "stepId": "quotes",
+      "language": "en",
+      "text": "Every quote for the job, in one list.",
+      "voice": "Now the job is priced. Every quote for it, the design fee, the fit-out and any later variation, lives in one list.",
+      "audio": "public/tours/audio/en/full-journey/quotes.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 10,
+      "stepId": "quote-lines",
+      "language": "en",
+      "text": "Lines from the catalog, room by room.",
+      "voice": "Lines come from your catalog, room by room, at the prices your firm has set, so one quote matches the next.",
+      "audio": "public/tours/audio/en/full-journey/quote-lines.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 11,
+      "stepId": "terms",
+      "language": "en",
+      "text": "What's included, what isn't, and how long it holds.",
+      "voice": "Terms say what's included, what isn't and how long the price holds.",
+      "audio": "public/tours/audio/en/full-journey/terms.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 12,
+      "stepId": "payments",
+      "language": "en",
+      "text": "The total, split into payment milestones.",
+      "voice": "Payments split the total into milestones, like a deposit, a payment before carpentry and one at handover.",
+      "audio": "public/tours/audio/en/full-journey/payments.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 13,
+      "stepId": "send-review",
+      "language": "en",
+      "text": "Send for review: the quote locks while it's checked.",
+      "voice": "When the quote is ready, Sales sends it for review. From that moment it's locked, so no price can change while it's being checked.",
+      "audio": "public/tours/audio/en/full-journey/send-review.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 14,
+      "stepId": "qs-review",
+      "language": "en",
+      "text": "A quantity surveyor or a manager reviews this exact revision.",
+      "voice": "This is where the job's approvals wait, and the reviewer also gets a notification and an email. Depending on your workflow, a quantity surveyor checks the cost estimate against the price, or a manager approves it, for this exact revision. If anything changes afterwards, it needs a fresh review.",
+      "audio": "public/tours/audio/en/full-journey/qs-review.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 15,
+      "stepId": "owner-check",
+      "language": "en",
+      "text": "Above the discount limit, a manager approves. Returns come with a note.",
+      "voice": "Some quotes need more. If the discount goes above the limit your firm sets, only a manager or an owner can approve it. And a reviewer who isn't happy returns the quote with a note: it goes back to draft for the changes, then comes back for a fresh review.",
+      "audio": "public/tours/audio/en/full-journey/owner-check.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 16,
+      "stepId": "send-client",
+      "language": "en",
+      "text": "Approved, it goes to the client's portal.",
+      "voice": "Once it's approved, Send to client puts this exact proposal in the client's portal, with an email. Every requirement has to be decided before it can go.",
+      "audio": "public/tours/audio/en/full-journey/send-client.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 17,
+      "stepId": "client-home",
+      "language": "en",
+      "text": "The client's own portal, in your brand.",
+      "voice": "Now we're the client. This is their own portal, in your brand and on any phone: where the job stands, what's needed from them, and the latest news from the team.",
+      "audio": "public/tours/audio/en/full-journey/client-home.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 18,
+      "stepId": "client-decisions",
+      "language": "en",
+      "text": "Everything waiting for the client's decision.",
+      "voice": "Decisions holds everything the client is asked to approve, each at the exact revision the team sent: quotations, designs and the material list.",
+      "audio": "public/tours/audio/en/full-journey/client-decisions.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 19,
+      "stepId": "client-quote",
+      "language": "en",
+      "text": "Accept with a one-time code. Materials are signed off item by item.",
+      "voice": "The client reads the quotation exactly as it was issued, picks any options and accepts it with a one-time code, or asks for changes. The material list is signed off the same way, item by item, before anything is ordered.",
+      "audio": "public/tours/audio/en/full-journey/client-quote.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 20,
+      "stepId": "deal",
+      "language": "en",
+      "text": "Finance verifies the payment, then an owner approves.",
+      "voice": "Back in the office. When the client accepts, Sales submits the deal with the signed agreement and the payment proof. Finance verifies the payment, then an owner approves, and nobody can approve their own submission.",
+      "audio": "public/tours/audio/en/full-journey/deal.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 21,
+      "stepId": "release",
+      "language": "en",
+      "text": "Released: the accepted quote becomes the project's baseline.",
+      "voice": "With the owner's approval, the project is released. The accepted quote becomes its baseline: the scope, the value and the payment plan.",
+      "audio": "public/tours/audio/en/full-journey/release.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 22,
+      "stepId": "plan",
+      "language": "en",
+      "text": "The plan: tasks, owners and dates.",
+      "voice": "The manager plans the work: tasks with owners and dates for every stage, so the office and the site see the same list.",
+      "audio": "public/tours/audio/en/full-journey/plan.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 23,
+      "stepId": "to-order",
+      "language": "en",
+      "text": "What the projects still need to order.",
+      "voice": "The buyer sees every material the projects still need, how much is left to order and when the site needs it.",
+      "audio": "public/tours/audio/en/full-journey/to-order.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 24,
+      "stepId": "orders",
+      "language": "en",
+      "text": "Orders to suppliers, approved when they're big.",
+      "voice": "Purchase orders go to suppliers, with an approval for the bigger amounts, and each one shows whether the supplier has confirmed it.",
+      "audio": "public/tours/audio/en/full-journey/orders.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 25,
+      "stepId": "receipt",
+      "language": "en",
+      "text": "Deliveries checked against the order.",
+      "voice": "Deliveries are received against their order, so short or damaged items are caught at the door, not on site.",
+      "audio": "public/tours/audio/en/full-journey/receipt.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 26,
+      "stepId": "factory",
+      "language": "en",
+      "text": "The factory: what to make, and when.",
+      "voice": "Joinery is made in your own factory: what's left to make, the work orders, the schedule and the batches on the shop floor.",
+      "audio": "public/tours/audio/en/full-journey/factory.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 27,
+      "stepId": "site",
+      "language": "en",
+      "text": "Daily reports, photos and snags from site.",
+      "voice": "On site, the supervisor posts daily reports and photos and logs the snags to fix, so a client's question is answered with a picture.",
+      "audio": "public/tours/audio/en/full-journey/site.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 28,
+      "stepId": "handover",
+      "language": "en",
+      "text": "Handover: final checks, documents and sign-off.",
+      "voice": "Handover gathers the final checks, the documents and the client's acceptance, so the keys go over with everything in order.",
+      "audio": "public/tours/audio/en/full-journey/handover.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 29,
+      "stepId": "warranty",
+      "language": "en",
+      "text": "Warranty claims, tracked until they're fixed.",
+      "voice": "The warranty starts when the client accepts the handover. Their claims come in through the portal and are tracked here until they're fixed.",
+      "audio": "public/tours/audio/en/full-journey/warranty.mp3"
+    },
+    {
+      "tour": "full-journey",
+      "tourTitle": "From enquiry to handover",
+      "step": 30,
+      "stepId": "recap",
+      "language": "en",
+      "text": "From the first enquiry to the handover, one connected flow.",
+      "voice": "That's the whole journey: an enquiry, a plan, an approved quote, the client's yes, and a project delivered and handed over, with the right person at every step.",
+      "audio": "public/tours/audio/en/full-journey/recap.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 1,
+      "stepId": "intro",
+      "language": "en",
+      "text": "Hi {name}! In about two minutes I'll show you how a working day starts in Wodana. Sit back: I'll do the clicking, and nothing gets changed.",
+      "voice": "Hi there! In about two minutes I'll show you how a working day starts in Wodana. Sit back: I'll do the clicking, and nothing gets changed.",
+      "audio": "public/tours/audio/en/home/intro.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 2,
+      "stepId": "attention",
+      "language": "en",
+      "text": "Needs attention is your list for today: follow-ups that are due and clients waiting for a reply. Work from the top, and nobody is left waiting for a call back.",
+      "voice": "Needs attention is your list for today: follow-ups that are due and clients waiting for a reply. Work from the top, and nobody is left waiting for a call back.",
+      "audio": "public/tours/audio/en/home/attention.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 3,
+      "stepId": "sales",
+      "language": "en",
+      "text": "Every new client starts in Sales. Calls, WhatsApp messages and website forms all land in one list, so nothing slips through.",
+      "voice": "Every new client starts in Sales. Calls, WhatsApp messages and website forms all land in one list, so nothing slips through.",
+      "audio": "public/tours/audio/en/home/sales.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 4,
+      "stepId": "projects",
+      "language": "en",
+      "text": "Once a client signs, the job moves to Projects, where the team plans the work and keeps an eye on every payment.",
+      "voice": "Once a client signs, the job moves to Projects, where the team plans the work and keeps an eye on every payment.",
+      "audio": "public/tours/audio/en/home/projects.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 5,
+      "stepId": "ask-woddy",
+      "language": "en",
+      "text": "Whenever you're unsure, ask me here. I can explain the screen you're on, or walk you through a whole flow like this one.",
+      "voice": "Whenever you're unsure, ask me here. I can explain the screen you're on, or walk you through a whole flow like this one.",
+      "audio": "public/tours/audio/en/home/ask-woddy.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 6,
+      "stepId": "edit-home",
+      "language": "en",
+      "text": "And Home is yours to shape. Edit Home lets each person choose the widgets they care about, so an owner and a site supervisor each see their own day.",
+      "voice": "And Home is yours to shape. Edit Home lets each person choose the widgets they care about, so an owner and a site supervisor each see their own day.",
+      "audio": "public/tours/audio/en/home/edit-home.mp3"
+    },
+    {
+      "tour": "home",
+      "tourTitle": "Home at a glance",
+      "step": 7,
+      "stepId": "recap",
+      "language": "en",
+      "text": "So in short: Home shows what needs you today, the menu follows the work from enquiry to handover, and I'm always one click away. Next, let's follow a real enquiry.",
+      "voice": "So in short: Home shows what needs you today, the menu follows the work from enquiry to handover, and I'm always one click away. Next, let's follow a real enquiry.",
+      "audio": "public/tours/audio/en/home/recap.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 1,
+      "stepId": "intro",
+      "language": "en",
+      "text": "Let's follow one client from the very first call. Say {client} gets in touch about their home: in about two minutes you'll see how that call becomes a real sales opportunity.",
+      "voice": "Let's follow one client from the very first call. Say a client gets in touch about their villa: in about two minutes you'll see how that call becomes a real sales opportunity.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/intro.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 2,
+      "stepId": "enquiries",
+      "language": "en",
+      "text": "Every call, WhatsApp message and website form lands here in Enquiries, so the whole team works from one list instead of scattered notes.",
+      "voice": "Every call, WhatsApp message and website form lands here in Enquiries, so the whole team works from one list instead of scattered notes.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/enquiries.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 3,
+      "stepId": "client",
+      "language": "en",
+      "text": "Here's {client}. At a glance you can see where they found you, what they need and who is following up.",
+      "voice": "Here's our client. At a glance you can see where they found you, what they need and who is following up.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/client.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 4,
+      "stepId": "open",
+      "language": "en",
+      "text": "Let's open the enquiry. Everything about the job lives in one place, so nobody has to ask the client the same question twice.",
+      "voice": "Let's open the enquiry. Everything about the job lives in one place, so nobody has to ask the client the same question twice.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/open.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 5,
+      "stepId": "details",
+      "language": "en",
+      "text": "The stage, the owner and the next follow-up sit right at the top. If a follow-up is missing, that's the first thing to fix.",
+      "voice": "The stage, the owner and the next follow-up sit right at the top. If a follow-up is missing, that's the first thing to fix.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/details.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 6,
+      "stepId": "next-step",
+      "language": "en",
+      "text": "This bar always shows the next move. Once the requirements are clear, the enquiry is ready to become an opportunity.",
+      "voice": "This bar always shows the next move. Once the requirements are clear, the enquiry is ready to become an opportunity.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/next-step.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 7,
+      "stepId": "convert",
+      "language": "en",
+      "text": "Converting hands {client} to the sales pipeline. Wodana asks only for what it needs: a name for the job, the sales owner, the next follow-up and an estimated value.",
+      "voice": "Converting hands the client to the sales pipeline. Wodana asks only for what it needs: a name for the job, the sales owner, the next follow-up and an estimated value.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/convert.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 8,
+      "stepId": "convert-fields",
+      "language": "en",
+      "text": "The owner and the follow-up date matter most: they make sure somebody calls back on time. This is a demo, so I'll close it without saving.",
+      "voice": "The owner and the follow-up date matter most: they make sure somebody calls back on time. This is a demo, so I'll close it without saving.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/convert-fields.mp3"
+    },
+    {
+      "tour": "enquiry-to-opportunity",
+      "tourTitle": "From enquiry to opportunity",
+      "step": 9,
+      "stepId": "recap",
+      "language": "en",
+      "text": "So in short: every enquiry lands in one list, the details stay with the enquiry, and converting gives it an owner and a next step. Next, let's see how the quote comes together.",
+      "voice": "So in short: every enquiry lands in one list, the details stay with the enquiry, and converting gives it an owner and a next step. Next, let's see how the quote comes together.",
+      "audio": "public/tours/audio/en/enquiry-to-opportunity/recap.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 1,
+      "stepId": "intro",
+      "language": "en",
+      "text": "Once a client is serious, the job moves into Planning. In about three minutes I'll take {project} from the brief to a proposal the client can sign.",
+      "voice": "Once a client is serious, the job moves into Planning. In about three minutes I'll take one villa from the brief to a proposal the client can sign.",
+      "audio": "public/tours/audio/en/quote-to-proposal/intro.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 2,
+      "stepId": "open-case",
+      "language": "en",
+      "text": "Let's open {project}. Each case keeps the brief, the site, the designs and the quotes together, in the order the work happens.",
+      "voice": "Let's open the case. It keeps the brief, the site, the designs and the quotes together, in the order the work happens.",
+      "audio": "public/tours/audio/en/quote-to-proposal/open-case.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 3,
+      "stepId": "requirements",
+      "language": "en",
+      "text": "Requirements is the brief: every room and every wish in the client's own words, so the designer and the estimator start from the same page.",
+      "voice": "Requirements is the brief: every room and every wish in the client's own words, so the designer and the estimator start from the same page.",
+      "audio": "public/tours/audio/en/quote-to-proposal/requirements.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 4,
+      "stepId": "site",
+      "language": "en",
+      "text": "Site holds the measurements and photos from the visit, so nobody prices a wardrobe for a wall they haven't measured.",
+      "voice": "Site holds the measurements and photos from the visit, so nobody prices a wardrobe for a wall they haven't measured.",
+      "audio": "public/tours/audio/en/quote-to-proposal/site.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 5,
+      "stepId": "design",
+      "language": "en",
+      "text": "Design keeps the layouts and 3D views, with the client's approval on each one, so there's no debate later about what was agreed.",
+      "voice": "Design keeps the layouts and 3D views, with the client's approval on each one, so there's no debate later about what was agreed.",
+      "audio": "public/tours/audio/en/quote-to-proposal/design.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 6,
+      "stepId": "quotes",
+      "language": "en",
+      "text": "And Quotes is where it all turns into a price. Let's open the quote.",
+      "voice": "And Quotes is where it all turns into a price. Let's open the quote.",
+      "audio": "public/tours/audio/en/quote-to-proposal/quotes.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 7,
+      "stepId": "items",
+      "language": "en",
+      "text": "Every line comes from your catalog, grouped by room, so prices stay consistent from one quote to the next.",
+      "voice": "Every line comes from your catalog, grouped by room, so prices stay consistent from one quote to the next.",
+      "audio": "public/tours/audio/en/quote-to-proposal/items.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 8,
+      "stepId": "new-line",
+      "language": "en",
+      "text": "Adding a line is quick: start typing, and Wodana suggests the matching catalog item with its price. I'm only showing you, so this line won't be kept.",
+      "voice": "Adding a line is quick: start typing, and Wodana suggests the matching catalog item with its price. I'm only showing you, so this line won't be kept.",
+      "audio": "public/tours/audio/en/quote-to-proposal/new-line.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 9,
+      "stepId": "terms",
+      "language": "en",
+      "text": "Terms holds what's included, what isn't, and how long the price is valid, so the proposal answers questions before they're asked.",
+      "voice": "Terms holds what's included, what isn't, and how long the price is valid, so the proposal answers questions before they're asked.",
+      "audio": "public/tours/audio/en/quote-to-proposal/terms.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 10,
+      "stepId": "payments",
+      "language": "en",
+      "text": "Payments splits the total into milestones, like a deposit, a payment before carpentry and one at handover, so nobody has to chase the client for money later.",
+      "voice": "Payments splits the total into milestones, like a deposit, a payment before carpentry and one at handover, so nobody has to chase the client for money later.",
+      "audio": "public/tours/audio/en/quote-to-proposal/payments.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 11,
+      "stepId": "document",
+      "language": "en",
+      "text": "Document is the proposal exactly as the client will see it, with your branding, the rooms and the payment plan.",
+      "voice": "Document is the proposal exactly as the client will see it, with your branding, the rooms and the payment plan.",
+      "audio": "public/tours/audio/en/quote-to-proposal/document.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 12,
+      "stepId": "send",
+      "language": "en",
+      "text": "When it's ready, Send for review passes it to a manager to check before it goes to the client. I'll leave that button for you.",
+      "voice": "When it's ready, Send for review passes it to a manager to check before it goes to the client. I'll leave that button for you.",
+      "audio": "public/tours/audio/en/quote-to-proposal/send.mp3"
+    },
+    {
+      "tour": "quote-to-proposal",
+      "tourTitle": "From brief to proposal",
+      "step": 13,
+      "stepId": "recap",
+      "language": "en",
+      "text": "So in short: the brief, the site and the designs feed one quote, and the quote becomes a branded proposal with a clear payment plan. Next, let's see what happens when the client signs.",
+      "voice": "So in short: the brief, the site and the designs feed one quote, and the quote becomes a branded proposal with a clear payment plan. Next, let's see what happens when the client signs.",
+      "audio": "public/tours/audio/en/quote-to-proposal/recap.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 1,
+      "stepId": "intro",
+      "language": "en",
+      "text": "When the client signs, the quote becomes a project. In about two minutes I'll show you how {project} is run, from the first stage to the handover.",
+      "voice": "When the client signs, the quote becomes a project. In about two minutes I'll show you how a project is run, from the first stage to the handover.",
+      "audio": "public/tours/audio/en/project/intro.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 2,
+      "stepId": "open",
+      "language": "en",
+      "text": "Let's open {project}. The stage, the progress, the team and the agreed value sit right at the top.",
+      "voice": "Let's open the project. The stage, the progress, the team and the agreed value sit right at the top.",
+      "audio": "public/tours/audio/en/project/open.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 3,
+      "stepId": "stages",
+      "language": "en",
+      "text": "The overview walks through the stages, from design to handover. Each stage has a short checklist, so the team always knows what finishes it.",
+      "voice": "The overview walks through the stages, from design to handover. Each stage has a short checklist, so the team always knows what finishes it.",
+      "audio": "public/tours/audio/en/project/stages.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 4,
+      "stepId": "plan",
+      "language": "en",
+      "text": "Plan is the task board. Work, site visits and snags are given to people with dates, so the site and the office see the same list.",
+      "voice": "Plan is the task board. Work, site visits and snags are given to people with dates, so the site and the office see the same list.",
+      "audio": "public/tours/audio/en/project/plan.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 5,
+      "stepId": "money",
+      "language": "en",
+      "text": "Money compares what the client has paid with what the job has spent. If spending runs ahead of payments, you'll know before the project starts losing money.",
+      "voice": "Money compares what the client has paid with what the job has spent. If spending runs ahead of payments, you'll know before the project starts losing money.",
+      "audio": "public/tours/audio/en/project/money.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 6,
+      "stepId": "site",
+      "language": "en",
+      "text": "Site collects the daily reports and photos from the team, so a client's question gets answered with a picture instead of a phone call.",
+      "voice": "Site collects the daily reports and photos from the team, so a client's question gets answered with a picture instead of a phone call.",
+      "audio": "public/tours/audio/en/project/site.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 7,
+      "stepId": "handover",
+      "language": "en",
+      "text": "And Handover gathers the final checks, the documents and the warranty, so the keys go over with everything in order.",
+      "voice": "And Handover gathers the final checks, the documents and the warranty, so the keys go over with everything in order.",
+      "audio": "public/tours/audio/en/project/handover.mp3"
+    },
+    {
+      "tour": "project",
+      "tourTitle": "Running a project",
+      "step": 8,
+      "stepId": "recap",
+      "language": "en",
+      "text": "So in short: one project page holds the stages, the tasks, the money and the handover. Next, let's see how the materials get ordered.",
+      "voice": "So in short: one project page holds the stages, the tasks, the money and the handover. Next, let's see how the materials get ordered.",
+      "audio": "public/tours/audio/en/project/recap.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 1,
+      "stepId": "intro",
+      "language": "en",
+      "text": "Once a design is approved, the materials need ordering. In about two minutes I'll show you how nothing gets forgotten, or ordered twice.",
+      "voice": "Once a design is approved, the materials need ordering. In about two minutes I'll show you how nothing gets forgotten, or ordered twice.",
+      "audio": "public/tours/audio/en/purchasing/intro.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 2,
+      "stepId": "to-order",
+      "language": "en",
+      "text": "To order lists every material the projects still need, how much is left to order and when the site needs it, so nobody orders from memory.",
+      "voice": "To order lists every material the projects still need, how much is left to order and when the site needs it, so nobody orders from memory.",
+      "audio": "public/tours/audio/en/purchasing/to-order.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 3,
+      "stepId": "orders",
+      "language": "en",
+      "text": "Orders are the purchase orders sent to suppliers. Each one shows its status, so you can see what's confirmed and what's still waiting.",
+      "voice": "Orders are the purchase orders sent to suppliers. Each one shows its status, so you can see what's confirmed and what's still waiting.",
+      "audio": "public/tours/audio/en/purchasing/orders.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 4,
+      "stepId": "order",
+      "language": "en",
+      "text": "Opening an order shows the items, the supplier and the delivery details in one place, with approval for the bigger amounts.",
+      "voice": "Opening an order shows the items, the supplier and the delivery details in one place, with approval for the bigger amounts.",
+      "audio": "public/tours/audio/en/purchasing/order.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 5,
+      "stepId": "deliveries",
+      "language": "en",
+      "text": "Deliveries tracks what's expected and what has arrived. Each delivery is checked against its order, so short or damaged items are caught at the door.",
+      "voice": "Deliveries tracks what's expected and what has arrived. Each delivery is checked against its order, so short or damaged items are caught at the door.",
+      "audio": "public/tours/audio/en/purchasing/deliveries.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 6,
+      "stepId": "suppliers",
+      "language": "en",
+      "text": "And Suppliers keeps every vendor with their prices and contacts, so the next order is quicker than the last.",
+      "voice": "And Suppliers keeps every vendor with their prices and contacts, so the next order is quicker than the last.",
+      "audio": "public/tours/audio/en/purchasing/suppliers.mp3"
+    },
+    {
+      "tour": "purchasing",
+      "tourTitle": "Ordering materials",
+      "step": 7,
+      "stepId": "recap",
+      "language": "en",
+      "text": "So in short: the needs come from the projects, the orders go to suppliers, and deliveries are checked on arrival. Next, let's see what the client sees.",
+      "voice": "So in short: the needs come from the projects, the orders go to suppliers, and deliveries are checked on arrival. Next, let's see what the client sees.",
+      "audio": "public/tours/audio/en/purchasing/recap.mp3"
+    },
+    {
+      "tour": "client-portal",
+      "tourTitle": "What the client sees",
+      "step": 1,
+      "stepId": "intro",
+      "language": "en",
+      "text": "Clients love knowing where things stand. In about a minute I'll show you how they follow their project without having to call you.",
+      "voice": "Clients love knowing where things stand. In about a minute I'll show you how they follow their project without having to call you.",
+      "audio": "public/tours/audio/en/client-portal/intro.mp3"
+    },
+    {
+      "tour": "client-portal",
+      "tourTitle": "What the client sees",
+      "step": 2,
+      "stepId": "open",
+      "language": "en",
+      "text": "Let's open {project} and look at it the way the client will.",
+      "voice": "Let's open a project and look at it the way the client will.",
+      "audio": "public/tours/audio/en/client-portal/open.mp3"
+    },
+    {
+      "tour": "client-portal",
+      "tourTitle": "What the client sees",
+      "step": 3,
+      "stepId": "updates",
+      "language": "en",
+      "text": "Updates is where the team shares progress with the client. The client portal switch sits right at the top.",
+      "voice": "Updates is where the team shares progress with the client. The client portal switch sits right at the top.",
+      "audio": "public/tours/audio/en/client-portal/updates.mp3"
+    },
+    {
+      "tour": "client-portal",
+      "tourTitle": "What the client sees",
+      "step": 4,
+      "stepId": "manage",
+      "language": "en",
+      "text": "Here you choose exactly what the client sees: the progress, the decisions waiting for them, the payments and the documents.",
+      "voice": "Here you choose exactly what the client sees: the progress, the decisions waiting for them, the payments and the documents.",
+      "audio": "public/tours/audio/en/client-portal/manage.mp3"
+    },
+    {
+      "tour": "client-portal",
+      "tourTitle": "What the client sees",
+      "step": 5,
+      "stepId": "sections",
+      "language": "en",
+      "text": "From their own portal they approve designs and quotes, pay milestones and download documents, on their phone and in their language. This is a demo, so I'll close it without saving.",
+      "voice": "From their own portal they approve designs and quotes, pay milestones and download documents, on their phone and in their language. This is a demo, so I'll close it without saving.",
+      "audio": "public/tours/audio/en/client-portal/sections.mp3"
+    },
+    {
+      "tour": "client-portal",
+      "tourTitle": "What the client sees",
+      "step": 6,
+      "stepId": "recap",
+      "language": "en",
+      "text": "So in short: clients see what you choose, when you choose, and fewer calls come in asking for news. That's the whole journey, from the first call to the handover.",
+      "voice": "So in short: clients see what you choose, when you choose, and fewer calls come in asking for news. That's the whole journey, from the first call to the handover.",
+      "audio": "public/tours/audio/en/client-portal/recap.mp3"
+    }
+  ]
+}

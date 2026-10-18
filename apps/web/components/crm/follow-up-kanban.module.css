@@ -1,0 +1,15 @@
+/* Task cards on the Sales board: the shared Card; the title button opens the whole card. */
+.cards { display: grid; gap: var(--wd-space-2); margin: 0; padding: var(--wd-space-0-5); list-style: none; }
+.card { position: relative; min-inline-size: 0; }
+.open { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+.open::after { content: ""; position: absolute; inset: 0; border-radius: var(--wd-radius-md); }
+.open:focus-visible { outline: none; }
+.open:focus-visible::after { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.customer { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.priority { padding: var(--wd-space-0-5) var(--wd-space-1-5); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.priority[data-priority="high"] { background: var(--wd-color-warning-subtle); color: var(--wd-color-warning); }
+.priority[data-priority="urgent"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.owner { display: inline-flex; align-items: center; margin-inline-end: auto; }
+.due { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); white-space: nowrap; }
+.srOnly { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

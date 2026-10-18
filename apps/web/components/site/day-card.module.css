@@ -1,0 +1,71 @@
+/* A project's day on site: one clean card per day. No border: tone and space; parts separated by rhythm, not rules. */
+.card { display: grid; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-space-4) var(--wd-space-5); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); scroll-margin-block-start: var(--wd-space-16); }
+.card[data-density="compact"] { gap: var(--wd-space-3); padding: var(--wd-space-3) var(--wd-space-4); }
+.card[data-highlighted] { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.date { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.card[data-density="compact"] .date { font-size: var(--wd-text-sm); }
+.byline { flex: 1 1 auto; min-inline-size: 0; overflow: hidden; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); text-align: end; text-overflow: ellipsis; white-space: nowrap; }
+.clientSees { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-success); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.muted { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.spacer { flex: 1 1 auto; }
+.returned { margin: 0; padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+.noWork { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+
+/* Photos: a strip of thumbnails; each opens full size. */
+.strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.card[data-density="compact"] .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.thumb { position: relative; display: block; overflow: hidden; inline-size: 100%; aspect-ratio: 1; padding: 0; border: 0; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); cursor: zoom-in; }
+.thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.thumb:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.more { position: absolute; inset: 0; display: grid; place-items: center; background: var(--wd-color-overlay); color: var(--wd-color-text-inverse); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+
+/* Parts: a small title, then one line per item. */
+.part { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.partTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.items { display: grid; gap: var(--wd-space-1-5); margin: 0; padding: 0; list-style: none; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-2); min-inline-size: 0; }
+.items li > svg { flex: none; align-self: center; }
+.itemText { flex: 1 1 12rem; min-inline-size: 0; overflow-wrap: anywhere; }
+.itemMeta { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.done { color: var(--wd-color-success); }
+.moving { color: var(--wd-color-info); }
+.quiet { color: var(--wd-color-text-tertiary); }
+.alert { color: var(--wd-color-danger); }
+.note { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); white-space: pre-line; }
+
+/* Issues: severity, what it is, then owner, due and what was raised from it. */
+.issues { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.issue { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.issueMain { display: flex; align-items: baseline; gap: var(--wd-space-2); min-inline-size: 0; font-size: var(--wd-text-sm); color: var(--wd-color-text); }
+.issueText { min-inline-size: 0; overflow-wrap: anywhere; }
+.issue[data-status="resolved"] .issueText { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+.issueMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); padding-inline-start: var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.issueMeta [data-overdue] { color: var(--wd-color-danger); font-weight: var(--wd-weight-medium); }
+.issueActions { display: inline-flex; align-items: center; gap: var(--wd-space-1); margin-inline-start: auto; }
+.link { color: var(--wd-color-link); font-size: var(--wd-text-xs); text-decoration: none; }
+.link:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+
+/* Crew: one chip per trade. */
+.crew { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; }
+.trade { padding: var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-muted); color: var(--wd-color-text); font-size: var(--wd-text-xs); }
+
+/* Each report of the day: who, when, its approval, whether the client sees it, and its one action. */
+.reports { display: grid; gap: var(--wd-space-2); margin: 0; padding: var(--wd-space-3) 0 0; border-block-start: 1px solid var(--wd-color-structural-divider); list-style: none; }
+.report { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; font-size: var(--wd-text-sm); }
+.reportWho { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-2); min-inline-size: 0; }
+.reportWho strong { font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+
+/* Compact (Overview, Home): counts and the way to the whole card. */
+.summaryRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.summaryRow > span { display: inline-flex; align-items: center; gap: var(--wd-space-1); }
+.open { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); text-decoration: none; }
+.open:hover { text-decoration: underline; }
+.dialogText { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+
+@media (max-width: 640px) {
+  .card { padding: var(--wd-space-3); }
+  .byline { flex-basis: 100%; text-align: start; }
+  .strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .issueActions { margin-inline-start: 0; }
+}

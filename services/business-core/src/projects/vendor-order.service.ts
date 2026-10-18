@@ -1,3 +1,5 @@
+import { effectivePortalBrand } from "../commercial/effective-brand";
+import { projectRepository } from "./project-repository";
 import {
   Injectable,
   NotFoundException,
@@ -11,6 +13,7 @@ import { ExecutionService } from "./execution.service";
 import type { RequestActor } from "../auth/actor";
 import { obj, str, get, choice, num, day } from "./execution.domain";
 import type { ProjectData } from "./execution.types";
+import { acceptedOrderQuantity } from "./project-inventory";
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 @Injectable()
 export class VendorOrderService {
@@ -91,21 +94,11 @@ export class VendorOrderService {
           "SELECT id FROM delivery_projects WHERE workspace_id=$1 AND id=$2 FOR UPDATE",
           [grant.workspace_id, grant.project_id],
         );
-        const row = (
-          await c.query(
-            "SELECT content FROM project_execution WHERE workspace_id=$1 AND project_id=$2 FOR UPDATE",
-            [grant.workspace_id, grant.project_id],
-          )
-        ).rows[0];
+        const row = await projectRepository.load(c, grant.workspace_id, grant.project_id, { forUpdate: true });
         if (!row) throw new NotFoundException("Order unavailable.");
         const d = row.content as ProjectData,
           o = get(d.orders, grant.order_id),
-          brand = (
-            await c.query(
-              "SELECT brand FROM client_portal_settings WHERE workspace_id=$1",
-              [grant.workspace_id],
-            )
-          ).rows[0]?.brand;
+          brand = await effectivePortalBrand(c, grant.workspace_id);
         if (b.action === "submit") {
           if (["closed", "cancelled"].includes(o.status))
             throw new ConflictException("This order is closed.");
@@ -119,10 +112,10 @@ export class VendorOrderService {
             ]);
             if (
               kind === "quotation" &&
-              !["enquiry", "draft", "submitted"].includes(o.status)
+              (!["enquiry", "draft", "submitted"].includes(o.status) || Boolean(o.sourceEnquiry))
             )
               throw new ConflictException(
-                "This order has already been approved. Contact procurement about a price change.",
+                "Quote selection is closed. Contact procurement about a revised offer.",
               );
             if (
               ["progress", "delivery"].includes(kind) &&
@@ -145,6 +138,8 @@ export class VendorOrderService {
               throw new BadRequestException(
                 "Quantity cannot exceed the order scope.",
               );
+            if (kind === "quotation" && (!value.quantity || !value.unitCost))
+              throw new BadRequestException("Enter a positive offered quantity and unit price.");
             o.vendorUpdates ??= [];
             o.vendorUpdates.push(value);
             d.revision++;
@@ -156,15 +151,7 @@ export class VendorOrderService {
               recordId: o.id,
               note: `${kind} submitted for review`,
             });
-            await c.query(
-              "UPDATE project_execution SET content=$3,revision=$4,updated_at=now() WHERE workspace_id=$1 AND project_id=$2",
-              [
-                grant.workspace_id,
-                grant.project_id,
-                JSON.stringify(d),
-                d.revision,
-              ],
-            );
+            await projectRepository.save(c, grant.workspace_id, grant.project_id, d);
           }
         } else if (b.action !== "read")
           throw new BadRequestException("Unknown vendor action.");
@@ -188,12 +175,13 @@ export class VendorOrderService {
             status: o.status,
             promisedDate: o.promisedDate,
             specification:
+              o.rfqSnapshot?.specification ??
               d.materials.find((m) => m.id === o.materialId)?.specification ??
               d.tasks.find((t) => t.id === o.taskId)?.description ??
               "",
-            workArea: d.tasks.find((t) => t.id === o.taskId)?.area ?? "",
-            workTitle: d.tasks.find((t) => t.id === o.taskId)?.title ?? "",
-            accepted: o.receipts.reduce((n, r) => n + r.accepted, 0),
+            workArea: o.rfqSnapshot?.workArea ?? d.tasks.find((t) => t.id === o.taskId)?.area ?? "",
+            workTitle: o.rfqSnapshot?.workTitle ?? d.tasks.find((t) => t.id === o.taskId)?.title ?? "",
+            accepted: acceptedOrderQuantity(d, o),
             rejected: o.receipts.reduce((n, r) => n + r.rejected, 0),
             acknowledgement: o.acknowledgement,
             updates: o.vendorUpdates ?? [],

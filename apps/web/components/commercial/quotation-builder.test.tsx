@@ -123,7 +123,9 @@ describe("Quotation builder interactions", () => {
     vi.mocked(fetch).mockImplementation(async (url) => ({ ok: true, json: async () => String(url).includes("/catalog-price") ? { status: "resolved", code: "resolved", message: "Price resolved", snapshot } : { items: [] } }) as Response);
     render(<Editor catalogPriced />);
     expect(screen.queryByRole("textbox", { name: "Rate for Wardrobe" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Review price for Wardrobe" }));
     await userEvent.click(screen.getByRole("button", { name: "Check price" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.getByRole("table", { name: "Quotation items · Bedroom" })).toHaveTextContent("275.00"));
   });
   it("shows material in a dedicated column and applies edited material to the correct item", async () => {

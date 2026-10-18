@@ -1,6 +1,8 @@
 import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
+  ArrayMinSize,
+  ValidateNested,
   ArrayUnique,
   IsArray,
   IsBoolean,
@@ -109,4 +111,18 @@ export class VendorSiteLifecycleDto {
   @IsInt() @Min(1) version!: number;
   @IsIn(["archive", "restore"]) action!: "archive" | "restore";
   @Transform(trim) @IsString() @Length(1, 500) reason!: string;
+}
+
+
+export class ImportVendorRowDto extends CreateVendorDto {
+  @IsInt() @Min(2) @Max(5001) sourceRow!: number;
+  @IsUUID() siteId!: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(180) contactName?: string;
+  @IsOptional() @Transform(lower) @IsEmail() @MaxLength(320) email?: string;
+  @IsOptional() @Transform(trim) @Matches(/^\+[1-9]\d{7,14}$/) phone?: string;
+}
+export class ImportVendorsDto {
+  @IsIn(["preview", "commit"]) mode!: "preview" | "commit";
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(500) @ValidateNested({each:true}) @Type(()=>ImportVendorRowDto)
+  rows!: ImportVendorRowDto[];
 }

@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import { FileImage, FileText } from "lucide-react";
+import { FileImage, FileText, FileSpreadsheet, File, FileArchive } from "lucide-react";
 import {
   caseApi,
   type CaseContent,
   type CaseDesign,
 } from "@/lib/pre-project/content";
 import view from "./designs.module.css";
+import { useT } from "@/lib/i18n/i18n-provider";
 
 export function FileCover({
   design,
@@ -17,9 +18,12 @@ export function FileCover({
   data: CaseContent;
   full?: boolean;
 }) {
+  const t = useT();
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const asset = design.versions[0]?.asset;
+  const extension = asset?.name.split('.').pop()?.toUpperCase() ?? 'FILE';
+  const DocumentIcon = ['XLS', 'XLSX', 'CSV', 'ODS'].includes(extension) ? FileSpreadsheet : ['PDF', 'DOC', 'DOCX', 'ODT', 'TXT', 'RTF'].includes(extension) ? FileText : ['ZIP', 'RAR', '7Z'].includes(extension) ? FileArchive : asset?.mimeType.startsWith('image/') ? FileImage : File;
   const image = asset?.mimeType.startsWith("image/");
   const src = asset
     ? caseApi(
@@ -32,7 +36,7 @@ export function FileCover({
     <span className={view.cover}>
       {asset && (image || asset.hasPreview) && !failed ? (
         <>
-          {!loaded && <small role="status">Loading preview…</small>}
+          {!loaded && <small role="status">{t("Loading preview…")}</small>}
           {/* Authenticated same-origin files retain the case access checks. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -45,20 +49,8 @@ export function FileCover({
         </>
       ) : (
         <>
-          {asset?.mimeType === "application/pdf" ? (
-            <FileText size={36} />
-          ) : (
-            <FileImage size={36} />
-          )}
-          <small>
-            {failed
-              ? "Preview unavailable"
-              : asset?.mimeType === "application/pdf"
-                ? "PDF"
-                : asset
-                  ? "Preview not available for this file type"
-                  : "No file uploaded"}
-          </small>
+          <DocumentIcon size={36} />
+          <small>{failed ? t('Preview unavailable') : asset ? extension : t('No file uploaded')}</small>
           {full && asset && (
             <a
               href={caseApi(
@@ -69,7 +61,7 @@ export function FileCover({
               target="_blank"
               rel="noreferrer"
             >
-              Open original file ↗
+              {t("Open original file")} ↗
             </a>
           )}
         </>

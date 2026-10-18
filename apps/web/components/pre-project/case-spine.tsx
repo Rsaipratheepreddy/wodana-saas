@@ -1,33 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Avatar, Badge, StageTracker, type WorkflowStage } from "@/design-system";
-import { caseHref, PRE_PROJECT_ROOT, type PreProjectCase } from "@/lib/pre-project/types";
-import styles from "./case-spine.module.css";
+import type { WorkflowStage } from "@/design-system";
+import type { PreProjectCase } from "@/lib/pre-project/types";
+import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 
 export const casePhases = ["discover", "define", "design", "price", "agree", "release"] as const;
 export type CasePhase = (typeof casePhases)[number];
 
 /** One label per phase, reused by the list, the spine and the overview. */
-export const casePhaseLabel: Record<CasePhase, string> = {
-  discover: "Discover",
-  define: "Define",
-  design: "Design",
-  price: "Price",
-  agree: "Agree",
-  release: "Release",
+export const casePhaseLabel: Record<CasePhase, MessageKey> = {
+  discover: tKey("Discover"),
+  define: tKey("Define"),
+  design: tKey("Design"),
+  price: tKey("Price"),
+  agree: tKey("Agree"),
+  release: tKey("Release"),
 };
 
-/** The section that owns each phase; the tracker links there. */
-const phaseSection: Record<CasePhase, string> = {
-  discover: "requirements",
-  define: "definition",
-  design: "designs",
-  price: "quotations",
-  agree: "contracts",
-  release: "execution-release",
-};
+export const casePriorityLabel: Record<PreProjectCase["priority"], MessageKey> = { low: tKey("Low"), normal: tKey("Normal"), high: tKey("High"), urgent: tKey("Urgent") };
+export const caseRiskLabel: Record<PreProjectCase["riskLevel"], MessageKey> = { none: tKey("None"), low: tKey("Low"), medium: tKey("Medium"), high: tKey("High"), critical: tKey("Critical") };
+
 
 const sectionPhase: Record<string, CasePhase> = {
   overview: "discover",
@@ -48,11 +40,13 @@ const sectionPhase: Record<string, CasePhase> = {
   "client-portal": "release",
 };
 
-export function caseStatusLabel(status: PreProjectCase["status"] | "qualified" | undefined) {
-  if (!status) return "Draft";
-  if (status === "active") return "In progress";
-  if (status === "on_hold") return "On hold";
-  return status[0].toUpperCase() + status.slice(1);
+const caseStatusLabels: Record<PreProjectCase["status"] | "qualified", MessageKey> = {
+  qualified: tKey("Qualified"), draft: tKey("Draft"), active: tKey("In progress"), on_hold: tKey("On hold"), released: tKey("Released"), cancelled: tKey("Cancelled"),
+};
+
+/** The status label key; translate it where it renders: `t(caseStatusLabel(status))`. */
+export function caseStatusLabel(status: PreProjectCase["status"] | "qualified" | undefined): MessageKey {
+  return caseStatusLabels[status ?? "draft"] ?? tKey("Draft");
 }
 
 export function caseStatusTone(status: PreProjectCase["status"] | "qualified" | undefined): "neutral" | "success" | "warning" | "danger" | "info" {
@@ -70,7 +64,7 @@ export function riskTone(risk: PreProjectCase["riskLevel"] | undefined): "neutra
   return "neutral";
 }
 
-export function casePhaseStages(record: Partial<Pick<PreProjectCase, "phase" | "status">>, viewing?: string): WorkflowStage[] {
+export function casePhaseStages(t: Translate, record: Partial<Pick<PreProjectCase, "phase" | "status">>, viewing?: string): WorkflowStage[] {
   const current = Math.max(0, casePhases.indexOf(record.phase ?? "discover"));
   const viewed = viewing ? sectionPhase[viewing] : undefined;
   return casePhases.map((phase, index) => {
@@ -80,55 +74,12 @@ export function casePhaseStages(record: Partial<Pick<PreProjectCase, "phase" | "
       : index === current
         ? record.status === "on_hold" || record.status === "cancelled" ? "blocked" : "current"
         : "upcoming";
-    return { id: phase, label: viewed === phase && phase !== record.phase ? `${casePhaseLabel[phase]} · viewing` : casePhaseLabel[phase], state };
+    return { id: phase, label: viewed === phase && phase !== record.phase ? t("{phase} · viewing", { phase: t(casePhaseLabel[phase]) }) : t(casePhaseLabel[phase]), state };
   });
 }
 
 /**
- * The case spine sits at the top of every pre-execution section. It answers
+ * The case spine sits at the top of every planning section. It answers
  * "which client, which job, where in the journey" once, so section screens
  * only render their own work.
  */
-export function CaseSpine({ record, section, search = "", compact = false }: {
-  record: PreProjectCase;
-  section: string;
-  search?: string;
-  compact?: boolean;
-}) {
-  const query = new URLSearchParams(search);
-  const backHref = `${PRE_PROJECT_ROOT}${search ? `?${search}` : ""}`;
-  const risk = record.riskLevel ?? "none";
-  const owner = record.engagementOwnerName ?? record.leadManagerName ?? "";
-  return <header aria-label="Case journey" className={styles.spine} data-compact={compact || undefined}>
-    <div className={styles.identityRow}>
-      <Link aria-label="All pre-execution cases" className={styles.back} href={backHref}><ArrowLeft aria-hidden="true" data-directional="true" size={15} /><span>Pre-execution</span></Link>
-      <div className={styles.identity}>
-        <Avatar name={record.customerName} size={compact ? "sm" : "lg"} />
-        <div>
-          <span className={styles.customer}>{record.customerName}</span>
-          <h1 className={styles.title}>{record.title}</h1>
-        </div>
-        <span className={styles.badges}>
-          <Badge tone={caseStatusTone(record.status)}>{caseStatusLabel(record.status)}</Badge>
-          {risk === "high" || risk === "critical" ? <Badge tone={riskTone(risk)}>{risk === "critical" ? "Critical risk" : "High risk"}</Badge> : null}
-        </span>
-      </div>
-      {owner ? <span className={styles.owner}>{owner}</span> : null}
-    </div>
-    <nav aria-label="Case phases" className={styles.phases}>
-      {casePhaseStages(record, section).map((stage, index, all) => <Link
-        aria-current={stage.state === "current" ? "step" : undefined}
-        className={styles.phase}
-        data-active={sectionPhase[section] === stage.id || undefined}
-        data-state={stage.state}
-        href={caseHref(record.id, query, phaseSection[stage.id as CasePhase])}
-        key={stage.id}
-      >
-        <span className={styles.phaseIndex}>{stage.state === "complete" ? "✓" : index + 1}</span>
-        <span className={styles.phaseLabel}>{casePhaseLabel[stage.id as CasePhase]}</span>
-        {index < all.length - 1 ? <i aria-hidden="true" className={styles.phaseLine} /> : null}
-      </Link>)}
-    </nav>
-    <span className="wd-visually-hidden"><StageTracker ariaLabel="Case phase summary" stages={casePhaseStages(record, section)} /></span>
-  </header>;
-}

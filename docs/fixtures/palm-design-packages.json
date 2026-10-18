@@ -1,0 +1,10 @@
+{
+  "source": "Palm tracker PLM-041 (25 Sept 2026), changed by PLM-139 and PLM-145 (13 Oct 2026): the general layout to scale is in all three packages; a Concept space is one room with a door; the Creative Director package is priced from its rate (a higher rate is approved by the Creative Director) and the Creative Director reviews its concepts and renders. Minimum design deposit from the Palm flow.",
+  "_minimumDeposit": "Palm (15 Oct 2026): the whole design fee is paid before the design starts, so the minimum deposit is 100% of the design fee (it was AED 15,000).",
+  "minimumDeposit": { "percent": 100 },
+  "packages": [
+    { "code": "concept", "name": "Concept Package", "pricingMethod": "per_space", "rate": "10000.00", "currency": "AED", "unitDefinition": "1 space = 1 room with a door", "includedRevisions": 2, "includesSpacePlanning": true, "includesRenders": false, "inclusions": "General layout to scale, a digital mood board and concepts, then samples. No renders.", "position": 1 },
+    { "code": "bespoke", "name": "Bespoke Interior Design", "pricingMethod": "per_area", "areaUnit": "sqft", "rate": "40.00", "currency": "AED", "includedRevisions": 2, "includesSpacePlanning": true, "includesRenders": true, "inclusions": "General layout to scale, a digital mood board and concepts, 2D and 3D renders, then samples.", "position": 2 },
+    { "code": "creative_director", "name": "Designed by the Creative Director", "pricingMethod": "per_area", "areaUnit": "sqft", "rate": "100.00", "rateFrom": true, "currency": "AED", "includedRevisions": 2, "includesSpacePlanning": true, "includesRenders": true, "reviewRoleCode": "creative_director", "inclusions": "Led by the Creative Director, who chooses the lead designer and approves every concept and render. General layout to scale, 2D and 3D renders, then samples.", "position": 3 }
+  ]
+}

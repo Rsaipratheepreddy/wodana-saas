@@ -1,7 +1,7 @@
 import "server-only";
 import { getAuthenticatedProfile } from "@/lib/auth/server";
 import { authenticatedBackendFetch } from "@/lib/auth/backend-session";
-import type { CommercialState, PortalSettings, Quote } from "./types";
+import type { CommercialState, Quote } from "./types";
 
 const e2eQuote: Quote = {
   id: "92000000-0000-4000-8000-000000000005",
@@ -61,7 +61,6 @@ export async function commercialRead<T>(path: string): Promise<T> {
   if (!w) throw new Error("Workspace unavailable.");
   if (process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") {
     if (path.startsWith("cases/")) return e2eCommercial(path.slice("cases/".length)) as T;
-    if (path === "portal-settings") return {workspaceId:w,slug:"e2e-client",version:1,enabled:true,testMode:true,canManage:true,brand:{name:"Iglo Architects",logo:"",primaryColor:"#76538f",accentColor:"#e99a72",welcomeTitle:"Welcome",welcomeText:"Review your project",supportPhone:"",layout:"minimal"}} as T;
   }
   const r = await authenticatedBackendFetch(
     `/workspaces/${w}/commercial/${path}`,
@@ -74,5 +73,3 @@ export async function commercialRead<T>(path: string): Promise<T> {
 }
 export const getCommercial = (id: string) =>
   commercialRead<CommercialState>(`cases/${id}`);
-export const getPortalSettings = () =>
-  commercialRead<PortalSettings>("portal-settings");

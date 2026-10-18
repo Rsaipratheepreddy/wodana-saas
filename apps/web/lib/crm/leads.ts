@@ -1,3 +1,5 @@
+import { tKey, type MessageKey } from "@/lib/i18n/keys";
+import type { EnquiryFieldsState } from "./enquiry-fields";
 import type { LeadOptions, EnquiryDetails } from "./lead-options";
 
 export const CRM_LEAD_STATUSES = [
@@ -8,6 +10,7 @@ export const CRM_LEAD_STATUSES = [
   "qualified",
   "disqualified",
   "paused",
+  "duplicate",
 ] as const;
 
 export type CrmLeadStatus = (typeof CRM_LEAD_STATUSES)[number];
@@ -21,22 +24,26 @@ export const CRM_LEAD_TRANSITIONS: Record<CrmLeadStatus, CrmLeadStatus[]> = {
   qualified: ["new", "attempting_contact", "connected", "nurturing", "paused", "disqualified"],
   paused: ["new", "attempting_contact", "connected", "nurturing", "qualified", "disqualified"],
   disqualified: ["new", "attempting_contact", "connected", "nurturing", "qualified", "paused"],
+  // A duplicate is closed and linked to the original enquiry; it does not move (PLM-093).
+  duplicate: [],
 };
 
-// Keep persisted legacy values readable; the product exposes four stages.
+// Keep persisted legacy values readable; the product exposes four stages. Labels are keys: translate with t().
 export const CRM_LEAD_STAGES = [
-  { id: "new", label: "New" },
-  { id: "connected", label: "Initiated" },
-  { id: "qualified", label: "Qualified" },
-  { id: "disqualified", label: "Disqualified" },
+  { id: "new", label: tKey("New") },
+  { id: "connected", label: tKey("Contacted") },
+  { id: "qualified", label: tKey("Qualified") },
+  { id: "disqualified", label: tKey("Disqualified") },
 ] as const;
 export function leadStage(status: string): "new" | "connected" | "qualified" | "disqualified" {
   return status === "new" || status === "qualified" || status === "disqualified" ? status : "connected";
 }
-export function leadStageLabel(status: string) {
+export function leadStageLabel(status: string): MessageKey {
+  if (status === "duplicate") return tKey("Duplicate");
   return CRM_LEAD_STAGES.find((stage) => stage.id === leadStage(status))!.label;
 }
 export function leadStageOptions(status: string) {
+  if (status === "duplicate") return [];
   return CRM_LEAD_STAGES.filter((stage) => stage.id !== leadStage(status));
 }
 
@@ -52,6 +59,8 @@ export type CrmLeadListItem = {
   ownershipDueAt?: string | null;
   version: number;
   isConverted?: boolean;
+  /** The opportunity this enquiry became (the latest one when there are several). */
+  opportunityId?: string | null;
   createdAt: string;
   updatedAt: string;
   partyId: string;
@@ -60,6 +69,10 @@ export type CrmLeadListItem = {
   reference?: string;
   details?: EnquiryDetails;
   intakeMethod?: string;
+  formId?: string | null;
+  formAnswers?: Array<{ questionId: string; title: string; type: string; field?: string; value: string | string[] }> | null;
+  /** The workspace's own enquiry fields, by field id. */
+  customFields?: Record<string, unknown> | null;
   title: string;
   source: string;
   channel: string;
@@ -69,6 +82,33 @@ export type CrmLeadListItem = {
   slaStatus: string | null;
   slaWarningAt: string | null;
   slaDueAt: string | null;
+  /** The open enquiry this one repeats (S-10). */
+  duplicateOfLeadId?: string | null;
+  /** When the enquiry was escalated to a manager (S-1, S-2). */
+  escalatedAt?: string | null;
+  escalationDueAt?: string | null;
+  /** Unanswered tries so far (S-16). */
+  contactAttempts?: number;
+  /** Existing clients this enquiry's client may be, waiting for "Confirm client" (S-3). */
+  clientMatches?: number;
+};
+
+/** The Sales rules the timers read (S-1, S-2, S-3, S-10). */
+export type SalesSettings = {
+  takeoverCap: number;
+  unownedEscalationMinutes: number;
+  clientReviewMinutes: number;
+  duplicateWindowDays: number;
+  /** Days an open opportunity may keep its stage before Reports lists it as stuck (14 unless changed). */
+  stuckDealDays?: number;
+  /** PLM-155: the teams (or roles) whose people answer timeline questions; none means anyone. */
+  timelineCheckRoles?: string[];
+  salesAdminMembershipId: string | null;
+  /** PLM-024: who reads internal notes, the enquiry team (default) or everyone with Sales access. */
+  internalNotesVisibility?: "team" | "sales";
+  /** PLM-180: hand-offs without a cap; an enquiry nobody picks up in a working day is unassigned and the Owners told. */
+  unassignAfterWorkingDay?: boolean;
+  version: number;
 };
 
 export type CrmWorkspaceMember = {
@@ -98,6 +138,8 @@ export type CrmQueue = {
   businessUnitId: string | null;
   isFallback: boolean;
   takeoverAfterMinutes?: number | null;
+  /** How the queue shares new enquiries: the lightest workload first (balanced) or each person in turn (round_robin). */
+  assignmentMode?: "balanced" | "round_robin";
   roundRobinCursor: string | null;
   version: number;
   members: CrmQueueMember[];
@@ -233,7 +275,25 @@ export type CrmActivity = {
 };
 
 export type LeadsPageData = {
+  defaultCurrency?: string;
+  defaultLocale?: string;
+  currentMembershipId?: string;
+  /** Role and team codes of the signed-in member in the one role vocabulary; sources limited to roles are hidden from others. */
+  currentRoles?: string[];
+  /** Whether the signed-in member may create a Sales pipeline (CRM settings); everyone else converts into the seeded one. */
+  canManagePipelines?: boolean;
+  /** Whether the signed-in member may give enquiries to other people (routing and owning one's own need no more). */
+  canAssign?: boolean;
+  /** May change an enquiry's details (crm.leads.manage); unknown (older pages) counts as yes, the server decides. */
+  canEdit?: boolean;
+  /** Whether the signed-in member manages Sales settings (the Sales admin and escalation rules). */
+  canManageSales?: boolean;
+  /** PLM-138: may say a spam enquiry isn't spam (with a reason). */
+  canUnmarkSpam?: boolean;
+  /** May change the client's name and phone (crm.parties.identity); unknown (older pages) counts as yes, the server decides. */
+  canChangeIdentity?: boolean;
   leadOptions?: LeadOptions;
+  enquiryFields?: EnquiryFieldsState;
   canView: boolean;
   items: CrmLeadListItem[];
   queues: CrmQueue[];
@@ -242,21 +302,34 @@ export type LeadsPageData = {
   intake: CrmIntakeItem[];
   pipelines: CrmPipeline[];
   members: CrmWorkspaceMember[];
+  /** Who an enquiry can be given to (the server's own owner rule), readable by anyone who creates or assigns enquiries. */
+  salesOwners?: CrmWorkspaceMember[];
+  /** Readable by anyone who works enquiries; edited with CRM settings permission. */
+  salesSettings?: SalesSettings;
+  /** The workspace's teams, for who answers timeline questions (read by those who manage Sales settings). */
+  teams?: Array<{ code: string; name: string }>;
   nextCursor: string | null;
   referenceTime: string;
   workspaceId: string;
 };
+
+/** The people offered as sales owners: the server's list, or the member directory when an older server has none. */
+export function salesOwnerChoices(data: Pick<LeadsPageData, "members" | "salesOwners">) {
+  return (data.salesOwners ?? data.members).filter((member) => member.status === "active");
+}
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const QUEUE_ID = "61000000-0000-4000-8000-000000000001";
 
 export const leadsPageFixture: LeadsPageData = {
+  defaultLocale: "en-AE",
   canView: true,
   workspaceId: WORKSPACE_ID,
   nextCursor: null,
   referenceTime: "2026-09-06T08:00:00.000Z",
   members: [{ id: OWNER_ID, displayName: "Iglo Administrator", email: "admin@igloarchitects.com", status: "active" }],
+  salesOwners: [{ id: OWNER_ID, displayName: "Iglo Administrator", email: "admin@igloarchitects.com", status: "active" }],
   queues: [{
     id: QUEUE_ID,
     code: "design_enquiries",

@@ -4,16 +4,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { openAuthenticatedWorkspace } from "@/lib/auth/client";
 import { LoginScreen } from "./login-screen";
 import { securityPageFixture } from "@/lib/workspace/security";
+import styles from "./login.module.css";
 
-const replace = vi.fn(), refresh = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh }) }));
+const replace = vi.fn(), refresh = vi.fn(), push = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace, refresh, push }) }));
 vi.mock("@/lib/auth/client", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/auth/client")>(), openAuthenticatedWorkspace: vi.fn(),
 }));
-afterEach(() => { vi.unstubAllGlobals(); replace.mockReset(); refresh.mockReset(); vi.mocked(openAuthenticatedWorkspace).mockClear(); });
+afterEach(() => { vi.unstubAllGlobals(); replace.mockReset(); push.mockReset(); refresh.mockReset(); vi.mocked(openAuthenticatedWorkspace).mockClear(); });
 
 async function fillCredentials(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByRole("textbox", { name: "Work email" }), "owner@example.com");
+  await user.type(screen.getByRole("textbox", { name: /^Email/ }), "owner@example.com");
+  await user.click(screen.getByRole("button", { name: "Continue" }));
   await user.type(screen.getByLabelText(/^Password/, { selector: "input" }), "DemoPassword#2026");
 }
 
@@ -74,12 +76,18 @@ describe("login tenant branding", () => {
   it("presents the tenant as the primary identity and Wodana as the platform provider", () => {
     render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null }} />);
 
-    expect(screen.getAllByLabelText("Palm Living workspace")).toHaveLength(2);
-    expect(screen.getAllByLabelText("Powered by Wodana")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Palm Living workspace")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Powered by Wodana")).toHaveLength(1);
   });
 });
 
 describe("login progress and failure feedback", () => {
+  it("does not present a completed password reset as a sign-in error", () => {
+    render(<LoginScreen nextPath="/workspace" initialStatus="Password updated. Sign in with your new password." initialStatusTone="info" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Password updated");
+    expect(screen.getByRole("status")).toHaveAttribute("data-tone", "info");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
   async function renderLogin() {
     render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
     const user = userEvent.setup();
@@ -96,6 +104,7 @@ describe("login progress and failure feedback", () => {
     const user = await renderLogin();
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     expect(screen.getByRole("status")).toHaveTextContent("Signing you in");
+    expect(screen.getByRole("status")).toHaveAttribute("data-tone", "info");
     expect(screen.getByRole("button", { name: /Signing in/ })).toBeDisabled();
     releaseLogin({ ok: true, status: 200, json: async () => ({ authenticated: true }) });
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Confirming your browser session"));
@@ -113,6 +122,20 @@ describe("login progress and failure feedback", () => {
     const user = await renderLogin();
     await user.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/onboarding"));
+  });
+  it("highlights a rate-limit error as an assertive alert without retrying automatically", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({ message: "Too many sign-in attempts. Try again later." }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = await renderLogin();
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Sign-in needs attention");
+    expect(alert).toHaveTextContent("Too many sign-in attempts");
+    expect(alert).toHaveAttribute("data-tone", "error");
+    expect(alert).toHaveAttribute("data-visible", "true");
+    expect(alert).toHaveAttribute("aria-live", "assertive");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
   it.each([
     { label: "invalid JSON", login: { ok: true, status: 200, json: async () => null }, session: null, message: "incomplete response" },
@@ -160,6 +183,22 @@ describe("login MFA flow", () => {
     await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
     expect(JSON.parse(String(fetchMock.mock.calls[1][1].body))).toEqual({ code: "123456" });
     expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/mfa/verify");
+  });
+
+  it("returns from the authenticator challenge to sign in and clears the pending session", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ mfaRequired: true, methods: ["totp"] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ signedOut: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = await renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("heading", { name: "Verify it’s you" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/auth/logout");
+    expect(openAuthenticatedWorkspace).not.toHaveBeenCalled();
   });
 
   it("keeps the selected device logout through a second MFA challenge", async () => {
@@ -213,5 +252,121 @@ describe("login MFA flow", () => {
     await user.click(screen.getByRole("checkbox", { name: "I saved these recovery codes" }));
     await user.click(screen.getByRole("button", { name: "Continue to workspace" }));
     await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+  });
+
+  it("shows the setup key in one row and lets the user go back through enrollment", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ authenticated: true, selectedWorkspaceId: "00000000-0000-4000-8000-000000000002", mfaEnrollmentRequired: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ secret: "ABCDEFGHIJKLMNOP", otpauthUri: "otpauth://totp/Wodana:test?secret=ABCDEFGHIJKLMNOP" }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ signedOut: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = await renderLogin();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(await screen.findByRole("button", { name: "Set up authenticator" }));
+    expect(await screen.findByLabelText("Authenticator setup key")).toHaveTextContent("ABCDEFGHIJKLMNOP");
+    expect(screen.getByRole("button", { name: "Copy setup key" })).toBeInTheDocument();
+    expect(screen.queryByText("Can’t scan? Use setup key")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Back$/ }));
+    expect(await screen.findByRole("heading", { name: "Protect your account" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to sign in" }));
+    expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/auth/logout");
+  });
+});
+
+describe("email-first sign-in", () => {
+  const workspaces = [
+    { name: "Palm Living", loginSlug: "palm-living", logoUrl: null },
+    { name: "Studio B", loginSlug: "studio-b", logoUrl: null },
+  ];
+
+  it("lets a user in several workspaces choose one and resubmits with its slug", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ authenticated: true }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ workspaceSelectionRequired: true, workspaces }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Wodana", loginSlug: "", logoUrl: null }} />);
+
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("heading", { name: "Choose a workspace" })).toBeInTheDocument();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ tenantSlug: "" });
+    await user.click(screen.getByRole("button", { name: /Studio B/ }));
+    await waitFor(() => expect(openAuthenticatedWorkspace).toHaveBeenCalledWith("/workspace"));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ tenantSlug: "studio-b", email: "owner@example.com" });
+  });
+
+  it("returns from the picker to the credentials form", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ workspaceSelectionRequired: true, workspaces }) }));
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Wodana", loginSlug: "", logoUrl: null }} />);
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByRole("heading", { name: "Choose a workspace" });
+
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Workspaces" })).not.toBeInTheDocument();
+  });
+
+  it("asks for the email first, then the password, and lets the person change the email", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn());
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    expect(screen.queryByLabelText(/^Password/, { selector: "input" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Enter your email address.")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: /^Email/ }), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Password/, { selector: "input" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByRole("textbox", { name: /^Email/ })).toHaveValue("owner@example.com");
+  });
+
+  it("sends a client's mobile number to the tenant portal instead of the staff sign-in", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null }} />);
+
+    await user.type(screen.getByRole("textbox", { name: /^Email or mobile/ }), "+971 50 123 4567");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(push).toHaveBeenCalledWith("/portal/palm-living");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("tenant sign-in background", () => {
+  const panel = (container: HTMLElement) => container.querySelector<HTMLElement>(`.${styles.brandPanel}`);
+
+  it("keeps the default image for a tenant without its own background", () => {
+    const { container } = render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Test", loginSlug: "test", logoUrl: null }} />);
+    expect(panel(container)).not.toBeNull();
+    expect(panel(container)!.style.getPropertyValue("--wd-login-background-image")).toBe("");
+    expect(panel(container)).not.toHaveAttribute("data-custom-background");
+  });
+
+  it("shows the tenant's own background behind the sign-in form", () => {
+    const url = "/api/auth/tenant-background/palm-living?v=7c1d0c2e-3b51-4a39-9f6e-0d7c1a2b3c4d";
+    const { container } = render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Palm Living", loginSlug: "palm-living", logoUrl: null, loginBackgroundUrl: url }} />);
+    expect(panel(container)!.style.getPropertyValue("--wd-login-background-image")).toBe(`url("${url}")`);
+    expect(panel(container)).toHaveAttribute("data-custom-background", "true");
+  });
+});
+
+describe("the firm's logo on the sign-in card", () => {
+  it("shows the logo alone when there is one, and the name when there isn't", () => {
+    const { unmount } = render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "La'espace", loginSlug: "laespace", logoUrl: "/api/auth/tenant-logo/laespace" }} />);
+    expect(screen.getByRole("img", { name: "La'espace" })).toBeInTheDocument();
+    expect(document.querySelector("strong")?.textContent ?? "").not.toBe("La'espace");
+    unmount();
+    render(<LoginScreen nextPath="/workspace" tenant={{ displayName: "Studio B", loginSlug: "studio-b", logoUrl: null }} />);
+    expect(screen.getByText("Studio B", { selector: "strong" })).toBeInTheDocument();
   });
 });

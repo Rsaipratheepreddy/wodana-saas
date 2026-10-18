@@ -1,32 +1,8 @@
-.provider {
-  min-block-size: 100%;
-  background: var(--wd-color-surface);
-}
+.provider { min-block-size: 100%; }
+.provider.embedded { background: var(--wd-color-surface); }
 
-.page {
-  inline-size: min(100%, var(--wd-workspace-page-width, 76rem));
-  min-block-size: 100%;
-  margin-inline: auto;
-  padding: var(--wd-workspace-page-block-start, 1.5rem) var(--wd-workspace-page-inline, clamp(1rem, 3vw, 2rem)) var(--wd-workspace-page-block-end, 3rem);
-}
-
-.pageHeading { margin-block-end: 1rem; }
-
-.pageHeading h1 {
-  margin: 0;
-  color: var(--wd-color-text);
-  font-size: var(--wd-text-2xl);
-  font-weight: var(--wd-weight-semibold);
-  letter-spacing: -.035em;
-  line-height: 1.2;
-}
-
-.pageHeading p {
-  margin: .45rem 0 0;
-  color: var(--wd-color-text-secondary);
-  font-size: var(--wd-text-sm);
-  line-height: 1.5;
-}
+/* Scopes the card rules below; PageShell gives the page its padding. */
+.page { min-inline-size: 0; }
 
 .toolbar {
   min-block-size: 3rem;
@@ -34,7 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--wd-space-4);
   padding-block-end: 0;
   background: transparent;
 }
@@ -42,7 +18,7 @@
 .summary {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--wd-space-4);
   flex-wrap: wrap;
 }
 
@@ -50,7 +26,7 @@
   min-block-size: 2rem;
   display: inline-flex;
   align-items: center;
-  gap: .3rem;
+  gap: var(--wd-space-1);
   color: var(--wd-color-text-secondary);
   font-size: var(--wd-text-xs);
   white-space: nowrap;
@@ -66,29 +42,29 @@
 
 .liveStatus {
   max-inline-size: 72rem;
-  margin: .65rem 0 0;
+  margin: var(--wd-space-3) 0 0;
   color: var(--wd-color-success);
   font-size: var(--wd-text-xs);
 }
 
 .healthIssue {
   display: block;
-  margin-block-start: .3rem;
+  margin-block-start: var(--wd-space-1);
   color: var(--wd-color-warning);
   font-size: var(--wd-text-xs);
 }
 
 .catalogSection {
   max-inline-size: 72rem;
-  margin-block-start: 1.25rem;
+  margin-block-start: var(--wd-space-5);
 }
 
 .sectionHeading {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1rem;
-  margin-block-end: .75rem;
+  gap: var(--wd-space-4);
+  margin-block-end: var(--wd-space-3);
 }
 
 .sectionHeading h2 {
@@ -106,7 +82,7 @@
   max-inline-size: 72rem;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--wd-space-4);
 }
 
 .integrationCard {
@@ -120,13 +96,13 @@
 
 .cardBody {
   min-inline-size: 0;
-  padding: 1.1rem 1.2rem .9rem;
+  padding: var(--wd-space-4) var(--wd-space-5) var(--wd-space-4);
 }
 
 .cardHeader {
   display: flex;
   align-items: center;
-  gap: .75rem;
+  gap: var(--wd-space-3);
 }
 
 .cardIdentity { min-inline-size: 0; flex: 1; }
@@ -151,8 +127,8 @@
 .cardBody small,
 .cardBody a {
   inline-size: fit-content;
-  gap: .2rem;
-  margin-block-start: .14rem;
+  gap: var(--wd-space-1);
+  margin-block-start: var(--wd-space-0-5);
   color: var(--wd-color-text-tertiary);
   font-size: var(--wd-text-xs);
   line-height: 1.35;
@@ -170,8 +146,8 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid var(--wd-color-structural-divider);
-  border-radius: .65rem;
+  border:0;
+  border-radius: var(--wd-radius-md);
   background: var(--wd-color-surface);
   color: var(--wd-color-text-secondary);
 }
@@ -182,7 +158,7 @@
 }
 
 .cardBody > p {
-  margin: 1rem 0 .75rem;
+  margin: var(--wd-space-4) 0 var(--wd-space-3);
   color: var(--wd-color-text-secondary);
   font-size: var(--wd-text-sm);
   line-height: 1.5;
@@ -201,7 +177,7 @@
 .cardBody .capabilityTruth {
   display: block;
   max-inline-size: 100%;
-  margin-block-start: .35rem;
+  margin-block-start: var(--wd-space-1-5);
   color: var(--wd-color-text-secondary);
   font-size: var(--wd-text-2xs);
   line-height: 1.4;
@@ -211,25 +187,32 @@
   min-block-size: 3.5rem;
   display: flex;
   align-items: center;
-  gap: .5rem;
-  border-block-start: 1px solid var(--wd-color-structural-divider);
-  padding: .65rem 1.2rem;
+  gap: var(--wd-space-2);
+  border:0;
+  padding: var(--wd-space-3) var(--wd-space-5);
+}
+
+/* Wodana's own app for the provider isn't set up yet: said plainly where Connect would be. */
+.cardFooter .unavailable {
+  color: var(--wd-color-text-tertiary);
+  font-size: var(--wd-text-xs);
+  line-height: 1.4;
 }
 
 .plannedGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .75rem;
+  gap: var(--wd-space-3);
 }
 
 .plannedCard {
   min-inline-size: 0;
   display: flex;
   align-items: center;
-  gap: .65rem;
-  border: 1px solid var(--wd-color-structural-divider);
+  gap: var(--wd-space-3);
+  border:0;
   border-radius: var(--wd-radius-md);
-  padding: .8rem;
+  padding: var(--wd-space-3);
 }
 
 .plannedIcon {
@@ -245,29 +228,29 @@
 .plannedIdentity { min-inline-size: 0; flex: 1; }
 .plannedIdentity strong, .plannedIdentity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plannedIdentity strong { color: var(--wd-color-text); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
-.plannedIdentity small { margin-block-start: .15rem; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
+.plannedIdentity small { margin-block-start: var(--wd-space-0-5); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
 .plannedCard :global(.wd-badge) { flex: 0 0 auto; }
 
 .accountIdentity strong, .accountIdentity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .accountIdentity strong { font-weight: var(--wd-weight-medium); }
-.accountIdentity small { margin-block-start: .15rem; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.accountIdentity small { margin-block-start: var(--wd-space-0-5); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
 .accountIdentity .accountMobileStatus { display: none; }
-.accountActions { display: flex; align-items: center; justify-content: flex-end; gap: .4rem; }
+.accountActions { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-1-5); }
 .accountActions :global(.wd-button) { white-space: nowrap; }
 
-.accounts { max-inline-size: 72rem; margin-block-start: 2rem; }
+.accounts { max-inline-size: 72rem; margin-block-start: var(--wd-space-8); }
 
 .form {
   display: grid;
-  gap: .75rem;
+  gap: var(--wd-space-3);
 }
 
 .dialogStatus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-block-end: 1px solid var(--wd-color-structural-divider);
-  padding-block-end: .65rem;
+  border:0;
+  padding-block-end: var(--wd-space-3);
 }
 
 .dialogStatus span {
@@ -282,10 +265,6 @@
 }
 
 @media (max-width: 48rem) {
-  .page {
-    padding: 1.25rem 1rem 2.5rem;
-  }
-
   .toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -302,3 +281,57 @@
 
   .accountIdentity .accountMobileStatus { display: block; }
 }
+
+.page .integrationCard,.page .plannedCard { background:var(--wd-color-surface-muted); border:0; border-radius:var(--wd-radius-md);  }
+.page .integrationCard { min-block-size:11.5rem; }
+.cardBody { padding:var(--wd-space-4) var(--wd-space-4) var(--wd-space-3); }
+.page .cardFooter { background:var(--wd-color-surface-muted); border:0; padding:var(--wd-space-3) var(--wd-space-4); }
+.page .providerIcon { border:0; background:var(--wd-color-surface-muted); border-radius:var(--wd-radius-sm); }
+.catalogGrid { gap:var(--wd-space-3); }
+
+
+.accounts :is(th,td){border:0!important}.accounts tbody tr:nth-child(even){background:var(--wd-color-surface-muted)}
+
+.setupIdentity { display:flex; align-items:center; gap:var(--wd-space-3); margin-block-end:var(--wd-space-2); padding:var(--wd-space-3); background:var(--wd-color-surface-muted); border-radius:var(--wd-radius-sm); }
+.setupIdentity strong { display:block; font-size:var(--wd-text-md); font-weight:600; }
+.form :global(.wd-input-affix),.form :global(.wd-select-prefix) { color:var(--wd-color-action-primary); }
+.form :global(.wd-input-affix) { border:0; background:transparent; }
+
+.embedded { padding:0; inline-size:100%; }
+.embedded .catalogSection { margin:0; }
+.embedded .catalogSection + .catalogSection { margin-block-start:var(--wd-space-4); }
+.embedded .sectionHeading { display:none; }
+.embedded .catalogGrid { grid-template-columns:1fr; gap:var(--wd-space-2); }
+.embedded .plannedGrid { grid-template-columns:1fr; gap:var(--wd-space-2); }
+.embedded .plannedCard { min-block-size:76px; gap:var(--wd-space-3); padding:var(--wd-space-4) var(--wd-space-4); border:0; border-radius:var(--wd-radius-sm); background:var(--wd-color-surface-muted); }
+.embedded .plannedIdentity strong { font-size:var(--wd-text-md); font-weight:650; }
+.embedded .plannedIdentity small { overflow:visible; white-space:normal; line-height:1.45; font-size:var(--wd-text-xs); color:var(--wd-color-text-secondary); }
+.embedded .integrationCard { min-block-size:0; }
+.embedded .cardBody { padding:var(--wd-space-3) var(--wd-space-3) var(--wd-space-1); }
+.embedded .cardBody>p { margin:var(--wd-space-2) 0 0; font-size:var(--wd-text-xs); }
+.embedded .cardIdentity a { display:none; }
+.embedded .cardFooter { min-block-size:0; padding:var(--wd-space-2) var(--wd-space-3) var(--wd-space-3); }
+.embedded .cardBody strong { font-size:var(--wd-text-md); }
+.embedded.provider { background:transparent; }
+.embedded .integrationCard { grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto; align-items:center; background:var(--wd-color-surface); }
+.embedded .cardBody { padding:var(--wd-space-3); }
+.embedded .cardHeader { gap:var(--wd-space-2); flex-wrap:wrap; }
+.embedded .cardHeader :global(.wd-badge) { margin-inline-start:var(--wd-space-10); }
+.embedded .cardBody>p,.embedded .connectionName,.embedded .capabilityTruth { display:none; }
+.embedded .cardFooter { flex-direction:column; padding:var(--wd-space-3); background:transparent; }
+.embedded .integrationCard { min-block-size:76px; border:0; background:var(--wd-color-surface-muted); border-radius:var(--wd-radius-sm); }
+.embedded .cardHeader { display:grid; grid-template-columns:28px minmax(0,1fr); column-gap:var(--wd-space-2); row-gap:var(--wd-space-0-5); }
+.embedded .providerIcon { grid-row:1 / 3; inline-size:28px; block-size:28px; background:transparent; }
+.embedded .providerIcon svg { inline-size:24px; block-size:24px; }
+.embedded .cardHeader :global(.wd-badge) { grid-column:2; margin:0; inline-size:fit-content; font-size:var(--wd-text-2xs); padding:0; background:transparent; }
+.embedded .cardBody { padding:var(--wd-space-3); }
+.embedded .cardFooter { padding:var(--wd-space-2); }
+.embedded .cardFooter :global(.wd-button) { min-block-size:30px; font-size:var(--wd-text-xs); }
+.embedded .cardFooter :global(.wd-button):nth-child(n+2) { display:none; }
+/* Both card kinds share one anatomy when embedded: same padding, logo box and title weight. */
+.embedded .plannedCard { gap:var(--wd-space-2); padding:var(--wd-space-3); }
+.embedded .plannedIcon { display:grid; place-items:center; inline-size:28px; block-size:28px; background:transparent; }
+.embedded .plannedIcon svg { inline-size:24px; block-size:24px; }
+.embedded .plannedCard :global(.wd-badge) { margin-inline-end:var(--wd-space-2); }
+.embedded .cardIdentity strong, .embedded .plannedIdentity strong { font-size:var(--wd-text-md); font-weight:650; }
+@container (max-width:38rem) { .embedded .plannedCard { flex-wrap:wrap; } .embedded .plannedCard :global(.wd-badge) { margin-inline-start:var(--wd-space-12); } }

@@ -1,4 +1,5 @@
 import type { QuoteLine } from "./types";
+import { translatorFor, type Translate } from "@/lib/i18n/keys";
 
 /**
  * Deterministic parser for the quotation quick-add line. Teams moving from
@@ -102,12 +103,17 @@ export function parseQuickLine(input: string, rooms: string[] = []): QuickLineDr
   };
 }
 
-export function describeQuickLine(draft: QuickLineDraft, currency: string): string[] {
-  const parts = [draft.room ?? "General", `${draft.quantity} ${draft.unit}`, draft.title];
+/** Preview chips for a parsed line. Pass the person's `t` and the workspace `locale`; without them it reads in English. */
+export function describeQuickLine(
+  draft: QuickLineDraft,
+  currency: string,
+  { t = translatorFor({}), locale }: { t?: Translate; locale?: string } = {},
+): string[] {
+  const parts = [draft.room ?? t("General"), `${draft.quantity} ${draft.unit}`, draft.title];
   if (draft.dimensions) parts.push([draft.dimensions.length, draft.dimensions.height, draft.dimensions.depth].filter((value) => value !== undefined).join("×") + ` ${draft.dimensions.unit}`);
   if (draft.material) parts.push(draft.material);
   if (draft.finish) parts.push(draft.finish);
-  parts.push(draft.rate !== null ? new Intl.NumberFormat("en", { style: "currency", currency, maximumFractionDigits: 0 }).format(draft.rate) : "Unpriced");
-  if (draft.optional) parts.push("Optional");
+  parts.push(draft.rate !== null ? new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(draft.rate) : t("Unpriced"));
+  if (draft.optional) parts.push(t("Optional"));
   return parts;
 }

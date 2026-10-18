@@ -85,6 +85,22 @@ describe("native project field work", () => {
     expect(wire).not.toContain("private@example.test");
     expect(wire).not.toContain("999");
     expect(wire).not.toMatch(/unitCost|currency|acknowledgement|budget|margin|calendar|leave|assigneeIds/);
+
+    data.supplierReturns = [{ id: uuid("10"), orderId: uuid("3"), materialId: "", quantity: 1, status: "credited" }] as NonNullable<typeof data.supplierReturns>;
+    const afterReturn = projectFieldProject(
+      { id: "project", name: "Villa", customer: "Client", members: [{ id: "member", name: "Field owner" }] },
+      data, "member", permissions,
+    );
+    expect(afterReturn.purchaseReceipts[0]).toMatchObject({ accepted: 0, remaining: 4 });
+  });
+
+  it("allows assigned no-work updates without starting blocked work",()=>{
+    const data=emptyProject();const mine=task(uuid("1"),"member");mine.status="blocked";data.tasks=[mine];
+    const input={revision:0,requestId:uuid("7"),action:"draft_report_task",recordId:uuid("8"),taskId:mine.id,date:"2026-09-18",quantity:0,summary:"No access to room"};
+    expect(projectFieldCommand(data,"member",permissions,input)).toMatchObject({action:"report",report:{entries:[{taskId:mine.id,quantity:0}],summary:"No access to room"}});
+    expect(()=>projectFieldCommand(data,"member",permissions,{...input,quantity:1})).toThrow(/Start/);
+    expect(()=>projectFieldCommand(data,"member",permissions,{...input,summary:""})).toThrow(/Explain/);
+    expect(projectFieldProject({id:"p",name:"P",customer:"C"},data,"member",permissions).tasks[0].canReport).toBe(true);
   });
 
   it("maps assigned progress and receipts to canonical idempotent commands", () => {
@@ -114,9 +130,10 @@ describe("native project field work", () => {
       taskId: mine.id, date: "2026-09-18", quantity: 1, issues: "Access blocked",
       scheduleImpact: "blocked", impactReason: "No permit", recoveryPlan: "Escalate",
       nextUpdateOwnerId: "member", nextUpdateDate: "2026-09-19", evidence: "",
+      shift:"Night",hours:7,people:3,weather:"Dry",materials:"4 panels",tomorrow:"Install handles",safetyStatus:"observation",safety:"Access cleared",
     })).toMatchObject({
       action: "report",
-      report: { issues: "Access blocked", scheduleImpact: "blocked", recoveryPlan: "Escalate" },
+      report: { issues: "Access blocked", scheduleImpact: "blocked", recoveryPlan: "Escalate",shift:"Night",hours:7,people:3,weather:"Dry",materials:"4 panels",tomorrow:"Install handles",safetyStatus:"observation",safety:"Access cleared" },
     });
     expect(projectFieldCommand(data, "member", permissions, {
       ...common, action: "receive_dispatch", recordId: uuid("5"),

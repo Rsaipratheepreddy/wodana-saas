@@ -1,0 +1,480 @@
+<meta charset="utf-8">
+<title>Job Journey Blueprint</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="flow.css">
+<style>
+/* Layout: a working blueprint built on the firm's own process guide. The living map is the hero object; every section = one statement + one working mock. */
+body{background:var(--bg);color:var(--fg);font-family:var(--f-sans);font-size:var(--t-base);line-height:1.55;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+.wrap{max-width:1220px;margin-inline:auto}
+h1,h2,h3{text-wrap:balance;margin:0}
+h1{font-family:var(--f-display);font-size:var(--t-2xl);font-weight:800;line-height:1.02;letter-spacing:-.03em}
+h2{font-family:var(--f-display);font-size:var(--t-xl);font-weight:700;line-height:1.1;letter-spacing:-.02em}
+h3{font-size:var(--t-md);font-weight:700}
+p{margin:0}
+.eyebrow{font-family:var(--f-mono);font-size:var(--t-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);margin-inline:calc(-1*max(16px,env(safe-area-inset-left,0px)));padding-inline:max(16px,env(safe-area-inset-left,0px))}
+.nav-in{max-width:1220px;margin-inline:auto;display:flex;gap:2px;overflow-x:auto;padding-block:8px;scrollbar-width:none;align-items:center}
+.nav a{white-space:nowrap;text-decoration:none;color:var(--fg-2);font-size:var(--t-sm);padding:6px 10px;border-radius:999px}
+.nav a:hover{background:var(--surface-2);color:var(--fg)}
+.nav a.proto{margin-inline-start:auto;background:var(--ink);color:var(--ink-fg);font-weight:600}
+section{padding-block:60px 8px;scroll-margin-top:56px}
+.sec-head{display:grid;gap:10px;margin-bottom:20px;max-width:800px}
+.sec-head p{color:var(--fg-2);font-size:var(--t-md)}
+.hero{padding-block:48px 4px;display:grid;gap:20px}
+.hero .lead{font-size:var(--t-md);color:var(--fg-2);max-width:66ch}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;display:grid;gap:10px;align-content:start;min-width:0}
+.panel h4{margin:0;font-size:var(--t-xs);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);font-weight:500}
+.panel b.big{font-family:var(--f-display);font-size:var(--t-md)}
+.li{display:flex;gap:10px;font-size:var(--t-sm);align-items:flex-start}
+.li svg{margin-top:3px}
+.fix{border-inline-start:3px solid var(--auto);background:var(--surface);border-radius:var(--r-md);padding:14px 16px;display:grid;gap:6px}
+.fix b{font-family:var(--f-display);font-size:var(--t-md)}
+.fix p{font-size:var(--t-sm);color:var(--fg-2)}
+.controls{display:flex;flex-wrap:wrap;gap:12px 22px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px}
+.ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ctl > span{font-size:var(--t-xs);color:var(--fg-3);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em}
+.ctl-end{margin-inline-start:auto;display:flex;gap:10px;align-items:center}
+.sim{display:grid;grid-template-columns:minmax(0,1fr) 304px;gap:16px;align-items:start}
+.sim-note{font-size:var(--t-xs);color:var(--fg-3);text-align:center;margin-top:8px}
+.tbl-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg)}
+table.t{border-collapse:collapse;width:100%;font-size:var(--t-sm)}
+table.t th,table.t td{text-align:start;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.t th{font-weight:500;color:var(--fg-3);font-size:var(--t-xs);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+table.t tr:last-child td{border-bottom:0}
+table.t tr.chrow td{background:var(--surface-2);font-family:var(--f-mono);font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-2)}
+table.t td.c{text-align:center}
+.flowtbl{max-height:640px;overflow:auto}
+.flowtbl table{min-width:820px}
+.st{font-size:var(--t-xs);font-weight:700;white-space:nowrap}
+.st.y{color:var(--done)} .st.p{color:var(--wait)} .st.n{color:var(--stop)} .st.u{color:var(--fg-3);font-weight:500}
+.mx{display:inline-block;min-width:44px;text-align:center;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px}
+.mx.a{background:var(--ink);color:var(--ink-fg)} .mx.s{background:var(--surface-2);color:var(--fg-2)} .mx.l{background:var(--client-subtle);color:var(--client)} .mx.n{color:var(--fg-3)}
+.tmpl{font-size:var(--t-sm);background:var(--surface-2);border-radius:10px;padding:10px 12px;color:var(--fg)}
+.tmpl b{display:block;font-size:var(--t-xs);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);font-weight:500;margin-bottom:2px}
+.queue{display:flex;gap:6px;flex-wrap:wrap}
+.aicat{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.aiitem{display:grid;gap:2px;padding-bottom:8px;border-bottom:1px solid var(--line);font-size:var(--t-sm)}
+.aiitem:last-child{border-bottom:0;padding-bottom:0}
+.aiitem span{color:var(--fg-2);font-size:var(--t-xs)}
+.pscr{background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:12px;display:grid;gap:10px;align-content:start}
+.pscr .cap{font-size:var(--t-xs);color:var(--fg-3);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em}
+.render{position:relative;aspect-ratio:4/3;max-width:100%;border-radius:10px;background:linear-gradient(160deg,var(--surface-3),var(--surface-2) 60%,var(--surface-3));overflow:hidden}
+.render .sofa{position:absolute;inset-inline:16%;bottom:16%;height:24%;border-radius:12px 12px 6px 6px;background:var(--sw-1)}
+.render .lamp{position:absolute;top:10%;width:14%;aspect-ratio:1;border-radius:50%;background:var(--sw-2)}
+.render .pin{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--client);color:var(--ink-fg);font-size:10px;font-weight:700;display:grid;place-items:center;border:2px solid var(--surface)}
+.pages{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.pg{background:var(--surface);border:1px solid var(--line);border-radius:8px;aspect-ratio:3/4;max-width:100%;padding:10px;display:grid;align-content:start;gap:6px;font-size:var(--t-xs);position:relative}
+.pg .lbl{font-weight:700;font-size:var(--t-sm)}
+.pg .bar{height:5px;border-radius:3px;background:var(--surface-3)}
+.pg .bar.s{width:60%}
+.pg .tag{position:absolute;bottom:8px;inset-inline-start:10px}
+.pg.lock{background:var(--surface-2)}
+.deliv{display:flex;flex-wrap:wrap;margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden}
+.dstep{flex:1;min-width:120px;padding:12px 14px;display:grid;gap:3px;border-inline-end:1px solid var(--line);font-size:var(--t-sm)}
+.dstep:last-child{border-inline-end:0}
+.dstep span{font-size:var(--t-xs);color:var(--fg-2)}
+.dstep .bar{height:4px;border-radius:2px;background:var(--done)}
+.dstep.retry .bar{background:var(--wait)} .dstep.todo .bar{background:var(--surface-3)}
+.tstudio{display:grid;grid-template-columns:200px minmax(0,1fr) 250px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--shadow)}
+.tstudio > div{padding:14px;min-width:0}
+.tenants{border-inline-end:1px solid var(--line);display:grid;gap:6px;align-content:start}
+.tn{display:grid;padding:8px 10px;border-radius:9px;font-size:var(--t-sm);line-height:1.35}
+.tn span{font-size:var(--t-xs);color:var(--fg-3)}
+.tn.on{background:var(--accent-subtle)}
+.ttabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px}
+.ttabs span{font-size:var(--t-sm);padding:5px 10px;border-radius:999px;color:var(--fg-2)}
+.ttabs span.on{background:var(--ink);color:var(--ink-fg);font-weight:600}
+.inh{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.inh .r{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) auto;gap:10px;padding:8px 10px;font-size:var(--t-xs);border-bottom:1px solid var(--line);align-items:center}
+.inh .r:last-child{border-bottom:0}
+.inh .r.h{color:var(--fg-3);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.05em;background:var(--surface-2)}
+.inh .ov{color:var(--accent);font-weight:700}
+.pubs{border-inline-start:1px solid var(--line);display:grid;gap:12px;align-content:start;font-size:var(--t-sm)}
+.mini-map{background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow-x:auto;margin-top:12px}
+.pk-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.pk{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;display:grid;gap:10px;align-content:start}
+.pk .price{font-family:var(--f-display);font-size:var(--t-lg);font-weight:800;letter-spacing:-.02em}
+.pk .price small{font-family:var(--f-sans);font-size:var(--t-sm);font-weight:500;color:var(--fg-2)}
+.incl{display:grid;gap:4px;font-size:var(--t-sm);list-style:none;padding:0;margin:0}
+.incl li{display:flex;gap:8px;align-items:center}
+.incl li.off{color:var(--fg-3);text-decoration:line-through}
+.pk .fee{border-top:1px solid var(--line);padding-top:10px;display:flex;justify-content:space-between;font-size:var(--t-sm)}
+.pk .fee b{font-variant-numeric:tabular-nums;font-size:var(--t-md)}
+.calc{display:flex;flex-wrap:wrap;gap:16px;align-items:end;margin-bottom:12px}
+.calc label{display:grid;gap:4px;font-size:var(--t-xs);color:var(--fg-3);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em}
+.calc input{font-size:var(--t-base);width:120px;padding:7px 10px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);font-variant-numeric:tabular-nums}
+.phases{display:grid;gap:10px;list-style:none;padding:0;margin:0}
+.phase{display:grid;grid-template-columns:40px minmax(0,1fr) minmax(0,.9fr);gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;align-items:start}
+.phase .num{font-family:var(--f-display);font-size:var(--t-lg);font-weight:800;color:var(--accent)}
+.phase p{font-size:var(--t-sm);color:var(--fg-2)}
+.phase .dwn{font-size:var(--t-sm);border-inline-start:2px solid var(--done);padding-inline-start:10px}
+.phase .dwn b{display:block;font-size:var(--t-xs);font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--done);font-weight:500}
+.foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:var(--t-xs);color:var(--fg-3)}
+@media (max-width:1100px){ .sim{grid-template-columns:minmax(0,1fr)} .tstudio{grid-template-columns:minmax(0,1fr)} .tenants{border-inline-end:0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap} .pubs{border-inline-start:0;border-top:1px solid var(--line)} .pages{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media (max-width:860px){ .grid2,.grid3,.aicat,.pk-grid{grid-template-columns:minmax(0,1fr)} .grid4{grid-template-columns:repeat(2,minmax(0,1fr))} .phase{grid-template-columns:32px minmax(0,1fr)} .phase .dwn{grid-column:2} }
+@media (max-width:560px){ .grid4{grid-template-columns:minmax(0,1fr)} .pages{grid-template-columns:repeat(2,minmax(0,1fr))} .ctl-end{margin-inline-start:0} .inh .r{grid-template-columns:minmax(0,1fr) minmax(0,1fr)} }
+</style>
+
+<nav class="nav" aria-label="Sections"><div class="nav-in">
+  <a href="#top">Idea</a><a href="#try">Living map</a><a href="#flow">The flow</a><a href="#intake">Before the deal</a><a href="#ai">AI</a><a href="#portal">Client portal</a><a href="#docs">Proposals</a><a href="#config">Tenant studio</a><a href="#packages">Packages</a><a href="#roles">Roles</a><a href="#money">Money + reports</a><a href="#covered">Sign-off</a><a href="#plan">Plan</a><a class="proto" id="proto-link" href="main-portal.html">Main portal prototype</a>
+</div></nav>
+
+<div class="wrap">
+<header class="hero" id="top">
+  <span class="eyebrow">Product concept · v3 · built on the firm’s process guide of 16 Oct 2026</span>
+  <h1>Every job is a living map.<br><span class="ai-text">AI keeps it moving.</span></h1>
+  <p class="lead">The firm’s own lead-to-won flow and its 28 design-to-warranty steps, drawn as one map per job. Staff work inside it, the client follows a simpler view of it, and AI works inside each step. Every gate in the guide blocks until its fields are there.</p>
+  <div class="grid3">
+    <div class="fix"><b>Material selection is not a design step</b><p>It is in no design package. It runs only when production follows (Full ID, Fit-Out &amp; Furniture), after the renders, with the material coordinator.</p></div>
+    <div class="fix"><b>Two wins, three ways to close</b><p>Proposal 1 (design fee, 100% upfront) and proposal 2 (estimate) each have their own Won date. Full ID closes at design approval; Q2 can be withdrawn; furniture closes at delivery.</p></div>
+    <div class="fix"><b>After the estimate, everything is per item</b><p>Material list, technical drawing, client sign-off, margin check, release, factory and delivery are gates on each item, not on the job.</p></div>
+  </div>
+</header>
+
+<section id="try">
+  <div class="sec-head">
+    <span class="eyebrow">The living map</span>
+    <h2>The job page is the flowchart</h2>
+    <p>Lanes are seats, bands are chapters, the dark node is now. Dashed gold = automatic. Diamonds = gates. Stacked nodes = per item. Click any node, try a blocked gate, ask for a third revision, or withdraw Q2.</p>
+  </div>
+  <div class="controls" id="controls">
+    <div class="ctl"><span>Job type</span><div class="seg" role="group" aria-label="Job type">
+      <button type="button" data-flow="fof" aria-pressed="true">Full ID, Fit-Out &amp; Furniture</button>
+      <button type="button" data-flow="id" aria-pressed="false">Full ID</button>
+      <button type="button" data-flow="fu" aria-pressed="false">Furniture only</button></div></div>
+    <div class="ctl"><span>Package</span><div class="seg" role="group" aria-label="Package">
+      <button type="button" data-pkg="concept" aria-pressed="false">Concept</button>
+      <button type="button" data-pkg="bespoke" aria-pressed="true">Bespoke</button>
+      <button type="button" data-pkg="director" aria-pressed="false">Creative director</button></div></div>
+    <div class="ctl-end"><span class="small muted mono" data-c="count"></span><button class="btn" type="button" data-c="restart">Restart</button></div>
+  </div>
+  <div class="sim">
+    <div id="room"></div>
+    <div><div id="phone"></div><p class="sim-note">Client lens of the same map: client steps only, the firm’s brand, one card per block.</p></div>
+  </div>
+</section>
+
+<section id="flow">
+  <div class="sec-head">
+    <span class="eyebrow">The flow, exactly</span>
+    <h2>Every step, owner, rule and gate</h2>
+    <p>Generated from the same definition that drives the map. “Runs for” shows which job types and packages include the step.</p>
+  </div>
+  <div class="tbl-wrap flowtbl"><table class="t">
+    <thead><tr><th>#</th><th>Step</th><th>Owner</th><th>Done when · rule</th><th>Runs for</th><th>Type</th></tr></thead>
+    <tbody id="flow-rows"></tbody>
+  </table></div>
+</section>
+
+<section id="intake">
+  <div class="sec-head">
+    <span class="eyebrow">Before the deal</span>
+    <h2>Inbox, intake and the enquiry queue</h2>
+    <p>Everything before a job exists, as the guide sets it. These are steps 1 to 3 of the map, with their own rules.</p>
+  </div>
+  <div class="grid3">
+    <div class="panel"><h4>WhatsApp inbox · Sales admin team + CRM owner</h4>
+      <div class="queue"><span class="chip ink">Open</span><span class="chip">Unread</span><span class="chip">Resolved</span><span class="chip">All</span></div>
+      <div class="li small">Every chat has one label: Open · Resolved · Unresolved · Spam. Only the person who resolved a chat can reopen it.</div>
+      <div class="tmpl"><b>T1 · we have everything · automatic</b>“Thank you, {{name}}! Your enquiry is now with our team…”</div>
+      <div class="tmpl"><b>T2 · need more details</b>Form link for that source and channel; the form sets both.</div>
+      <div class="tmpl"><b>T3 · closing the chat · admin confirms</b>Only after 3 working hours with no reply.</div>
+      <div class="li small">Spam: resolved silently; a spam enquiry and a flagged contact are created; later messages are marked spam.</div>
+    </div>
+    <div class="panel"><h4>Intake, duplicates and assignment</h4>
+      <div class="li small">Required at intake: source + channel, enquiry type (TBC allowed), name, mobile with country code, emirate. Title and reference are generated and locked.</div>
+      <div class="li small">Same mobile (spaces and code ignored) or email: open lead → duplicate, linked, goes to that account manager, out of reports. Past client → returning, same account manager, never a second client record.</div>
+      <div class="li small">No match → round-robin to account managers; each sees only their own.</div>
+      <div class="li small">No activity within 1 working hour (Mon–Fri 9:00–18:00) → next account manager, both told, history kept. After a full working day → Unassigned and an email to the owner.</div>
+    </div>
+    <div class="panel"><h4>Enquiry queue</h4>
+      <div class="queue"><span class="chip ink">New 4</span><span class="chip">Contacted 9</span><span class="chip">Come back to 6</span><span class="chip wait">Unassigned 1</span><span class="chip">All 31</span></div>
+      <div class="li small">A note after every attempt, with an outcome: no answer · WhatsApp sent, no reply · willing to talk → convert · not interested (reason).</div>
+      <div class="li small">Come back to = kept, never hidden. End states: Not interested / Lost · Converted · Duplicate.</div>
+      <div class="li small">Convert is blocked until table D is complete, shown as one box listing every missing field. AI fills what it can find, with its source.</div>
+    </div>
+  </div>
+</section>
+
+<section id="ai">
+  <div class="sec-head">
+    <span class="eyebrow">AI, built in</span>
+    <h2>No assistant to ask. The work arrives prepared.</h2>
+    <p>The assistant panel goes; its tools live inside the steps, plus one intent bar on every job. AI reads, prepares, shows its source and confidence, and a person confirms.</p>
+  </div>
+  <div class="aicat" id="aicat"></div>
+</section>
+
+<section id="portal">
+  <div class="sec-head">
+    <span class="eyebrow">Client portal</span>
+    <h2>The client follows the same map, in their words</h2>
+    <p>From proposal 1, not only after a project starts. During design the portal is the only channel: messages, minutes and weekly updates live there, not on WhatsApp. WhatsApp only rings the doorbell.</p>
+  </div>
+  <div class="grid3">
+    <div class="pscr"><span class="cap">Choose a mood board</span>
+      <div class="j-two"><div class="j-swatch" style="background:var(--sw-2)">Option A</div><div class="j-swatch" style="background:var(--sw-3)">Option B</div></div>
+      <div class="chips"><span class="chip">Revision 1 of 2 free</span></div>
+      <div class="j-actions"><button class="btn sm" type="button">Comment</button><button class="btn client sm" type="button">Choose B</button></div>
+    </div>
+    <div class="pscr"><span class="cap">Comment on the render</span>
+      <div class="render"><div class="lamp" style="inset-inline-start:22%"></div><div class="lamp" style="inset-inline-start:62%"></div><div class="sofa"></div><span class="pin" style="top:18%;inset-inline-start:36%">1</span><span class="pin" style="bottom:36%;inset-inline-start:62%">2</span></div>
+      <div class="j-fi"><span class="av client" style="width:20px;height:20px">CL</span><span>“Can the lamps be brass?” · pinned at 1 → a revision task</span></div>
+    </div>
+    <div class="pscr"><span class="cap">Sign per item</span>
+      <div class="j-mats"><div><i style="background:var(--sw-3)"></i>TV wall · drawing rev 2</div><div><i style="background:var(--sw-4)"></i>Kitchen cabinets · rev 1</div><div><i style="background:var(--sw-2)"></i>Wardrobe M1 · rev 1</div></div>
+      <span class="xs muted">Each signed drawing locks its item and updates L/H/D and quantities. Technical never contacts the client.</span>
+      <div class="j-actions"><button class="btn client sm" type="button">Sign 3 with code</button></div>
+    </div>
+  </div>
+</section>
+
+<section id="docs">
+  <div class="sec-head">
+    <span class="eyebrow">Proposals</span>
+    <h2>One document studio, both proposals as templates</h2>
+    <p>Proposal 1 (design fee) and the estimate proposal (table M) come from firm-level templates with data fields. What the client sees in the portal is what they sign. Sending is a step with real delivery status.</p>
+  </div>
+  <div class="pages" aria-label="Estimate proposal layout">
+    <div class="pg"><span class="lbl">1 · Cover</span><span class="bar"></span><span class="bar s"></span><span class="xs muted">Ref linked to quotation · client · quote no. · prepared by · ID · estimator · manager approval</span><span class="tag chip done">Generated</span></div>
+    <div class="pg lock"><span class="lbl">2 · Intro letter</span><span class="bar"></span><span class="bar"></span><span class="bar s"></span><span class="tag chip">Locked</span></div>
+    <div class="pg"><span class="lbl">3 · Project letter</span><span class="xs muted">Type · location · sub-total · discount · VAT 5% · total · 7-day validity · terms · 8–12 weeks · sign-off</span><span class="tag chip done">Generated</span></div>
+    <div class="pg"><span class="lbl">4+ · Quotation</span><span class="xs muted">By room: SN · description · inspo picture · L/H/D cm · materials · qty · unit · total</span><span class="tag chip done">Generated</span></div>
+    <div class="pg lock"><span class="lbl">T&amp;Cs</span><span class="bar"></span><span class="bar"></span><span class="xs muted">Adding a clause is the only edit, and it is logged</span><span class="tag chip">Locked</span></div>
+    <div class="pg lock"><span class="lbl">Contact</span><span class="bar s"></span><span class="tag chip">Locked</span></div>
+  </div>
+  <div class="deliv" aria-label="Delivery tracking">
+    <div class="dstep"><i class="bar"></i><b>Rendered</b><span>One PDF and the portal card, same design</span></div>
+    <div class="dstep retry"><i class="bar"></i><b>Email bounced</b><span>Fell back to a WhatsApp link</span></div>
+    <div class="dstep"><i class="bar"></i><b>Delivered</b><span>WhatsApp · 15:42</span></div>
+    <div class="dstep"><i class="bar"></i><b>Opened twice</b><span>Portal · 16:05, 21:10</span></div>
+    <div class="dstep todo"><i class="bar"></i><b>Signed</b><span>Waiting for the code</span></div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="panel"><h4>Why proposal 1 doesn’t go out today</h4>
+      <div class="li"><span id="x1"></span>Sending is blocked until every requirement is decided; the design-fee round is not exempt.</div>
+      <div class="li"><span id="x2"></span>The client portal is off by default, and sending needs a decision-maker on the job.</div>
+      <div class="li"><span id="x3"></span>“Sent” shows when the message is only queued; with no mail provider or worker it never leaves, and WhatsApp has no email fallback.</div>
+      <div class="li"><span id="x4"></span>Five document engines; the signed PDF is not the portal design; templates keep only lines; wording is hard-coded.</div>
+    </div>
+    <div class="panel"><h4>In the studio</h4>
+      <div class="li">One engine for proposals, estimate, agreement, invoice, receipt, change request, handover pack and thank-you message.</div>
+      <div class="li">Templates per round and job type; generated, locked and editable parts declared per page, as table M asks.</div>
+      <div class="li">Each step declares what it needs before sending: the design round needs a package and a fee, not decided requirements.</div>
+      <div class="li">Ref numbers come from sequences: estimate refs follow the quotation (rev 1, rev 2); agreement refs are automatic.</div>
+    </div>
+  </div>
+</section>
+
+<section id="config">
+  <div class="sec-head">
+    <span class="eyebrow">Internal portal</span>
+    <h2>Tenant studio: configure each firm and each module</h2>
+    <p>Set a firm up from a kit, then override per module. Every value shows where it comes from. Draft, check, preview as the firm, publish a version. The journey editor is the same map.</p>
+  </div>
+  <div class="tstudio" aria-label="Tenant studio">
+    <div class="tenants"><span class="xs faint mono">TENANTS</span><div class="tn on">Firm A<span>Design-build kit · 24 seats</span></div><div class="tn">Firm B<span>Furniture kit · 9 seats</span></div><div class="tn">Firm C<span>Fit-out kit · 31 seats</span></div><button class="btn sm" type="button">New tenant from kit</button></div>
+    <div>
+      <div class="ttabs"><span>Modules</span><span class="on">Journey</span><span>Packages</span><span>Roles</span><span>Documents</span><span>Inbox</span><span>Brand</span><span>Region</span><span>AI</span></div>
+      <div class="inh">
+        <div class="r h"><span>Rule</span><span>Kit</span><span>Firm A</span><span></span></div>
+        <div class="r"><span>First response window</span><span>2 working hours</span><span class="ov">1 working hour</span><button class="btn ghost sm" type="button">Reset</button></div>
+        <div class="r"><span>Chat closes after silence (T3)</span><span>24 hours</span><span class="ov">3 working hours</span><button class="btn ghost sm" type="button">Reset</button></div>
+        <div class="r"><span>Free revisions (mood, 2D, renders, VE)</span><span>2</span><span>2</span><span></span></div>
+        <div class="r"><span>Site-visit questions</span><span>Required</span><span class="ov">Optional</span><button class="btn ghost sm" type="button">Reset</button></div>
+        <div class="r"><span>Default warranty per item</span><span>12 months</span><span class="ov">6 months</span><button class="btn ghost sm" type="button">Reset</button></div>
+      </div>
+      <div class="mini-map" id="mini-map"></div>
+    </div>
+    <div class="pubs"><span class="xs faint mono">CONFIG v12 · DRAFT</span><div><b>5 changes</b><div class="xs muted">4 overrides · 1 journey edit</div></div>
+      <div class="li xs" id="h1"></div><div class="li xs" id="h2"></div><div class="li xs" id="h3"></div>
+      <button class="btn sm" type="button">Preview as Firm A</button><button class="btn primary sm" type="button">Publish v12</button>
+    </div>
+  </div>
+</section>
+
+<section id="packages">
+  <div class="sec-head">
+    <span class="eyebrow">Packages</span>
+    <h2>Packages switch steps on and off</h2>
+    <p>As the guide sets them. Bespoke and creative director add the renders step; creative director adds the CD review and lets the CD choose the lead designer. Material selection belongs to production, not to a package.</p>
+  </div>
+  <div class="calc">
+    <label for="in-spaces">Spaces (a room with a door)<input id="in-spaces" type="number" min="1" step="1" value="3"></label>
+    <label for="in-sqft">BUA (sq ft)<input id="in-sqft" type="number" min="1" step="10" value="1200"></label>
+    <span class="small muted">The fee feeds proposal 1 and the map. Currency from the workspace region.</span>
+  </div>
+  <div class="pk-grid" id="pk-grid"></div>
+</section>
+
+<section id="roles">
+  <div class="sec-head">
+    <span class="eyebrow">Roles</span>
+    <h2>Lanes on the map are seats on the job</h2>
+    <p>Capabilities × your seat on this job × its chapter. The client sees every designer as “Interior designer”. People without a login (draftsmen, factory persons, crews) are booked by name.</p>
+  </div>
+  <div class="tbl-wrap"><table class="t"><thead><tr><th>Seat</th><th>Win</th><th>Design</th><th>Price</th><th>Make</th><th>Install</th><th>Care</th></tr></thead><tbody id="matrix"></tbody></table></div>
+  <p class="xs muted" style="margin-top:8px"><span class="mx a">Acts</span> owns steps · <span class="mx s">Sees</span> summary · <span class="mx l">Lens</span> client-visible only · <span class="mx n">–</span> hidden. The owner can view as any seat.</p>
+</section>
+
+<section id="money">
+  <div class="sec-head">
+    <span class="eyebrow">Money and reports</span>
+    <h2>Two wins per job, one statement per client</h2>
+    <p>Each proposal has its own payment, its own Won date and its own deal file. Reports follow the guide’s rules exactly.</p>
+  </div>
+  <div class="grid4" id="reports"></div>
+</section>
+
+<section id="covered">
+  <div class="sec-head">
+    <span class="eyebrow">Sign-off</span>
+    <h2>What the firm will tick in the demo</h2>
+    <p>The guide says: tick only when you have seen it work. This is where each check lives and what the code does today, where it was checked.</p>
+  </div>
+  <div class="tbl-wrap"><table class="t"><thead><tr><th>Check</th><th>Lives in</th><th>Today</th></tr></thead><tbody id="covered-rows"></tbody></table></div>
+  <div class="panel" style="margin-top:12px"><h4>Waiting on us since 15 Oct</h4>
+    <div class="li small">How a Full ID job closes at design handover · furniture paths A–E and their skips, joinery site visit, shop-drawing skip · cancelled deals report and Won without cancelled · commission types (sales, designer fee, referral) · a spam enquiry even when the chat had none · Shopify catalogue link.</div>
+  </div>
+</section>
+
+<section id="plan">
+  <div class="sec-head">
+    <span class="eyebrow">Getting there</span>
+    <h2>Six steps, no big-bang rewrite</h2>
+    <p>The flow engine is the right base and stops at Won today. Extend it, put the map on top, then move modules onto blocks and delete what they replace. Open the main portal prototype to see the whole staff app on this engine.</p>
+  </div>
+  <ol class="phases">
+    <li class="phase"><span class="num">1</span><div><h3>Journey engine</h3><p>Flow engine runs past Won: chapters, gates, per-item steps, revisions, AI slots with provenance. One journey API feeds every screen.</p></div><div class="dwn"><b>Done when</b>Every gate in the guide blocks with one error box.</div></li>
+    <li class="phase"><span class="num">2</span><div><h3>Win and Design on the map</h3><p>Inbox, queue, convert, intro, qualified, proposal 1, deal file, and the design steps to design approval, with the client lens.</p></div><div class="dwn"><b>Done when</b>The firm ticks sections A–J and L of its guide.</div></li>
+    <li class="phase"><span class="num">3</span><div><h3>Document studio and tracked sending</h3><p>Proposal 1 and the estimate proposal as templates; delivery with fallback; thank-you message.</p></div><div class="dwn"><b>Done when</b>A design-fee proposal goes out, is opened and signed.</div></li>
+    <li class="phase"><span class="num">4</span><div><h3>Tenant studio</h3><p>Kits, per-module overrides, the journey editor on the same map, preview and versioned publish.</p></div><div class="dwn"><b>Done when</b>A second firm is set up without code.</div></li>
+    <li class="phase"><span class="num">5</span><div><h3>Price and Make per item</h3><p>Quotation chain, payment agreement gate, material list, technical, drawing sign-off, margin, release, factory.</p></div><div class="dwn"><b>Done when</b>Section N of the guide works per item.</div></li>
+    <li class="phase"><span class="num">6</span><div><h3>Install, Care, money rail</h3><p>Dispatch gate, delivery photos, site reports, change requests, snags, handover, warranty; invoices for every milestone; client statement.</p></div><div class="dwn"><b>Done when</b>One next-action calculation is left in the code.</div></li>
+  </ol>
+  <p class="foot">Concept for internal planning. Prices and steps in the mocks are the example firm’s configuration, not product constants.</p>
+</section>
+</div>
+
+<script src="flow.js"></script>
+<script>
+(function(){
+  const F = window.Flow;
+  const api = F.mount(document.getElementById('room'), {phone: document.getElementById('phone'), controls: document.getElementById('controls'), flow:'fof', pkg:'bespoke'});
+  const esc = F.esc, val = F.val;
+  const X = '<svg class="i" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round"><path class="ic-x" d="M6 6l12 12M18 6L6 18"/></svg>';
+  ['x1','x2','x3','x4'].forEach(id => { document.getElementById(id).outerHTML = X; });
+  document.getElementById('h1').innerHTML = F.IC.ok + 'Every step has an owner seat';
+  document.getElementById('h2').innerHTML = F.IC.ok + 'Every Won has a payment proof and an owner approval';
+  document.getElementById('h3').innerHTML = X + 'Estimate proposal template has no Arabic version';
+
+  /* the flow table */
+  const CTX = [['fof','concept'],['fof','bespoke'],['fof','director'],['id','concept'],['id','bespoke'],['id','director'],['fu','bespoke']];
+  function runsFor(s){
+    const on = CTX.filter(([f, p]) => s.inc({flow:f, pkg:p, q2:'active'})).map(x => x.join('-'));
+    const hasW = s.inc({flow:'fof', pkg:'bespoke', q2:'withdrawn'});
+    const k = on.join(' ');
+    if (on.length === 7) return 'Every job';
+    if (k === 'fof-concept fof-bespoke fof-director id-concept id-bespoke id-director') return 'Full ID routes';
+    if (k === 'fof-concept fof-bespoke fof-director fu-bespoke') return 'Production jobs, incl. furniture';
+    if (k === 'fof-concept fof-bespoke fof-director') return 'Production (Full ID + fit-out)';
+    if (k === 'fof-bespoke fof-director id-bespoke id-director') return 'Bespoke and CD packages';
+    if (k === 'fof-director id-director') return 'CD package';
+    if (k === 'fof-bespoke fof-director') return 'Production, Bespoke and CD';
+    if (k === 'id-concept id-bespoke id-director' || hasW) return 'Full ID, or Q2 withdrawn';
+    return on.join(', ');
+  }
+  const order = [];
+  ['win','design','price','make','install','care'].forEach(ch => F.STEPS.filter(s => s.ch === ch).forEach(s => order.push(s)));
+  let n = 0, lastCh = '';
+  const c0 = {flow:'fof', pkg:'director', q2:'active'};
+  document.getElementById('flow-rows').innerHTML = order.map(s => {
+    let pre = '';
+    if (s.ch !== lastCh) { lastCh = s.ch; pre = '<tr class="chrow"><td colspan="6">' + esc(F.CH.find(c => c.id === s.ch).label) + '</td></tr>'; }
+    n++;
+    const c = s.inc(c0) ? c0 : (s.inc({flow:'id', pkg:'director', q2:'active'}) ? {flow:'id', pkg:'director', q2:'active'} : {flow:'fu', pkg:'bespoke', q2:'active'});
+    const r = F.roleOf(s, c);
+    const tags = [];
+    if (val(s.auto, c)) tags.push('<span class="chip auto">Automatic</span>');
+    if (s.gate && val(s.gate, c)) tags.push('<span class="chip stop">Gate</span>');
+    if (s.item != null) tags.push('<span class="chip">Per item</span>');
+    if (s.rev) tags.push('<span class="chip wait">2 free revisions</span>');
+    if (s.opt) tags.push('<span class="chip">If needed</span>');
+    if (s.deal) tags.push('<span class="chip done">' + esc(val(s.deal, c)) + '</span>');
+    if (s.ai) tags.push('<span class="chip ai">AI</span>');
+    const g = s.gate ? val(s.gate, c) : null;
+    const rule = esc(val(s.done, c)) + (g ? '<br><span class="xs muted">Gate: ' + esc(g.items.map(i => i[0]).join(' · ')) + '</span>' : '');
+    return pre + '<tr><td class="mono xs">' + n + '</td><td><b>' + esc(val(s.name, c)) + '</b></td><td><span class="av' + (r === 'client' ? ' client' : '') + '" style="width:22px;height:22px">' + F.SHORT[r] + '</span> <span class="xs">' + esc(F.ROLES[r]) + '</span></td><td class="small">' + rule + '</td><td class="xs">' + esc(runsFor(s)) + '</td><td><div class="chips">' + tags.join('') + '</div></td></tr>';
+  }).join('');
+
+  /* AI catalogue */
+  const cA = {flow:'fof', pkg:'director', q2:'active'};
+  const groups = [['Win', 'win'], ['Design', 'design'], ['Price · Make · Install', 'price make install']];
+  document.getElementById('aicat').innerHTML = groups.map(([h, chs]) => '<div class="panel"><h4>' + h + '</h4>' + F.STEPS.filter(s => s.ai && chs.split(' ').includes(s.ch)).map(s => { const c = s.inc(cA) ? cA : {flow:'fu', pkg:'bespoke', q2:'active'}; return '<div class="aiitem"><b>' + esc(val(s.name, c)) + '</b><span>' + esc(val(s.ai.t, c)) + '</span></div>'; }).join('') + '</div>').join('');
+
+  /* packages */
+  function renderPk(){
+    document.getElementById('pk-grid').innerHTML = Object.keys(F.PK).map(k => {
+      const p = F.PK[k]; const qty = p.unit === 'space' ? F.measure.spaces : F.measure.sqft;
+      return '<div class="pk"><div><h3>' + esc(p.label) + '</h3><div class="price">' + (p.from ? 'From ' : '') + F.money(p.rate) + ' <small>/ ' + (p.unit === 'space' ? 'space' : 'sq ft') + '</small></div></div>' +
+        '<ul class="incl">' + p.incl.map(i => '<li>' + F.IC.ok + esc(i) + '</li>').join('') + p.off.map(i => '<li class="off">' + X + esc(i) + '</li>').join('') + '</ul>' +
+        '<div class="chips"><span class="chip">Lead seat: ' + esc(p.lead) + '</span>' + (p.renders ? '<span class="chip done">+ 3D renders step</span>' : '<span class="chip">No renders step</span>') + (p.cd ? '<span class="chip done">+ CD review</span>' : '') + '</div>' +
+        '<div class="fee"><span>' + (p.unit === 'space' ? qty + ' spaces' : F.nf.format(qty) + ' sq ft') + '</span><b>' + (p.from ? 'from ' : '') + F.money(p.rate * qty) + '</b></div></div>';
+    }).join('');
+  }
+  ['in-spaces', 'in-sqft'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+    F.measure.spaces = Math.max(1, Math.round(Number(document.getElementById('in-spaces').value) || 1));
+    F.measure.sqft = Math.max(1, Math.round(Number(document.getElementById('in-sqft').value) || 1));
+    renderPk(); api.render();
+  }));
+  renderPk();
+
+  /* roles */
+  const MX = [['Sales admin','a','n','a','n','n','n'],['Account manager','a','a','a','s','s','a'],['Interior designer (lead / junior)','s','a','a','a','s','n'],['Creative director','n','a','a','s','n','n'],['Visualiser','n','a','n','n','n','n'],['Material coordinator','n','a','n','a','n','n'],['Technical (names list)','n','n','n','a','n','n'],['QS','n','n','a','a','n','n'],['Finance','a','n','a','s','s','s'],['Owner / CRM owner','a','s','a','s','s','s'],['Operations (PM, factory, site)','n','n','s','a','a','a'],['Client','l','l','l','l','l','l']];
+  const ML = {a:'Acts', s:'Sees', l:'Lens', n:'–'};
+  document.getElementById('matrix').innerHTML = MX.map(r => '<tr><td>' + esc(r[0]) + '</td>' + r.slice(1).map(v => '<td class="c"><span class="mx ' + v + '">' + ML[v] + '</span></td>').join('') + '</tr>').join('');
+
+  /* reports */
+  const REP = [['Won','Proposal 1 and proposal 2 each count, on their own Won date. Cancelled deals and withdrawn Q2 excluded.'],['Lost','Lost opportunities only, with reasons. Not-interested enquiries are a separate list.'],['Cancelled deals','Removed from Won and kept here. Refund or retention decided by Finance.'],['Withdrawn Q2','Not Lost, not Won. The deal completes at design handover; time used is charged per the agreement.'],['Spam by source','Counted per source; the contact stays flagged.'],['Duplicates','Excluded from every report; a banner on the record.'],['Response time','First activity per account manager against the 1-working-hour rule; reassignment history.'],['Audit','Change history on every record; who changed what, when, from which source (person, AI or form).']];
+  document.getElementById('reports').innerHTML = REP.map(r => '<div class="panel"><h4>' + esc(r[0]) + '</h4><p class="small">' + esc(r[1]) + '</p></div>').join('');
+
+  /* sign-off checks */
+  const COV = [
+    ['Inbox labels, views, reopen rule, inbox access', 'Inbox', 'u', ''],
+    ['One form per source/channel; form sets both', 'Intake', 'u', ''],
+    ['T1 automatic, T2 form link, T3 after 3 working hours with admin confirm', 'Inbox templates', 'u', ''],
+    ['Spam resolves silently, flags the contact, counts by source', 'Inbox', 'u', ''],
+    ['Mandatory intake fields, locked reference and title, country-code mobile', 'Enquiry in', 'p', 'Most fields exist; checked earlier only in part'],
+    ['Duplicate → original account manager; returning → same account manager, no new client', 'Duplicate check', 'u', ''],
+    ['Round-robin; 1-working-hour reassignment loop; Unassigned + owner email after a day', 'Round-robin + First contact', 'p', 'Working-hours clock is tested; the loop and owner email were not checked'],
+    ['Convert gate blocks with one error box (table D)', 'Convert', 'u', ''],
+    ['Intro booking blocked until D; deck page 3 auto-filled', 'Book intro', 'u', ''],
+    ['Qualified outcome, target date, gate to Proposal', 'Qualified', 'u', ''],
+    ['Design fee proposal created from BUA, spaces and package; sent; 7-day validity', 'Proposal 1', 'n', 'Built, but sending is blocked by the requirement gate'],
+    ['Payment proof → deal file; Finance net/VAT/method/commission; Owner locks', 'Finance check + Owner approval', 'y', 'Works; receipts store no payment method'],
+    ['Full ID completes at design approval with the thank-you message', 'Completed', 'u', 'Open question from the firm'],
+    ['Design steps with owner, due date, status, revision count; 2 free revisions', 'Design chapter', 'p', 'Stages exist; revision charging not checked'],
+    ['Site measure before space planning; space planning before renders', 'Map order', 'p', 'Site-visit questions currently block completion'],
+    ['Material selection only on production jobs', 'Material selection', 'u', ''],
+    ['Quotation → estimate → manager approval → estimate proposal (table M)', 'Price chapter + studio', 'p', 'QS rules work; layout and auto ref missing'],
+    ['Nothing to production before Received / Approved', 'Received + Owner approval', 'y', 'Gate exists'],
+    ['Material list, technical by names list, per-item drawing sign-off, margin hold, release', 'Make chapter, per item', 'p', 'No upload link; codes not carried; sizes optional'],
+    ['Dispatch blocked until inspection 2; permit and crew', 'Factory + Dispatch gate', 'u', ''],
+    ['Delivery photos per item; change requests paid before work; snags block handover', 'Install chapter', 'u', ''],
+    ['Handover pack accepted in the portal; warranty per item, default 6 months', 'Handover + Warranty', 'u', ''],
+    ['Reports: Lost, Won without cancelled, Cancelled, Not interested, Withdrawn Q2', 'Reports', 'u', ''],
+    ['Change history and reassignment history on every record', 'Audit', 'p', 'Audit events exist; reassignment view not checked']
+  ];
+  const SL = {y:'Works', p:'Partly', n:'Missing', u:'Not checked'};
+  document.getElementById('covered-rows').innerHTML = COV.map(r => '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td><td><span class="st ' + r[2] + '">' + SL[r[2]] + '</span>' + (r[3] ? '<br><span class="xs muted">' + esc(r[3]) + '</span>' : '') + '</td></tr>').join('');
+
+  F.staticMap(document.getElementById('mini-map'), 'fof', 'bespoke');
+})();
+</script>

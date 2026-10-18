@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Transform } from "class-transformer";
 import {
+  IsEmail,
   IsInt,
   IsObject,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from "class-validator";
 import { IsCountryCode, IsCurrencyCode, IsLocale, IsTimeZone } from "../../common/regional.validators";
 
@@ -70,6 +72,26 @@ export class UpdateLegalEntityDto {
   @IsString()
   @MaxLength(100)
   registrationNumber?: string;
+
+  @ApiPropertyOptional({ maxLength: 40 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+
+  @ApiPropertyOptional({ maxLength: 320 })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === "string" ? value.trim() : value))
+  @ValidateIf((_, value) => value !== "")
+  @IsEmail()
+  @MaxLength(320)
+  email?: string;
+
+  @ApiPropertyOptional({ maxLength: 1000, description: "The letterhead's footer text, printed at the foot of the business's documents." })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  letterheadFooter?: string;
 
   @ApiPropertyOptional({ type: "object", additionalProperties: true })
   @IsOptional()

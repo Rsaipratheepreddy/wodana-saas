@@ -2,13 +2,25 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { membersPageFixture } from "@/lib/workspace/members";
-import { MembersPage } from "./members-page";
+import { MembersPage, parseEmailList } from "./members-page";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("MembersPage", () => {
+  it("shows the seats before inviting, and stops inviting when every seat is taken (SP-3)", () => {
+    const open = { ...structuredClone(membersPageFixture), seats: { limit: 10, used: 7, reserved: 2, available: 1 } };
+    const { unmount } = render(<MembersPage initialData={open} />);
+    expect(screen.getByText("7 of 10 seats · 2 reserved by invitations")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite with details" })).toBeEnabled();
+    unmount();
+    render(<MembersPage initialData={{ ...structuredClone(membersPageFixture), seats: { limit: 10, used: 10, reserved: 0, available: 0 } }} />);
+    expect(screen.getByText("10 of 10 seats")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite with details" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Add seats in Billing" })).toHaveAttribute("href", "/workspace/billing");
+  });
+
   it("renders a full-width directory from real member and invitation records", () => {
     const data = structuredClone(membersPageFixture);
     data.invitations.push({
@@ -29,7 +41,10 @@ describe("MembersPage", () => {
     expect(screen.getByRole("region", { name: "People" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Workspace members" })).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "admin@igloarchitects.com" })).toBeInTheDocument();
+    // Invitations and members are one framed table: the invitation sits in its own group above the members.
+    expect(screen.getAllByRole("table")).toHaveLength(1);
     expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("link", { name: "maya@igloarchitects.com" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table", { name: "Workspace members" })).getByRole("button", { name: "Collapse Invited" })).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select Iglo Administrator" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select maya@igloarchitects.com" })).toBeInTheDocument();
@@ -97,6 +112,17 @@ describe("MembersPage", () => {
       roleCodes: ["member"],
     });
     expect(await screen.findByRole("dialog", { name: "Invitation ready" })).toBeInTheDocument();
+  });
+
+  it("lists teams and roles by their own names, with the kind beside each", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(membersPageFixture);
+    data.teams = [{ id: "20000000-0000-4000-8000-000000000001", name: "QS Team" }];
+    render(<MembersPage initialData={data} />);
+    await interaction.click(screen.getByRole("button", { name: /Access/ }));
+    const option = await screen.findByRole("option", { name: /QS Team/ });
+    expect(option).toHaveTextContent("QS TeamTeam");
+    expect(screen.queryByText("QS Team team")).toBeNull();
   });
 
   it("creates a team-only invitation without adding a direct role", async () => {
@@ -189,7 +215,35 @@ describe("MembersPage", () => {
     render(<MembersPage initialData={data} />);
     expect(screen.queryByRole("button", { name: "Invite with details" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Actions for/ })).not.toBeInTheDocument();
-    expect(screen.getByText(/Only workspace owners and administrators/)).toBeInTheDocument();
+    expect(screen.getByText(/Your access is read-only/)).toBeInTheDocument();
+  });
+
+  it("explains missing People access without implying the service failed", () => {
+    const data = structuredClone(membersPageFixture);
+    data.canView = false;
+    data.canManage = false;
+    render(<MembersPage initialData={data} />);
+    expect(screen.getByText("People access unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Workspace members" })).not.toBeInTheDocument();
+  });
+
+  it("lets a scoped inviter use only delegable roles and hides edits to privileged people", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(membersPageFixture);
+    data.canManage = false;
+    data.canInvite = true;
+    data.canEdit = true;
+    data.canCancelInvitations = false;
+    data.assignableRoleCodes = ["member", "viewer"];
+    render(<MembersPage initialData={data} />);
+
+    expect(screen.getByRole("button", { name: "Invite with details" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Actions for Iglo Administrator" })).not.toBeInTheDocument();
+    await interaction.click(screen.getByRole("button", { name: "Invite with details" }));
+    const dialog = await screen.findByRole("dialog", { name: "Invite a member" });
+    expect(within(dialog).getByRole("checkbox", { name: /Member/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox", { name: /Owner/ })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("checkbox", { name: /Administrator/ })).not.toBeInTheDocument();
   });
 
   it("reviews member access changes before applying them and preserves team access", async () => {
@@ -236,5 +290,47 @@ describe("MembersPage", () => {
       status: "active",
       roleCodes: [],
     });
+  });
+
+  it("offers View as for active teammates, never oneself or an owner to an administrator, and confirms with a code", async () => {
+    const interaction = userEvent.setup();
+    const data = structuredClone(membersPageFixture);
+    const teammate = { ...data.members[0], id: "00000000-0000-4000-8000-000000000010", userId: "00000000-0000-4000-8000-000000000011", email: "sara@example.com", displayName: "Sara Sales", roles: ["member"] };
+    const owner = { ...data.members[0], id: "00000000-0000-4000-8000-000000000012", userId: "00000000-0000-4000-8000-000000000013", email: "olivia@example.com", displayName: "Olivia Owner", roles: ["owner"] };
+    data.members.push(teammate, owner);
+    data.viewAs = { canViewAs: true, mfaEnabled: true, settings: { notifySubject: true, version: 0 }, viewerIsOwner: false };
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, pathname: "/workspace/settings/members", search: "" });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ sessionId: "s" }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MembersPage initialData={data} />);
+    // The workspace setting: people are told afterwards (on by default).
+    expect(screen.getByRole("switch", { name: "Tell people after someone viewed as them" })).toBeChecked();
+
+    await interaction.click(screen.getByRole("button", { name: "Actions for Olivia Owner" }));
+    expect(screen.queryByRole("menuitem", { name: "View as" })).not.toBeInTheDocument();
+    await interaction.keyboard("{Escape}");
+    await interaction.click(screen.getByRole("button", { name: "Actions for Iglo Administrator" }));
+    expect(screen.queryByRole("menuitem", { name: "View as" })).not.toBeInTheDocument();
+    await interaction.keyboard("{Escape}");
+
+    await interaction.click(screen.getByRole("button", { name: "Actions for Sara Sales" }));
+    await interaction.click(await screen.findByRole("menuitem", { name: "View as" }));
+    const dialog = await screen.findByRole("dialog", { name: "View as Sara Sales" });
+    expect(dialog).toHaveTextContent("Read-only for 30 minutes.");
+    await interaction.type(within(dialog).getByRole("textbox", { name: /Authenticator or recovery code/ }), "123456");
+    await interaction.click(within(dialog).getByRole("button", { name: "Start viewing" }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/workspace"));
+    expect(fetchMock.mock.calls.map((call) => (call as unknown as [string])[0])).toEqual(["/api/auth/mfa/step-up", "/api/workspace/view-as"]);
+    const started = JSON.parse(String((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body));
+    expect(started).toMatchObject({ workspaceId: data.workspaceId, kind: "person", membershipId: teammate.id, returnPath: "/workspace/settings/members" });
+    expect(started.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe("invite box addresses", () => {
+  it("drops punctuation typed around an address, so a trailing full stop doesn't fail the invite", () => {
+    expect(parseEmailList("operations@palmlivingae.com.")).toEqual(["operations@palmlivingae.com"]);
+    expect(parseEmailList("<A@Firm.com>, b@firm.com; (c@firm.co.uk)")).toEqual(["a@firm.com", "b@firm.com", "c@firm.co.uk"]);
   });
 });

@@ -12,17 +12,26 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "storybook": "storybook dev -p 6006",
-    "storybook:build": "storybook build"
+    "storybook:build": "storybook build",
+    "i18n:missing": "node scripts/i18n-missing.mjs",
+    "i18n:extract": "node scripts/i18n-extract.mjs",
+    "i18n:translate": "node scripts/i18n-translate.mjs",
+    "landing:images": "node scripts/landing-images.mjs"
   },
   "dependencies": {
     "@internationalized/date": "^3.12.4",
     "@tanstack/react-table": "8.21.3",
     "@tanstack/react-virtual": "^3.14.10",
+    "@tiptap/extension-list": "^3.31.3",
     "@tiptap/extension-placeholder": "3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
     "@tiptap/pm": "3.31.3",
     "@tiptap/react": "3.31.3",
     "@tiptap/starter-kit": "3.31.3",
     "@xyflow/react": "^12.11.6",
+    "canvas-confetti": "^1.9.4",
+    "flag-icons": "^7.5.0",
+    "libphonenumber-js": "^1.13.12",
     "lucide-react": "^1.40.0",
     "next": "16.3.4",
     "qrcode": "^1.5.4",
@@ -30,8 +39,7 @@
     "react-aria": "^3.52.0",
     "react-aria-components": "^1.21.0",
     "react-dom": "19.2.8",
-    "read-excel-file": "9.3.10",
-    "simple-icons": "^16.29.0"
+    "read-excel-file": "9.3.10"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -42,6 +50,7 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.1",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^22.15.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.0",

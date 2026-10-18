@@ -1,5 +1,7 @@
 import {BadRequestException,ConflictException,ForbiddenException} from '@nestjs/common';
 import type {PoolClient} from 'pg';
+import {syncDesignStages} from '../design/design-stage-sync';
+import {noticeDesignStep} from '../pre-projects/design-notices';
 
 export async function portalReviewDesign(client:PoolClient,workspaceId:string,caseId:string,versionId:string) {
  if(!/^[0-9a-f-]{36}$/i.test(versionId))throw new BadRequestException('Choose a design file.');
@@ -24,5 +26,8 @@ export async function decidePortalDesign(client:PoolClient,workspaceId:string,ca
  await client.query(`INSERT INTO pre_project_design_activity(id,workspace_id,case_id,design_id,version_id,action,note,decision_by,created_by,client_grant_id,decision_source,decision_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULL,$9,'client_portal',now())`,[input.challengeId,workspaceId,caseId,design.id,input.versionId,action,input.note,grant.name,grant.id]);
  await client.query(`UPDATE pre_project_designs SET version=version+1,updated_at=now() WHERE workspace_id=$1 AND case_id=$2 AND id=$3`,[workspaceId,caseId,design.id]);
  await client.query(`UPDATE pre_project_cases SET updated_at=now() WHERE workspace_id=$1 AND id=$2`,[workspaceId,caseId]);
+ if(action==='approved')await syncDesignStages(client,workspaceId,caseId,null);
+ const shown=(await client.query<{title:string;createdBy:string}>(`SELECT d.title,v.created_by AS "createdBy" FROM pre_project_designs d JOIN pre_project_design_versions v ON v.workspace_id=d.workspace_id AND v.design_id=d.id WHERE d.workspace_id=$1 AND v.id=$2`,[workspaceId,input.versionId])).rows[0];
+ if(shown)await noticeDesignStep(client,{workspaceId,caseId,designId:design.id,title:shown.title,action,fromStatus:'client_review',actorUserId:null,uploaderUserId:shown.createdBy,note:input.note,activityId:input.challengeId});
  return {ok:true};
 }

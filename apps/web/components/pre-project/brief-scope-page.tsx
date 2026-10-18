@@ -1,38 +1,37 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import { Tab, TabList, TabPanel, Tabs } from 'react-aria-components';
-import { ClipboardList, DoorOpen, FileText, LayoutGrid, Plus, Ruler, Table2 } from 'lucide-react';
-import { Button, Checkbox, DataGrid, SelectField, SearchInput, useDesignSystem, type DataGridColumn } from '@/design-system';
-import { blankEntry, briefFields, caseApi, caseRequest, deriveDiscoveryCoverage, entryPayload, formatCaseMoney, parseScopePaste, scopeLabels, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
-import { mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
-import { CaseModal, CatalogChoiceField } from './case-controls';
+import { FileText, LayoutGrid, Plus, Table2 } from 'lucide-react';
+import { Badge, Button, Checkbox, DataGrid, EmptyState, FormDialog, FormSection, MenuButton, MoneyField, MoreDetails, SelectField, SearchInput, TextInput, TextAreaField, useDesignSystem, type DataGridColumn } from '@/design-system';
+import { blankEntry, briefFields, caseApi, caseRequest, entryPayload, formatCaseMoney, scopeLabel, type CaseBrief, type CaseContent, type CaseRoom, type ScopeEntry, type ItemDimension } from '@/lib/pre-project/content';
+import { documentText, mediaIds, textDocument, type RequirementNote } from '@/lib/crm/note-document';
+import { useT } from '@/lib/i18n/i18n-provider';
 import { ItemSpecificationEditor } from './item-specification-editor';
 import { MeasurementCreateForm } from './measurement-create-form';
 import { ScopeEditor } from './scope-entry-editor';
+import { RoomManager } from './room-manager';
 import { useRequirementNotes } from '../crm/requirement-notes';
-import { ScopeNoteCards } from './scope-note-cards';
+import workspace from './requirements-workspace.module.css';
+import { NotePreview } from '@/components/crm/note-preview';
+import { DimensionReadout } from './scope-note-cards';
 import tableStyles from '../crm/leads-page.module.css';
 import styles from './case-content.module.css';
+import { Skeleton } from "@/design-system";
 
 type GatheringTab = 'requirement' | 'measurements' | 'file';
 type MeasurementRow = { id: string; entry: ScopeEntry; dimension?: ItemDimension };
-const gatheringTabs = [
-  { id: 'requirement', label: 'Requirements', icon: ClipboardList },
-  { id: 'measurements', label: 'Measurements', icon: Ruler },
-  { id: 'file', label: 'Site plan', icon: FileText },
-] as const;
 
-export function BriefScopePage({ initialData, view: initialView = 'requirement' }: { initialData: CaseContent; view?: GatheringTab | 'inspiration' }) {
+export function BriefScopePage({ initialData, view: initialView = 'requirement', readOnlyReason, compact = false }: { initialData: CaseContent; readOnlyReason?: string; view?: GatheringTab | 'inspiration'; compact?: boolean }) {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<GatheringTab>(() => {
+  const t = useT();
+  const [tab] = useState<GatheringTab>(() => {
     const requested = searchParams.get('tab');
     return requested === 'measurements' ? 'measurements' : requested === 'site-plan' ? 'file' : initialView === 'inspiration' ? 'requirement' : initialView;
   });
   const view = initialView === 'inspiration' ? 'inspiration' : tab;
-  const [presentation, setPresentation] = useState<'cards'|'table'>('cards');
+  const [presentation, setPresentation] = useState<'cards'|'table'>(view === 'measurements' ? 'table' : 'cards');
   const [specFocus, setSpecFocus] = useState<'dimensions'|undefined>();
   const [data, setData] = useState(initialData);
   const [search, setSearch] = useState('');
@@ -46,11 +45,12 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
   const [measureAfterSave, setMeasureAfterSave] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
   const [roomsOpen, setRoomsOpen] = useState(false);
-  const [bulk, setBulk] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [deciding, setDeciding] = useState<{ entry: ScopeEntry; status: string } | null>(null);
   const { locale } = useDesignSystem();
   const { workspaceId, caseId } = data;
+  const blockedReason = readOnlyReason ?? t('Your role does not have permission to edit this record.');
   const sharedNotes = useRequirementNotes({ workspaceId, caseId }, initialView !== 'inspiration');
 
   const linkedNotes = new Map(sharedNotes.items.map(note => [note.scope?.id ?? `requirement-note:${note.id}`, note]));
@@ -64,9 +64,6 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
     };
   };
   const allEntries = [...sharedNotes.items.map(noteEntry), ...data.entries.filter(item => !linkedNotes.has(item.id))];
-  // Older production responses predate discovery coverage. Derive it safely so
-  // existing cases still open while the API and web releases are rolling out.
-  const coverage = deriveDiscoveryCoverage(data.rooms, allEntries, data.coverage?.verifiedMeasurementItemIds ?? []);
   const canEditEntry = (value: ScopeEntry) => data.canEdit && (!linkedNotes.has(value.id) || sharedNotes.canEdit);
   const storedRequirement = (value: ScopeEntry) => value.kind === 'requirement' && !value.id.startsWith('requirement-note:');
   const openSpecification = (value: ScopeEntry, focus?: 'dimensions') => { setSpecFocus(focus); setSpecEntry(value); };
@@ -76,9 +73,9 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
     return note ? sharedNotes.fileUrl(note.id, asset.id, preview) : caseApi(workspaceId, caseId, `assets/${asset.id}${preview ? '?preview=1' : ''}`);
   };
   const saveEntry = async (draft: ScopeEntry, archive?: boolean) => {
-    if (!canEditEntry(draft)) throw new Error('This requirement is read only.');
+    if (!canEditEntry(draft)) throw new Error(t('This requirement is read only.'));
     const original = allEntries.find(item => item.id === draft.id);
-    const document = draft.document && (draft.note !== original?.note || [...mediaIds(draft.document.content)].some(id => !draft.assets.some(asset => asset.id === id))) ? textDocument(draft.note) : draft.document;
+    const document = draft.document && (documentText(draft.document.content) !== draft.note || [...mediaIds(draft.document.content)].some(id => !draft.assets.some(asset => asset.id === id))) ? textDocument(draft.note) : draft.document;
     const note = linkedNotes.get(draft.id);
     if (note) {
       const scope = {
@@ -91,125 +88,157 @@ export function BriefScopePage({ initialData, view: initialView = 'requirement' 
         archived: archive ?? Boolean(draft.archivedAt),
       });
       if (savedNote.scope) upsert(savedNote.scope);
-      setMessage('Requirement saved.');
+      setMessage(t('Requirement saved.'));
       return noteEntry(savedNote);
     }
     const saved = await caseRequest<ScopeEntry>(workspaceId, caseId, 'entries', 'PUT', { ...entryPayload({ ...draft, document }), archived: archive ?? Boolean(draft.archivedAt) });
-    upsert(saved); setMessage(view === 'file' ? 'Site plan saved.' : 'Saved.'); return saved;
+    upsert(saved); setMessage(t(view === 'file' ? 'Site plan saved.' : 'Saved.')); return saved;
   };
   const visible = allEntries.filter(item => (archived ? Boolean(item.archivedAt) : !item.archivedAt)
-    && (room === 'all' || (item.roomId ?? 'general') === room)
+    && (room === 'all' || item.roomId === room)
     && `${item.title} ${item.note} ${item.roomName ?? ''}`.toLowerCase().includes(search.toLowerCase()));
+  // Moodboard pins and site photos have their own tabs; Requirements lists only what the client asked for.
   const rows = visible.filter(item => view === 'requirement' ? ['requirement', 'note'].includes(item.kind) : item.kind === view);
   const measurementRows: MeasurementRow[] = visible.filter(storedRequirement).flatMap(value => value.specification?.dimensions.length
     ? value.specification.dimensions.map(dimension => ({ id: `${value.id}:${dimension.id}`, entry: value, dimension }))
-    : [{ id: value.id, entry: value }]);
+    : []);
   const cardEntries = view === 'measurements' ? visible.filter(storedRequirement) : rows;
+  // A link to one requirement (a quote's "decide" check) lands on its card, with its decision in focus.
+  const requestedRequirement = view === 'requirement' ? searchParams.get('requirement') : null;
+  const revealed = useRef(false);
+  useEffect(() => {
+    if (!requestedRequirement || revealed.current) return;
+    const card = document.getElementById(`requirement-${requestedRequirement}`);
+    if (!card) return;
+    revealed.current = true;
+    (card.querySelector<HTMLElement>('button') ?? card).focus({ preventScroll: true });
+    card.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+  });
   const measurementColumns: DataGridColumn<MeasurementRow>[] = [
-    { id: 'item', header: 'Requirement', size: 240, accessorFn: row => row.entry.title },
-    { id: 'room', header: 'Room', size: 150, accessorFn: row => row.entry.roomName ?? 'Whole project' },
-    { id: 'dimension', header: 'Dimension', size: 145, accessorFn: row => row.dimension?.name ?? 'Not entered' },
-    { id: 'approximate', header: 'Approximate', size: 125, accessorFn: row => row.dimension?.approximate != null ? `${row.dimension.approximate} ${row.dimension.unit}` : '—' },
-    { id: 'measured', header: 'Measured', size: 125, accessorFn: row => row.dimension?.measured != null ? `${row.dimension.measured} ${row.dimension.unit}` : '—' },
-    { id: 'source', header: 'Source', size: 150, accessorFn: row => row.dimension ? `${row.dimension.source === 'client' ? 'Client' : 'Team'} · ${row.dimension.verification ?? 'unverified'}` : '—' },
-    { id: 'action', header: '', size: 160, cell: ({ row: { original } }) => <Button size="compact" variant="quiet" onPress={() => openSpecification(original.entry, 'dimensions')}>{!data.canEdit || archived ? 'View measurements' : original.dimension ? 'Edit measurements' : 'Add measurements'}</Button> },
+    { id:'item',header:t('Item'),size:260,accessorFn:row=>row.entry.title,cell:({row:{original}})=><div className={workspace.rowSummary}><strong>{original.entry.title}</strong><span>{data.rooms.find(room=>room.id===original.entry.roomId)?.name??original.entry.roomName??''}</span></div> },
+    { id:'dimension',header:t('Dimension'),size:150,accessorFn:row=>row.dimension?.name??'' },
+    { id:'measured',header:t('Measured size'),size:150,accessorFn:row=>row.dimension?.measured!=null?`${row.dimension.measured} ${row.dimension.unit}`:t('Not measured') },
+    { id:'action',header:'',size:90,cell:({row:{original}})=><Button size="compact" variant="quiet" aria-label={!canEditEntry(original.entry)||archived?t('View measurements for {title}',{title:original.entry.title}):t('Edit measurements for {title}',{title:original.entry.title})} onPress={()=>openSpecification(original.entry,'dimensions')}>{t(!canEditEntry(original.entry)||archived?'View':'Edit')}</Button> },
   ];
   const columns: DataGridColumn<ScopeEntry>[] = [
-    { accessorKey: 'title', header: view === 'file' ? 'Site plan' : view === 'inspiration' ? 'Inspiration' : 'Requirement', size: 280, cell: ({ row: { original } }) => <strong>{original.title}</strong> },
-    { id: 'roomName', header: 'Room', size: 155, accessorFn: item => data.rooms.find(value => value.id === item.roomId)?.name ?? item.roomName ?? 'Whole project' },
+    { accessorKey: 'title', header: t(view === 'file' ? 'Site plan' : view === 'inspiration' ? 'Inspiration' : 'Requirement'), size: 320, cell: ({ row: { original } }) => <div className={workspace.rowSummary}><strong>{original.title}</strong>{original.note && <span>{original.note}</span>}</div> },
+    { id: 'roomName', header: t('Room'), size: 155, accessorFn: item => data.rooms.find(value => value.id === item.roomId)?.name ?? item.roomName ?? '' },
     ...(view === 'requirement' ? [
-      { id: 'quantity', header: 'Quantity', size: 115, accessorFn: item => item.quantity != null ? `${item.quantity} ${item.unit}` : '—' },
-      { id: 'scope', header: 'Scope', size: 115, accessorFn: item => scopeLabels[item.scopeStatus] ?? item.scopeStatus },
+      { id: 'quantity', header: t('Quantity'), size: 115, accessorFn: item => item.quantity != null ? `${item.quantity} ${item.unit}` : '—' },
+      { id: 'scope', header: t('Scope'), size: 135, accessorFn: item => scopeLabel(t, item.scopeStatus), cell: ({ row: { original } }) => original.kind === 'requirement' ? <Badge tone={original.scopeStatus === 'included' ? 'success' : original.scopeStatus === 'undecided' ? 'warning' : 'neutral'}>{scopeLabel(t, original.scopeStatus)}</Badge> : <Badge tone="neutral">{t(original.kind === 'note' ? 'Note' : original.kind === 'file' ? 'Reference file' : 'Inspiration')}</Badge> },
+      { id: 'measurements', header: t('Measurements'), size: 170, cell: ({ row: { original } }) => storedRequirement(original) ? <Button size="compact" variant="quiet" onPress={() => openSpecification(original, 'dimensions')}>{t(original.specification?.dimensions?.length ? 'View measurements' : canEditEntry(original) && !archived ? 'Add measurements' : 'Not entered')}</Button> : <span>—</span> },
     ] as DataGridColumn<ScopeEntry>[] : [
-      { id: 'files', header: 'Files', size: 180, cell: ({ row: { original } }) => <span className={styles.referenceCell}>{original.assets[0]?.hasPreview && <Image alt="" unoptimized width={40} height={40} src={assetUrl(original, original.assets[0], true)}/>}<span>{original.assets.length ? `${original.assets.length} file${original.assets.length === 1 ? '' : 's'}` : original.referenceUrl ? 'Linked reference' : 'No attachment'}</span></span> },
-      { id: 'source', header: 'Captured from', size: 125, accessorFn: item => item.source === 'client' ? 'Client' : 'Team' },
+      { id: 'files', header: t('Files'), size: 180, cell: ({ row: { original } }) => <span className={styles.referenceCell}>{original.assets[0]?.hasPreview && <Image alt="" unoptimized width={40} height={40} src={assetUrl(original, original.assets[0], true)}/>}<span>{original.assets.length ? t(original.assets.length === 1 ? '{count} file' : '{count} files', { count: original.assets.length }) : t(original.referenceUrl ? 'Linked reference' : 'No attachment')}</span></span> },
+      { id: 'source', header: t('Captured from'), size: 125, accessorFn: item => t(item.source === 'client' ? 'Client' : 'Team') },
     ] as DataGridColumn<ScopeEntry>[]),
-    { accessorKey: 'note', header: 'Notes', size: 300 },
-    { id: 'action', header: '', size: 100, cell: ({ row: { original } }) => <Button size="compact" variant="quiet" aria-label={`${canEditEntry(original) && !archived ? 'Edit' : 'View'} ${original.title}`} onPress={() => setEntry(original)}>{canEditEntry(original) && !archived ? 'Edit' : 'View'}</Button> },
+    { id: 'action', header: '', size: 100, cell: ({ row: { original } }) => <Button size="compact" variant="quiet" aria-label={canEditEntry(original) && !archived ? t('Edit {title}', { title: original.title }) : t('View {title}', { title: original.title })} onPress={() => setEntry(original)}>{t(canEditEntry(original) && !archived ? 'Edit' : 'View')}</Button> },
   ];
-  const changeTab = (key: string | number) => {
-    const next = key as GatheringTab;
-    setTab(next); setSearch(''); setError(''); setMessage('');
-    const url = new URL(window.location.href);
-    if (next === 'requirement') url.searchParams.delete('tab');
-    else url.searchParams.set('tab', next === 'file' ? 'site-plan' : next);
-    window.history.replaceState(window.history.state, '', url);
-  };
+  const captureActions = <div className={`${styles.toolbarActions} ${workspace.captureActions}`}>
+        {/* Someone who can't edit the case reads the brief (it opens read-only); managing the rooms is an edit, so it isn't offered. */}
+        {!compact && <><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}>{t('Project brief')}</Button>{data.canEdit ? <Button size="compact" variant="quiet" onPress={() => setRoomsOpen(true)}>{t('Manage rooms')}</Button> : null}</>}
+        {view !== 'requirement' && view !== 'measurements' && <div className={styles.presentationSwitch} role="group" aria-label={t('Display')}><button type="button" aria-label={t('Cards view')} aria-pressed={presentation === 'cards'} onClick={() => setPresentation('cards')}><LayoutGrid size={15}/></button><button type="button" aria-label={t('Table view')} aria-pressed={presentation === 'table'} onClick={() => setPresentation('table')}><Table2 size={15}/></button></div>}
+        {view === 'measurements' && <EligibilityButton reason={blockedReason} isDisabled={!data.canEdit} size="compact" variant="primary" onPress={() => { setArchived(false); setMeasurementFor(undefined); setMeasurementOpen(true); }}><Plus size={14}/>{t('Add measurement')}</EligibilityButton>}
+        {view !== 'measurements' && <EligibilityButton reason={blockedReason} isDisabled={!data.canEdit} size="compact" variant="primary" onPress={() => { setArchived(false); setEntry({ ...blankEntry(room === 'all' ? null : room), kind: view }); }}><Plus size={14}/>{t(view === 'file' ? 'Add site plan' : view === 'inspiration' ? 'Add inspiration' : 'Add requirement')}</EligibilityButton>}
+      </div>;
   const panel = <div className={styles.registerPanel}>
-    <div className={styles.compactToolbar}>
-      <SearchInput label={view === 'measurements' ? 'Search measurements' : view === 'file' ? 'Search site plans' : view === 'inspiration' ? 'Search inspirations' : 'Search requirements'} value={search} onChange={setSearch} placeholder={view === 'file' ? 'Search site plans…' : 'Search requirements or rooms…'}/>
-      <div className={styles.compactFilter}><SelectField label="Room" selectedKey={room} onSelectionChange={key => key && setRoom(String(key))} items={[{ id: 'all', label: 'All rooms' }, { id: 'general', label: 'Whole project' }, ...data.rooms.map(item => ({ id: item.id, label: item.name }))]}/></div>
-      <Checkbox isSelected={archived} onChange={setArchived}>Archived</Checkbox>
-      <div className={styles.toolbarActions}>
-        <div className={styles.presentationSwitch} role="group" aria-label="Display"><button type="button" aria-label="Cards view" aria-pressed={presentation === 'cards'} onClick={() => setPresentation('cards')}><LayoutGrid size={15}/></button><button type="button" aria-label="Table view" aria-pressed={presentation === 'table'} onClick={() => setPresentation('table')}><Table2 size={15}/></button></div>
-        {data.canEdit && view === 'measurements' && <Button size="compact" variant="primary" onPress={() => { setArchived(false); setMeasurementFor(undefined); setMeasurementOpen(true); }}><Plus size={14}/>Add measurement</Button>}
-        {data.canEdit && view === 'requirement' && <Button size="compact" onPress={() => setBulk(true)}>Paste rows</Button>}
-        {data.canEdit && view !== 'measurements' && <Button size="compact" variant="primary" onPress={() => { setArchived(false); setEntry({ ...blankEntry(room === 'all' || room === 'general' ? null : room), kind: view }); }}><Plus size={14}/>{view === 'file' ? 'Add site plan' : view === 'inspiration' ? 'Add inspiration' : 'Add requirement'}</Button>}
-      </div>
+    <div className={`${styles.compactToolbar} ${workspace.toolbar}`}>
+      <SearchInput label={t(view === 'measurements' ? 'Search measurements' : view === 'file' ? 'Search site plans' : view === 'inspiration' ? 'Search inspirations' : 'Search requirements')} value={search} onChange={setSearch} placeholder={t(view === 'measurements' ? 'Search measurements…' : view === 'file' ? 'Search site plans…' : view === 'inspiration' ? 'Search inspiration…' : 'Search requirements…')}/>
+      <div className={workspace.roomFilter}><SelectField label={t('Room')} selectedKey={compact && archived ? 'archived' : room} onSelectionChange={key => { if (compact) { setArchived(key === 'archived'); setRoom(key === 'archived' ? 'all' : String(key ?? 'all')); } else setRoom(String(key ?? 'all')); }} items={[{id:'all',label:t('All rooms')},...data.rooms.map(value => ({id:value.id,label:value.name})),...(compact ? [{id:'archived',label:t('Archived requirements')}] : [])]}/></div>
+      {!compact && <Checkbox isSelected={archived} onChange={setArchived}>{t('Archived')}</Checkbox>}
+      {captureActions}
     </div>
-    {view !== 'inspiration' && sharedNotes.loading && <p role="status" className={styles.muted}>Loading requirements…</p>}
-    {view !== 'inspiration' && sharedNotes.failure && <p className={styles.error} role="alert">{sharedNotes.failure}<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>Retry</Button></p>}
-    {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={styles.notice}>{message}</p>}
-    {presentation === 'cards' ? <ScopeNoteCards key={`${view}:${room}:${search}:${archived}`} entries={cardEntries} workspaceId={workspaceId} caseId={caseId} locale={locale} measurements={view === 'measurements'} assetUrl={assetUrl} canEdit={data.canEdit} canSpecify={storedRequirement} emptyTitle={view === 'file' ? 'No site plans yet' : view === 'inspiration' ? 'No inspiration yet' : view === 'measurements' ? 'No measurements yet' : 'No requirements yet'} emptyDescription={view === 'file' ? 'Add a site plan, drawing or layout reference.' : view === 'measurements' ? 'Use Add measurement to record a site size.' : 'Add a requirement, photo or reference.'} onOpen={setEntry} onSpecifications={openSpecification}/> : <div className={tableStyles.tableRegion}>{view === 'measurements'
-      ? <DataGrid key="measurements" appearance="flush" ariaLabel="Measurements" data={measurementRows} columns={measurementColumns} getRowId={item => item.id} onRowAction={item => openSpecification(item.entry, 'dimensions')} showToolbar={false} selectable={false} pageSize={25} emptyTitle="No requirements to measure" emptyDescription="Add a requirement in the Requirements tab, then enter its measurements here."/>
-      : <DataGrid key={view} appearance="flush" ariaLabel={view === 'file' ? 'Site plans' : view === 'inspiration' ? 'Client inspirations' : 'Requirements'} data={rows} columns={columns} getRowId={item => item.id} onRowAction={setEntry} showToolbar={false} selectable={false} pageSize={25} emptyTitle={view === 'file' ? 'No site plans yet' : view === 'inspiration' ? 'No inspiration yet' : 'No requirements yet'} emptyDescription={view === 'file' ? 'Upload site plans, drawings and layout references.' : 'Choose a room and add a requirement.'}/>}</div>}
+    {view !== 'inspiration' && sharedNotes.loading && <Skeleton lines={4} />}
+    {view !== 'inspiration' && sharedNotes.failure && <p className={styles.error} role="alert">{sharedNotes.failure}<Button size="compact" variant="quiet" onPress={sharedNotes.refresh}>{t('Retry')}</Button></p>}
+    {error && <p className={styles.error} role="alert">{error}</p>}{message && <p role="status" className={compact ? workspace.srOnly : styles.notice}>{message}</p>}
+    {sharedNotes.loading && !allEntries.length && view !== 'inspiration' ? null : (view === 'requirement' || presentation === 'cards') ? <div className={workspace.cards}>{cardEntries.map(value => {
+      return <article className={workspace.card} data-scope={value.kind === 'requirement' ? value.scopeStatus : undefined} key={value.id} id={value.kind === 'requirement' ? `requirement-${value.id}` : undefined} aria-label={value.title}>
+        <div className={workspace.body}>
+          <div className={workspace.meta}><span>{data.rooms.find(r => r.id === value.roomId)?.name ?? value.roomName ?? ''}</span>{!compact && (value.kind === 'requirement' && canEditEntry(value) && !archived ? <MenuButton label={scopeLabel(t, value.scopeStatus)} items={[{id:'included',label:t('Include in scope')},{id:'excluded',label:t('Not included')},{id:'later',label:t('A later phase')},{id:'not_possible',label:t('Not possible')},{id:'undecided',label:t('Decide later')}]} onAction={key => {
+            // Anything not included gets a reason the client can read; it's sealed with the accepted scope.
+            if (['excluded','later','not_possible'].includes(String(key))) { setDeciding({ entry: value, status: String(key) }); return; }
+            void saveEntry({...value,scopeStatus:String(key)}).catch(failure=>setError(failure instanceof Error?failure.message:t('Could not update scope.'))); }} /> : <span data-status={value.scopeStatus}>{value.kind === 'file' ? t('Site file') : value.kind === 'inspiration' ? t('Inspiration') : scopeLabel(t, value.scopeStatus)}</span>)}</div>
+          <button type="button" className={workspace.title} aria-label={t('Open details for {title}', { title: value.title })} onClick={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{value.title}</button>
+          {view === 'measurements' ? <div className={workspace.measurementPreview}>{value.specification?.dimensions.length ? <DimensionReadout dimensions={value.specification.dimensions.slice(0,2)} /> : <p className={workspace.note}>{t('No measurements yet.')}</p>}</div> : (value.document || value.note) && <NotePreview className={workspace.noteRich} document={value.document} limit={5} text={value.note} />}
+          {value.assets.length > 0 && <div className={workspace.attachmentStrip} aria-label={t('{count} attachments', { count: value.assets.length })}>{value.assets.slice(0,3).map(asset => <button type="button" key={asset.id} title={asset.name} aria-label={t('View {name}', { name: asset.name })} onClick={() => setEntry(value)}>{asset.hasPreview ? <Image unoptimized src={assetUrl(value,asset,true)} alt="" width={28} height={28}/> : <FileText size={16}/>}<span>{asset.name}</span></button>)}{value.assets.length > 3 && <span className={workspace.moreAttachments}>+{value.assets.length-3}</span>}</div>}
+          <div className={workspace.footer}>
+            <Button size="compact" variant="quiet" aria-label={canEditEntry(value) && !archived ? (view === 'measurements' ? t('Edit measurements for {title}', { title: value.title }) : t('Edit {title}', { title: value.title })) : (view === 'measurements' ? t('View measurements for {title}', { title: value.title }) : t('View {title}', { title: value.title }))} onPress={() => view === 'measurements' ? openSpecification(value, 'dimensions') : setEntry(value)}>{canEditEntry(value) && !archived ? t(view === 'measurements' ? 'Edit sizes' : value.kind === 'file' ? 'Edit plan' : 'Edit note') : t(view === 'measurements' ? 'View sizes' : value.kind === 'file' ? 'View plan' : 'View note')} ↗</Button>
+            {!compact && canEditEntry(value) && <MenuButton label={t('Actions')} items={[
+              ...(!archived && value.kind === 'requirement' ? [{id:'specifications',label:t('Measurements')}] : []),
+              ...(archived ? [] : [...data.rooms.filter(item=>item.id!==value.roomId).map(item=>({id:`room:${item.id}`,label:t('Move to {name}',{name:item.name})}))]),
+              {id:archived?'restore':'archive',label:t(archived?'Restore':'Archive')},
+            ]} onAction={key => { if(key === 'specifications'){openSpecification(value,'dimensions');return;} const changed = key.startsWith('room:') ? {...value,roomId:key.slice(5)} : value; void saveEntry(changed,key === 'archive' ? true : key === 'restore' ? false : undefined).then(()=>setMessage(t(key === 'archive' ? 'Archived. Find this item using the Archived filter.' : key === 'restore' ? 'Restored.' : 'Room updated.'))).catch(failure=>setError(failure instanceof Error?failure.message:t('Could not update this item.'))); }} />}
+          </div>
+        </div>
+      </article>;
+    })}{!cardEntries.length && <div className={workspace.emptyFrame}><EmptyState illustration={archived || search || room !== "all" ? "search" : view === "file" ? "upload" : "empty"} title={t(archived ? "No archived items" : search || room !== "all" ? "Nothing matches these filters" : view === "file" ? "No site plans yet" : view === "inspiration" ? "No inspiration yet" : "No requirements yet")} description={t(archived || search || room !== "all" ? "Try another room or clear the search." : view === "file" ? "Add a floor plan, survey or site drawing." : view === "inspiration" ? "Collect photos, links and ideas the client likes." : "Add a note to capture what the client needs.")} /></div>}</div> : <div className={tableStyles.recordTablePanel}>{view === 'measurements'
+      ? <DataGrid key="measurements" ariaLabel={t('Measurements')} data={measurementRows} columns={measurementColumns} getRowId={item => item.id} onRowAction={item => openSpecification(item.entry, 'dimensions')} showToolbar={false} selectable={false} pageSize={25} emptyTitle={t('No measurements yet')} emptyDescription={t('Choose an item or type a name, then add its measurements.')}/>
+      : <DataGrid key={view} ariaLabel={t(view === 'file' ? 'Site plans' : view === 'inspiration' ? 'Client inspirations' : 'Requirements')} data={rows} columns={columns} getRowId={item => item.id} onRowAction={setEntry} showToolbar={false} selectable={false} pageSize={25} emptyTitle={t(view === 'file' ? 'No site plans yet' : view === 'inspiration' ? 'No inspiration yet' : 'No requirements yet')} emptyDescription={t(view === 'file' ? 'Upload site plans, drawings and layout references.' : 'Choose a room and add a requirement.')}/>}</div>}
   </div>;
   const editingNote = entry ? linkedNotes.get(entry.id) : undefined;
-  return <div className={styles.content}>
-    {initialView !== 'inspiration' && <section className={styles.coverage} aria-label="Discovery coverage">
-      <dl className={styles.coverageSummary}>
-        <div><dt>Rooms covered</dt><dd>{coverage.roomCount ? `${coverage.coveredRoomCount} of ${coverage.roomCount}` : 'No rooms yet'}</dd></div>
-        <div><dt>Client drafts</dt><dd>{coverage.clientDraftItemIds.length ? `${coverage.clientDraftItemIds.length} to review` : 'Clear'}</dd></div>
-        <div><dt>Scope decisions</dt><dd>{coverage.undecidedItemIds.length ? `${coverage.undecidedItemIds.length} open` : 'Clear'}</dd></div>
-        <div><dt>Measurements</dt><dd>{coverage.missingMeasurementItemIds.length ? `${coverage.missingMeasurementItemIds.length} need verification` : 'Clear'}</dd></div>
-      </dl>
-      {coverage.uncoveredRooms.length > 0 && <p><strong>Rooms without requirements:</strong> {coverage.uncoveredRooms.map(item => item.name).join(', ')}</p>}
-    </section>}
-    <div className={styles.register}>{initialView === 'inspiration' ? panel : <Tabs className="wd-tabs" selectedKey={tab} onSelectionChange={changeTab}>
-      <div className={styles.viewBar}>
-        <TabList aria-label="Requirement sections" className="wd-tab-list">{gatheringTabs.map(item => <Tab key={item.id} id={item.id} className="wd-tab"><item.icon size={14}/>{item.label}</Tab>)}</TabList>
-        <div className={styles.actions}><Button size="compact" variant="quiet" onPress={() => setBriefOpen(true)}><ClipboardList size={14}/>Project brief</Button><Button size="compact" variant="quiet" onPress={() => setRoomsOpen(true)}><DoorOpen size={14}/>Rooms</Button></div>
+  return <div className={`${styles.content} ${compact ? workspace.compact : ''}`}>
+    <div className={workspace.workspace}>
+      <div className={workspace.main}>
+        {!compact && <h2 className={workspace.visuallyHidden}>{t(view === 'requirement' ? 'Requirements' : view === 'measurements' ? 'Measurements' : view === 'file' ? 'Site plans' : 'Inspiration')}</h2>}
+        {!data.canEdit && <p className={workspace.readOnly} role="note">{blockedReason}</p>}
+        {panel}
       </div>
-      <TabPanel id={tab} className={styles.registerPanel}>{panel}</TabPanel>
-    </Tabs>}</div>
-    {entry && <ScopeEditor key={entry.id} entry={entry} data={{ ...data, canEdit: canEditEntry(entry) }} assetUrl={(asset, preview) => assetUrl(entry, asset, preview)} uploadFile={editingNote ? (file, id) => sharedNotes.upload(editingNote.id, file, id) : undefined} onClose={() => { setEntry(null); setMeasureAfterSave(false); }} onSpecifications={() => { openSpecification(entry); setEntry(null); }} onSave={async draft => { const saved = await saveEntry(draft); if (measureAfterSave) { setEntry(null); setMeasureAfterSave(false); setMeasurementFor(saved.id); setMeasurementOpen(true); } return saved; }} onArchive={async value => { await saveEntry(entry, value); setEntry(null); setMessage(value ? 'Archived.' : 'Restored.'); }}/>}
-    {measurementOpen && <MeasurementCreateForm data={data} entries={allEntries.filter(value => storedRequirement(value) && !value.archivedAt && canEditEntry(value))} initialEntryId={measurementFor} initialRoom={room} onClose={() => setMeasurementOpen(false)} onCreateRequirement={() => { setMeasurementOpen(false); setMeasureAfterSave(true); setEntry(blankEntry(room === 'all' || room === 'general' ? null : room)); }} onSaved={(value, specification) => { upsert({ ...value, assets: data.entries.find(item => item.id === value.id)?.assets ?? value.assets, specification }); setSearch(''); setRoom(value.roomId ?? 'general'); setMessage('Measurement saved.'); setMeasurementOpen(false); }}/>} 
-    {specEntry && <ItemSpecificationEditor entry={specEntry} data={{ ...data, canEdit: canEditEntry(specEntry) }} focusSection={specFocus} onClose={() => setSpecEntry(null)} onSaved={specification => { upsert({ ...specEntry, assets: data.entries.find(item => item.id === specEntry.id)?.assets ?? specEntry.assets, specification }); setSpecEntry(null); setMessage('Measurements saved.'); }}/>}
-    {briefOpen && <BriefEditor data={data} onClose={() => setBriefOpen(false)} onSave={async brief => { const input = { ...brief }; delete input.updatedAt; const saved = await caseRequest<CaseBrief>(workspaceId, caseId, 'brief', 'PUT', input); setData(current => ({ ...current, brief: saved, fromCrm: false })); setMessage('Brief saved.'); }}/>}
-    {roomsOpen && <RoomManager data={data} onClose={() => setRoomsOpen(false)} onSave={async value => { const saved = await caseRequest<CaseRoom>(workspaceId, caseId, 'rooms', 'PUT', { id: value.id, version: value.version, name: value.name, catalogRecordId: value.catalogRecordId ?? null }); setData(current => ({ ...current, rooms: [...current.rooms.filter(item => item.id !== saved.id), saved], entries: current.entries.map(item => item.roomId === saved.id ? { ...item, roomName: saved.name } : item) })); return saved; }}/>}
-    {bulk && <ScopePaste data={data} initialRoom={room === 'all' || room === 'general' ? null : room} onClose={() => setBulk(false)} onSave={async entries => { const result = await caseRequest<{ items: ScopeEntry[] }>(workspaceId, caseId, 'entries/bulk', 'POST', { entries: entries.map(entryPayload) }); setData(current => ({ ...current, entries: [...result.items, ...current.entries.filter(item => !result.items.some(saved => saved.id === item.id))] })); setMessage(`${result.items.length} requirements added.`); }}/>}
+    </div>
+    {entry && <ScopeEditor key={entry.id} entry={entry} data={{ ...data, canEdit: canEditEntry(entry) }} assetUrl={(asset, preview) => assetUrl(entry, asset, preview)} uploadFile={editingNote ? (file, id) => sharedNotes.upload(editingNote.id, file, id) : undefined} onClose={() => { setEntry(null); setMeasureAfterSave(false); }} onSpecifications={() => { openSpecification(entry); setEntry(null); }} onSave={async draft => { const saved = await saveEntry(draft); if (measureAfterSave) { setEntry(null); setMeasureAfterSave(false); setMeasurementFor(saved.id); setMeasurementOpen(true); } return saved; }} onArchive={async value => { await saveEntry(entry, value); setEntry(null); setMessage(t(value ? 'Archived.' : 'Restored.')); }}/>}
+    {measurementOpen && <MeasurementCreateForm data={data} entries={allEntries.filter(value => storedRequirement(value) && !value.archivedAt && canEditEntry(value))} initialEntryId={measurementFor} initialRoom={room} onClose={() => setMeasurementOpen(false)} onCreateRequirement={() => { setMeasurementOpen(false); setMeasureAfterSave(true); setEntry(blankEntry(room === 'all' ? null : room)); }} onSaved={(value, specification) => { upsert({ ...value, assets: data.entries.find(item => item.id === value.id)?.assets ?? value.assets, specification }); setSearch(''); setRoom(value.roomId ?? 'all'); setMessage(t('Measurement saved.')); setMeasurementOpen(false); }}/>} 
+    {specEntry && <ItemSpecificationEditor entry={specEntry} data={{ ...data, canEdit: canEditEntry(specEntry) }} focusSection={specFocus} onClose={() => setSpecEntry(null)} onSaved={specification => { upsert({ ...specEntry, assets: data.entries.find(item => item.id === specEntry.id)?.assets ?? specEntry.assets, specification }); setSpecEntry(null); setMessage(t('Measurements saved.')); }}/>}
+    {briefOpen && <BriefEditor data={data} onClose={() => setBriefOpen(false)} onSave={async brief => { const input = { ...brief }; delete input.updatedAt; const saved = await caseRequest<CaseBrief>(workspaceId, caseId, 'brief', 'PUT', input); setData(current => ({ ...current, brief: saved, fromCrm: false })); setMessage(t('Brief saved.')); }}/>}
+    {deciding && <ScopeReason status={deciding.status} title={deciding.entry.title} initial={deciding.entry.scopeStatus === deciding.status ? deciding.entry.scopeNote ?? '' : ''} onClose={() => setDeciding(null)}
+      onSave={async (reason) => { await saveEntry({ ...deciding.entry, scopeStatus: deciding.status, scopeNote: reason }); setDeciding(null); }} />}
+    {roomsOpen && data.canEdit && <RoomManager data={data} onClose={() => setRoomsOpen(false)} onSave={async value => { const saved = await caseRequest<CaseRoom>(workspaceId, caseId, 'rooms', 'PUT', { id: value.id, version: value.version, name: value.name, catalogRecordId: value.catalogRecordId ?? null }); setData(current => ({ ...current, rooms: [...current.rooms.filter(item => item.id !== saved.id), saved], entries: current.entries.map(item => item.roomId === saved.id ? { ...item, roomName: saved.name } : item) })); return saved; }}/>}
   </div>;
 }
 
 function BriefEditor({data,onClose,onSave}:{data:CaseContent;onClose:()=>void;onSave:(brief:CaseBrief)=>Promise<void>}) {
- const {locale}=useDesignSystem();
- const [draft,setDraft]=useState(data.brief);const [saving,setSaving]=useState(false);const [error,setError]=useState('');const change=(key:string,value:string)=>setDraft(d=>({...d,[key]:value}));
- const field=(key:keyof typeof briefFields,large=false)=><label key={key} className={large?styles.full:undefined}>{briefFields[key]}{large?<textarea value={draft[key]} maxLength={key==='goals'?6000:3000} onChange={e=>change(key,e.target.value)}/>:<input value={draft[key]} maxLength={key==='propertyType'?240:key==='area'?120:key==='timeline'||key==='budget'?500:1000} onChange={e=>change(key,e.target.value)}/>}</label>;
- return <CaseModal title="Project brief" description="Confirm the context, budget and constraints before detailing each room." onClose={onClose} dirty={JSON.stringify(draft)!==JSON.stringify(data.brief)} busy={saving} footer={data.canEdit&&<Button type="submit" form="brief-form" variant="primary" isLoading={saving}>Save brief</Button>}>
- {error&&<p role="alert" className={styles.error}>{error}</p>}<form id="brief-form" onSubmit={async e=>{e.preventDefault();setSaving(true);setError('');try{await onSave(draft);onClose();}catch(err){setError(err instanceof Error?err.message:'Could not save.');}finally{setSaving(false);}}}><fieldset disabled={saving||!data.canEdit}><div className={styles.grid}>{field('goals',true)}{field('propertyType')}{field('area')}{field('location')}{field('timeline')}
- <label>Budget amount · {draft.currencyCode}<input inputMode="decimal" value={draft.budgetAmount} placeholder="Enter amount" onChange={e=>change('budgetAmount',e.target.value)}/></label><SelectField label="Budget currency" isDisabled={saving||!data.canEdit} selectedKey={draft.currencyCode} onSelectionChange={k=>{if(k&&String(k)!==draft.currencyCode)setDraft(d=>({...d,currencyCode:String(k),budgetAmount:''}));}} description="Changing currency clears the amount. Enter the agreed budget; no conversion is applied." items={Array.from(new Set([draft.currencyCode,data.crmContext.currencyCode??'INR','INR','AED','USD','EUR','GBP','SAR','SGD'])).map(id=>({id,label:id}))}/>{field('budget')}{field('decisionMakers')}</div>
- <details><summary>People, preferences & constraints</summary><div className={styles.grid}>{field('people',true)}{field('preferences',true)}{field('retainedItems',true)}{field('exclusions',true)}{field('constraints',true)}</div></details></fieldset></form>
- {data.crmContext.opportunityAmount&&<p className={styles.muted}>CRM opportunity value: {formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale)}. This remains separate from the client’s budget.</p>}
- </CaseModal>;
+ const {locale}=useDesignSystem();const t=useT();
+ const [draft,setDraft]=useState(data.brief);const change=(key:string,value:string)=>setDraft(d=>({...d,[key]:value}));
+ const readOnly=!data.canEdit;
+ const limit=(key:keyof typeof briefFields)=>key==='goals'?6000:key==='propertyType'?240:key==='area'?120:key==='timeline'||key==='budget'?500:key==='retainedItems'||key==='exclusions'?3000:1000;
+ const field=(key:keyof typeof briefFields,large=false)=>large
+  ?<TextAreaField key={key} label={t(briefFields[key])} isReadOnly={readOnly} value={draft[key]} maxLength={limit(key)} onChange={value=>change(key,value)}/>
+  :<TextInput key={key} label={t(briefFields[key])} isReadOnly={readOnly} value={draft[key]} maxLength={limit(key)} onChange={value=>change(key,value)}/>;
+ const later=['people','preferences','retainedItems','exclusions','constraints'] as const;
+ return <FormDialog title={t("Project brief")} onClose={onClose} isDirty={JSON.stringify(draft)!==JSON.stringify(data.brief)} hideSubmit={readOnly} cancelLabel={readOnly?t('Close'):undefined}
+  submitLabel={t("Save brief")} closeOnSuccess onSubmit={()=>onSave(draft)}>
+  <FormSection>
+   {field('goals',true)}
+   {field('decisionMakers')}
+  </FormSection>
+  <FormSection title={t("Property")}>
+   {field('propertyType')}{field('area')}{field('location')}
+  </FormSection>
+  <FormSection title={t("Budget and timeline")}>
+   <MoneyField label={t("Budget amount")} currency={draft.currencyCode} isReadOnly={readOnly} value={draft.budgetAmount ?? ''} onChange={value=>change('budgetAmount',value)}/>
+   {field('budget')}
+   {data.crmContext.opportunityAmount?<p className={styles.muted}>{t('CRM opportunity value: {amount}. This remains separate from the client’s budget.',{amount:formatCaseMoney(data.crmContext.opportunityAmount,data.crmContext.currencyCode??draft.currencyCode,locale,t)})}</p>:null}
+   {field('timeline')}
+  </FormSection>
+  <MoreDetails label={t('People, preferences & constraints')} filled={later.filter(key=>draft[key]?.trim()).length}>
+   {field('people',true)}{field('preferences',true)}
+   {field('retainedItems')}{field('exclusions')}
+   {field('constraints',true)}
+  </MoreDetails>
+ </FormDialog>;
 }
 
-function RoomManager({data,onClose,onSave}:{data:CaseContent;onClose:()=>void;onSave:(room:CaseRoom)=>Promise<CaseRoom>}) {
- const [draft,setDraft]=useState<CaseRoom|null>(null);const [baseline,setBaseline]=useState<CaseRoom|null>(null);const [saving,setSaving]=useState(false);const [error,setError]=useState('');
- return <CaseModal title="Project rooms" description="Use rooms from Master Data or name your own spaces, such as Bedroom 2." onClose={onClose} dirty={draft!==null&&JSON.stringify(draft)!==JSON.stringify(baseline)} busy={saving} size="md" footer={draft&&<Button variant="primary" type="submit" form="room-form" isLoading={saving}>Save room</Button>}>
- {error&&<p role="alert" className={styles.error}>{error}</p>}<div className={styles.rooms}>{data.rooms.map(r=><div className={styles.room} key={r.id}><DoorOpen size={17}/><span>{r.name}<small className={styles.muted}>{r.catalogSnapshot?` · ${r.catalogSnapshot.name}`:''}</small></span>{data.canEdit&&<Button size="compact" isDisabled={Boolean(draft)||saving} onPress={()=>{setDraft(r);setBaseline(r);}}>Edit</Button>}</div>)}</div>
- {!data.rooms.length&&<p className={styles.muted}>No rooms yet. Whole-project requirements can be entered straight away.</p>}
- {!draft&&data.canEdit&&<div className={styles.divider}><Button onPress={()=>{const fresh={id:crypto.randomUUID(),version:0,name:'',catalogRecordId:null};setDraft(fresh);setBaseline(fresh);}}><Plus size={15}/>Add room</Button></div>}
- {draft&&<form id="room-form" className={styles.divider} onSubmit={async e=>{e.preventDefault();setSaving(true);setError('');try{await onSave(draft);setDraft(null);setBaseline(null);}catch(err){setError(err instanceof Error?err.message:'Could not save.');}finally{setSaving(false);}}}><fieldset disabled={saving}><CatalogChoiceField workspaceId={data.workspaceId} caseId={data.caseId} kind="room" label="Master Data room · optional" value={draft.catalogSnapshot??null} disabled={saving} onChange={value=>setDraft(d=>d?{...d,catalogRecordId:value?.id??null,catalogSnapshot:value,name:d.name||value?.name||''}:d)}/><label className={styles.divider}>Room name<input required maxLength={120} value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})} placeholder="e.g. Master bedroom"/></label></fieldset></form>}
- </CaseModal>;
+function EligibilityButton({ reason, ...props }: ComponentProps<typeof Button> & { reason: string }) {
+  const id = useId();
+  return <span className={workspace.blockedAction} tabIndex={props.isDisabled ? 0 : undefined} aria-label={props.isDisabled ? reason : undefined} aria-describedby={props.isDisabled ? id : undefined}>
+    <Button {...props} />
+    {props.isDisabled && <span id={id} role="tooltip" className={workspace.blockedTip}>{reason}</span>}
+  </span>;
 }
 
-function ScopePaste({data,initialRoom,onClose,onSave}:{data:CaseContent;initialRoom:string|null;onClose:()=>void;onSave:(entries:ScopeEntry[])=>Promise<void>}) {
- const [room,setRoom]=useState(initialRoom);const [text,setText]=useState('');const [entries,setEntries]=useState<ScopeEntry[]>([]);const [saving,setSaving]=useState(false);const [error,setError]=useState('');
- return <CaseModal title="Paste scope items" description="Copy up to 100 rows from Excel, without column headers. Custom items can be linked to catalogs after entry." onClose={onClose} busy={saving} dirty={Boolean(text)} footer={<Button variant="primary" isDisabled={saving||!entries.length} isLoading={saving} onPress={async()=>{setSaving(true);setError('');try{await onSave(entries.map(e=>({...e,roomId:room})));onClose();}catch(err){setError(err instanceof Error?err.message:'Could not save.');}finally{setSaving(false);}}}>Add {entries.length||''} items</Button>}>
- {error&&<p className={styles.error} role="alert">{error}</p>}<SelectField label="Room for these items" isDisabled={saving} selectedKey={room??'general'} onSelectionChange={k=>setRoom(k==='general'?null:String(k))} items={[{id:'general',label:'Whole project'},...data.rooms.map(r=>({id:r.id,label:r.name}))]}/>
- <label className={styles.divider}>Columns: Item → Quantity → Unit → Notes<textarea disabled={saving} value={text} rows={7} placeholder={'Sliding wardrobe\t72\tsq.ft\t8 × 9 ft, factory-made\nStudy desk\t1\tnos\tWith storage'} onChange={e=>{setText(e.target.value);setEntries([]);setError('');}}/></label><p className={styles.muted}>Item name is required. Quantity, unit and notes are optional. Rows start as “To decide”; no prices or approvals are created.</p><Button isDisabled={saving||!text.trim()} onPress={()=>{try{setEntries(parseScopePaste(text,room));setError('');}catch(err){setError(err instanceof Error?err.message:'Check the pasted rows.');}}}>Review rows</Button>
- {entries.length>0&&<DataGrid ariaLabel="Requirement import preview" data={entries} getRowId={e=>e.id} selectable={false} searchLabel="Search pasted requirements" exportFileName="requirement-import.csv" columns={[
- {accessorKey:'title',header:'Item',size:250},{accessorKey:'quantity',header:'Quantity',size:110},{accessorKey:'unit',header:'Unit',size:100},{accessorKey:'note',header:'Requirement note',size:300},
- ]}/>} 
- </CaseModal>;
+/** Why a requirement isn't in this quotation, in words the client reads; it's sealed with the accepted scope. */
+function ScopeReason({ status, title, initial, onClose, onSave }: { status: string; title: string; initial: string; onClose: () => void; onSave: (reason: string) => Promise<void> }) {
+  const t = useT();
+  const [reason, setReason] = useState(initial);
+  const heading = status === 'later' ? t("A later phase · {title}", { title }) : status === 'not_possible' ? t("Not possible · {title}", { title }) : t("Not included · {title}", { title });
+  return <FormDialog size="md" title={heading} onClose={onClose} isDirty={reason.trim() !== initial.trim()} submitLabel={t("Save")} onSubmit={() => onSave(reason.trim())}>
+    <TextAreaField label={t("Why (the client reads this)")} value={reason} onChange={setReason} />
+  </FormDialog>;
 }

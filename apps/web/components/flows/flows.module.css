@@ -1,0 +1,188 @@
+/* Enquiry types and their steps (plan §5a, F3): the list and the builder. Tokens only; logical properties only. */
+
+/* ── List: one card per type ────────────────────────────────────────────── */
+.page { display: grid; align-content: start; gap: var(--wd-space-5); padding: var(--wd-space-6); min-inline-size: 0; max-inline-size: 72rem; }
+.flowCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.flowCard { display: grid; align-content: start; gap: var(--wd-space-4); min-inline-size: 0; padding: var(--wd-space-5); border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); }
+.flowHead { display: grid; gap: var(--wd-space-1); min-inline-size: 0; border-radius: var(--wd-radius-sm); color: var(--wd-color-text); text-decoration: none; }
+.flowHead:hover .flowTitle { color: var(--wd-color-link-hover); text-decoration: underline; }
+.flowHead:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.flowTitle { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+.summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.summary svg { flex: none; color: var(--wd-color-icon); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.version { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-medium); }
+.published { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+.typeDot { flex: none; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-viz-1); }
+.typeDot[data-hue="2"] { background: var(--wd-color-viz-2); }
+.typeDot[data-hue="3"] { background: var(--wd-color-viz-3); }
+.typeDot[data-hue="4"] { background: var(--wd-color-viz-4); }
+.typeDot[data-hue="5"] { background: var(--wd-color-viz-5); }
+.typeDot[data-hue="6"] { background: var(--wd-color-viz-6); }
+.flowActions { display: flex; justify-content: flex-end; }
+.editLink { color: var(--wd-color-action-primary); }
+.cardTop { display: flex; align-items: flex-start; gap: var(--wd-space-2); min-inline-size: 0; }
+.cardTop > a { flex: 1; }
+/* "Not sure yet" is not a type with steps: one quiet line under the cards. */
+.footnote { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* ── Colour of an enquiry type ──────────────────────────────────────────── */
+.swatches { display: grid; gap: var(--wd-space-1-5); }
+.swatchesLabel { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.swatchRow { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); }
+.swatch { box-sizing: border-box; inline-size: var(--wd-space-6); block-size: var(--wd-space-6); border: 2px solid transparent; border-radius: var(--wd-radius-round); background: var(--wd-color-viz-1); background-clip: content-box; padding: var(--wd-space-0-5); cursor: pointer; }
+.swatch[data-hue="2"] { background-color: var(--wd-color-viz-2); }
+.swatch[data-hue="3"] { background-color: var(--wd-color-viz-3); }
+.swatch[data-hue="4"] { background-color: var(--wd-color-viz-4); }
+.swatch[data-hue="5"] { background-color: var(--wd-color-viz-5); }
+.swatch[data-hue="6"] { background-color: var(--wd-color-viz-6); }
+.swatch[data-selected] { border-color: var(--wd-color-text); }
+.swatch[data-focus-visible] { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.swatch[data-disabled] { cursor: default; opacity: 0.6; }
+
+/* ── New enquiry type ───────────────────────────────────────────────────── */
+.typeFields { display: grid; gap: var(--wd-space-4); }
+.startFrom { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.picker { display: grid; gap: var(--wd-space-5); min-inline-size: 0; }
+.pickerGroup { display: grid; gap: var(--wd-space-2); }
+.pickerTitle { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.options { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.option { display: grid; align-content: start; gap: var(--wd-space-1-5); box-sizing: border-box; inline-size: 100%; block-size: 100%; padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.option:hover:not(:disabled) { border-color: var(--wd-color-border-strong); background: var(--wd-color-surface-hover); }
+.option:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.option:disabled { cursor: default; opacity: 0.6; }
+.option[aria-busy] { opacity: 1; border-color: var(--wd-color-action-primary); }
+.optionHead { display: flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-icon); }
+.optionHead strong { flex: 1; min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); overflow-wrap: anywhere; }
+.optionText { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-tight); }
+.optionMeta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.optionMeta :global(.wd-tag) { white-space: normal; }
+
+/* ── Builder frame ──────────────────────────────────────────────────────── */
+/* A focused editor: the workspace shell steps aside (no sidebar, no top bar), so the builder fills the viewport. */
+.builder { display: grid; grid-template-rows: auto minmax(0, 1fr); block-size: 100dvh; min-block-size: 32rem; background: var(--wd-color-surface); }
+.topBar { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; padding: var(--wd-space-2) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.backLink { display: inline-grid; flex: none; place-items: center; inline-size: var(--wd-control-md); block-size: var(--wd-control-md); border-radius: var(--wd-radius-sm); color: var(--wd-color-icon); }
+.backLink:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.backLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.title { min-inline-size: 0; }
+.title h1 { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); }
+.actions { display: flex; flex: none; align-items: center; gap: var(--wd-space-2); }
+.versionTag { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.spacer { flex: 1; }
+.workArea { display: grid; grid-template-columns: 16rem minmax(0, 1fr) 20rem; min-block-size: 0; }
+
+/* ── Components panel ───────────────────────────────────────────────────── */
+.palette { display: grid; align-content: start; gap: var(--wd-space-4); overflow: auto; padding: var(--wd-space-3); border-inline-end: 1px solid var(--wd-color-structural-divider); }
+.paletteGroup { display: grid; gap: var(--wd-space-1); }
+.paletteTitle { margin: 0; padding-inline: var(--wd-space-2); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); letter-spacing: 0.04em; text-transform: uppercase; }
+.paletteList { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: 0; list-style: none; }
+.paletteItem { display: flex; align-items: flex-start; gap: var(--wd-space-2); inline-size: 100%; padding: var(--wd-space-1-5) var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: grab; }
+.paletteItem:hover { background: var(--wd-color-surface-hover); }
+.paletteItem:active { cursor: grabbing; }
+.paletteItem:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.paletteItem[aria-disabled] { cursor: not-allowed; opacity: 0.45; }
+.paletteIcon, .cardIcon { display: grid; flex: none; place-items: center; inline-size: var(--wd-space-6); block-size: var(--wd-space-6); border-radius: var(--wd-radius-xs); background: var(--wd-color-surface-muted); color: var(--wd-color-icon); }
+.paletteIcon[data-tone="contact"] { background: var(--wd-color-viz-1-soft); color: var(--wd-color-viz-1); }
+.paletteIcon[data-tone="meetings"] { background: var(--wd-color-viz-2-soft); color: var(--wd-color-viz-2); }
+.paletteIcon[data-tone="sell"] { background: var(--wd-color-viz-3-soft); color: var(--wd-color-viz-3); }
+.paletteIcon[data-tone="design"] { background: var(--wd-color-viz-4-soft); color: var(--wd-color-viz-4); }
+.paletteIcon[data-tone="logic"], .cardIcon[data-tone="logic"] { background: var(--wd-color-viz-5-soft); color: var(--wd-color-viz-5); }
+.paletteText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.paletteText strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); line-height: var(--wd-leading-tight); }
+.paletteText small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-tight); }
+
+/* ── Canvas ─────────────────────────────────────────────────────────────── */
+.canvasArea { position: relative; min-inline-size: 0; min-block-size: 0; }
+.canvas { position: absolute; inset: 0; }
+.canvas :global(.react-flow) {
+  --xy-background-color-default: var(--wd-color-workspace-canvas);
+  --xy-background-pattern-dots-color-default: var(--wd-color-border);
+  --xy-edge-stroke-default: var(--wd-color-border-strong);
+  --xy-edge-stroke-width-default: 1.5;
+  --xy-controls-button-background-color-default: var(--wd-color-surface);
+  --xy-controls-button-background-color-hover-default: var(--wd-color-surface-hover);
+  --xy-controls-button-color-default: var(--wd-color-icon);
+  --xy-controls-button-color-hover-default: var(--wd-color-text);
+  --xy-controls-button-border-color-default: var(--wd-color-structural-divider);
+  --xy-controls-box-shadow-default: none;
+  --xy-attribution-background-color-default: transparent;
+  color: var(--wd-color-text);
+}
+/* The global `svg { max-inline-size: 100% }` gives the edge layer no width, and a zero-width SVG draws nothing. */
+.canvas :global(.react-flow__edges svg) { max-inline-size: none; }
+.canvas :global(.react-flow__attribution a) { color: var(--wd-color-text-tertiary); }
+.canvas :global(.react-flow__node) { border-radius: var(--wd-radius-md); }
+.canvas :global(.react-flow__node:focus-visible) { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
+.controls { overflow: hidden; border: 1px solid var(--wd-color-structural-divider); border-radius: var(--wd-radius-sm); }
+.edge :global(.react-flow__edge-path) { stroke: var(--wd-color-border-strong); stroke-width: 1.5; }
+
+.stepCard, .branchCard { display: grid; gap: var(--wd-space-2); box-sizing: border-box; inline-size: 100%; padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); color: var(--wd-color-text); cursor: pointer; transition: border-color var(--wd-duration-fast) var(--wd-ease-standard); }
+.stepCard:hover, .branchCard:hover { border-color: var(--wd-color-border-strong); }
+.stepCard[data-selected], .branchCard[data-selected] { border-color: var(--wd-color-action-primary); outline: 1px solid var(--wd-color-action-primary); }
+.stepCard[data-problem], .branchCard[data-problem] { border-color: var(--wd-color-danger); outline: 1px solid var(--wd-color-danger); }
+.branchCard { border-style: dashed; }
+.cardHead { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; }
+.cardName { flex: 1; min-inline-size: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+.cardEye { flex: none; color: var(--wd-color-info); }
+.cardWho { display: flex; align-items: center; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.cardDone { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-tight); }
+.cardMeta { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.chip { display: inline-flex; align-items: center; gap: var(--wd-space-1); padding: var(--wd-space-0-5) var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-warning-subtle); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); }
+.chip[data-tone="muted"] { background: var(--wd-color-surface-muted); }
+.stepCard .handle, .branchCard .handle, .answer .answerHandle { min-inline-size: 0; min-block-size: 0; inline-size: 1px; block-size: 1px; border: 0; background: transparent; pointer-events: none; }
+.answers { display: flex; gap: var(--wd-space-1); }
+.answer { position: relative; display: flex; flex: 1 1 0; align-items: center; gap: var(--wd-space-1); min-inline-size: 0; padding: var(--wd-space-1) var(--wd-space-1-5); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); line-height: var(--wd-leading-tight); }
+.answer .answerHandle { inset-block-end: calc(-1 * var(--wd-space-3)); }
+.answer b, .listAnswer b { display: inline-grid; flex: none; place-items: center; inline-size: var(--wd-space-4); block-size: var(--wd-space-4); border-radius: var(--wd-radius-round); background: var(--wd-color-viz-5-soft); color: var(--wd-color-viz-5); font-size: var(--wd-text-2xs); }
+/* A band never touches its neighbour (the layout keeps a gap), so every corner stays round; it takes no pointer. */
+.band { position: relative; box-sizing: border-box; inline-size: 100%; block-size: 100%; overflow: hidden; border-radius: var(--wd-radius-lg); background: var(--wd-color-surface-subtle); pointer-events: none; }
+.bandLabel { position: absolute; inset-block-start: var(--wd-space-4); inset-inline-start: var(--wd-space-4); max-inline-size: calc(var(--wd-space-24) + var(--wd-space-8)); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); line-height: var(--wd-leading-tight); overflow-wrap: anywhere; }
+/* React Flow's own node chrome stays off: a band is only its soft surface, a card only its own border. */
+.canvas :global(.react-flow__node-band) { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.canvas :global(.react-flow__handle) { opacity: 0; }
+
+/* ── Problems ───────────────────────────────────────────────────────────── */
+.problems { position: absolute; inset-block-end: var(--wd-space-4); inset-inline-end: var(--wd-space-4); inline-size: min(24rem, calc(100% - 2 * var(--wd-space-4))); max-block-size: 45%; overflow: auto; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-floating-surface); box-shadow: var(--wd-shadow-md); }
+.problems header { display: flex; align-items: center; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+.problems ul { display: grid; gap: var(--wd-space-0-5); margin: 0; padding: var(--wd-space-1); list-style: none; }
+.problemRow { display: grid; gap: var(--wd-space-0-5); inline-size: 100%; padding: var(--wd-space-2); border: 0; border-radius: var(--wd-radius-sm); background: transparent; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.problemRow:hover:not(:disabled) { background: var(--wd-color-surface-hover); }
+.problemRow:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.problemRow:disabled { cursor: default; }
+.problemRow strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.problemRow span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* ── Properties ─────────────────────────────────────────────────────────── */
+.inspector { overflow: auto; padding: var(--wd-space-4); border-inline-start: 1px solid var(--wd-color-structural-divider); }
+.inspectorEmpty { margin: 0; padding-block: var(--wd-space-8); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); text-align: center; }
+.properties { display: grid; gap: var(--wd-space-4); }
+.deadline { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: var(--wd-space-2); }
+.propertyActions { display: flex; align-items: center; gap: var(--wd-space-2); padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.fieldError { margin: calc(-1 * var(--wd-space-3)) 0 0; color: var(--wd-color-danger); font-size: var(--wd-text-xs); }
+
+/* ── Phone: a read-only list of the steps ───────────────────────────────── */
+.stepsList { display: none; }
+.stepsList, .stepsListNested, .listBranch ul { margin: 0; list-style: none; }
+.listStep { display: flex; align-items: flex-start; gap: var(--wd-space-3); padding: var(--wd-space-3); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.listText { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.listText strong { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.listText small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); line-height: var(--wd-leading-tight); }
+.listBranch { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-muted); }
+.listBranch ul { display: grid; gap: var(--wd-space-2); padding: 0; }
+.listBranchTitle { display: flex; align-items: center; gap: var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.listAnswer { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.stepsListNested { display: grid; gap: var(--wd-space-2); margin-block-start: var(--wd-space-2); padding: 0; padding-inline-start: var(--wd-space-3); border-inline-start: 2px solid var(--wd-color-border); }
+
+@media (max-width: 72rem) {
+  .workArea { grid-template-columns: 13rem minmax(0, 1fr) 17rem; }
+}
+@media (max-width: 48rem) {
+  .page { padding: var(--wd-space-4); }
+  .flowCards { grid-template-columns: minmax(0, 1fr); }
+  .flowCard { padding: var(--wd-space-4); }
+  .builder { display: block; block-size: auto; min-block-size: 0; }
+  .topBar { flex-wrap: wrap; }
+  .actions, .workArea { display: none; }
+  .stepsList { display: grid; gap: var(--wd-space-2); padding: var(--wd-space-4); }
+}

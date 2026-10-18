@@ -20,10 +20,9 @@ async function openBuilder(page: Page) {
       await route.fulfill({ json: record });
     } else await route.fulfill({ json: { data: [record] } });
   });
-  await page.goto("/workspace/crm/leads");
-  await page.getByRole("tab", { name: "Forms", exact: true }).click();
+  await page.goto("/workspace/crm/leads?section=forms");
   await page.getByRole("button", { name: "Edit form" }).click();
-  await expect(page.getByRole("heading", { name: "Live preview" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Edit field" })).toBeVisible();
   return saves;
 }
 
@@ -35,16 +34,19 @@ test("builds, previews, saves and reopens fields on desktop and mobile", async (
   await page.getByRole("textbox", { name: "Field label", exact: true }).fill("Property type");
   await page.getByRole("textbox", { name: "Option 1", exact: true }).fill("Villa");
   await page.getByRole("textbox", { name: "Option 2", exact: true }).fill("Apartment");
-  const preview = page.getByRole("complementary", { name: "Live form preview" });
+  await page.getByRole("button", { name: "Preview form" }).click();
+  const preview = page.getByRole("dialog", { name: "Form preview" });
   await expect(preview.getByRole("radio", { name: "Villa" })).toBeVisible();
   await preview.getByRole("radio", { name: "Villa" }).check();
   await expect(preview.getByRole("button", { name: "Submit enquiry" })).toBeDisabled();
+  await preview.getByRole("button", { name: "Close dialog" }).click();
   await page.getByRole("button", { name: "Move Property type up", exact: true }).click();
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
   expect(saves[0].questions.map(q => q.title)).toEqual(["Your name", "Mobile number", "Email address", "Property type", "Property location"]);
   await page.getByRole("button", { name: "Back to forms" }).click();
   await page.getByRole("button", { name: "Edit form" }).click();
+  await page.getByRole("button", { name: "Preview form" }).click();
   await expect(preview.getByRole("radio", { name: "Villa" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);

@@ -2,8 +2,52 @@ import { describe, expect, it } from "vitest";
 import { emptyProject } from "./execution.domain";
 import { projectExecutionPulse } from "./project-execution-pulse";
 import { syncScopeWorkPackages } from "./project-work-packages";
+import type { Material, Order } from "./execution.types";
+import type { StockTransfer } from "./project-stock.types";
 
 describe("project execution pulse", () => {
+  it("raises source-linked purchasing and receiving actions from actual quantities and statuses", () => {
+    const data = emptyProject();
+    data.materials = [{
+      id: "boards", title: "MR plywood", supply: "company", required: 10, unit: "sheet",
+      needBy: "2026-09-27", taskId: "joinery", movements: [], reservations: [],
+    } as Material];
+    data.orders = [
+      { id: "approval", number: "PO-1", title: "Timber", status: "submitted", materialId: "boards", quantity: 2, unit: "sheet", receipts: [] },
+      { id: "sent", number: "PO-2", title: "Timber", status: "approved", materialId: "boards", quantity: 2, unit: "sheet", receipts: [] },
+      { id: "inspection", number: "PO-3", title: "Timber", status: "acknowledged", materialId: "boards", quantity: 2, unit: "sheet", promisedDate: "2026-09-24", receipts: [{ accepted: 0, rejected: 0, pending: 1 }] },
+      { id: "closed", number: "PO-4", title: "Hardware", status: "acknowledged", materialId: "other", quantity: 2, unit: "set", receipts: [{ accepted: 2, rejected: 0 }] },
+    ] as Order[];
+    const transfers = [{ id: "transfer", status: "approved", quantity: 1, destination: { kind: "project", id: "project", materialId: "boards" } }] as StockTransfer[];
+    const actions = projectExecutionPulse(data, "2026-09-25", [], [], transfers).nextActions;
+    expect(actions).toContainEqual(expect.objectContaining({ kind: "source_material", recordId: "boards", priority: "high", detail: expect.stringContaining("3 sheet uncovered") }));
+    expect(actions).toContainEqual(expect.objectContaining({ kind: "review_order", recordId: "approval" }));
+    expect(actions).toContainEqual(expect.objectContaining({ kind: "confirm_order", recordId: "sent" }));
+    expect(actions).toContainEqual(expect.objectContaining({ kind: "inspect_receipt", recordId: "inspection", detail: expect.stringContaining("not accepted stock") }));
+    expect(actions).toContainEqual(expect.objectContaining({ kind: "recover_delivery", recordId: "inspection", priority: "critical" }));
+    expect(actions).toContainEqual(expect.objectContaining({ kind: "close_order", recordId: "closed" }));
+  });
+
+  it("clears sourcing attention once accepted stock and committed transfers cover the requirement", () => {
+    const data = emptyProject();
+    data.materials = [{ id: "boards", title: "MR plywood", supply: "company", required: 5, unit: "sheet", needBy: "2026-09-24", movements: [{ id: "receipt", kind: "receive", quantity: 2, reference: "GRN-1", at: "2026-09-25" }] } as Material];
+    const transfers = [{ id: "transfer", status: "approved", quantity: 3, destination: { kind: "project", id: "project", materialId: "boards" } }] as StockTransfer[];
+    expect(projectExecutionPulse(data, "2026-09-25", [], [], transfers).nextActions).not.toContainEqual(expect.objectContaining({ kind: "source_material" }));
+  });
+
+  it("does not present purchasing actions to viewers or self-inspection to the receiver", () => {
+    const data = emptyProject();
+    data.materials = [{ id: "boards", title: "MR plywood", supply: "company", required: 5, unit: "sheet", needBy: "2026-09-25", movements: [] } as Material];
+    data.orders = [{ id: "inspection", number: "PO-3", title: "Timber", status: "acknowledged", materialId: "boards", quantity: 2, unit: "sheet", promisedDate: "2026-09-24", receipts: [{ accepted: 0, rejected: 0, pending: 1, receivedBy: "receiver" }] }] as Order[];
+    const viewer = projectExecutionPulse(data, "2026-09-25", [], [], [], { canBuy: false, canReview: false, memberId: "viewer" }).nextActions;
+    expect(viewer).not.toContainEqual(expect.objectContaining({ kind: "source_material" }));
+    expect(viewer).not.toContainEqual(expect.objectContaining({ kind: "inspect_receipt" }));
+    expect(viewer).not.toContainEqual(expect.objectContaining({ kind: "recover_delivery" }));
+    const receiver = projectExecutionPulse(data, "2026-09-25", [], [], [], { canBuy: true, canReview: true, memberId: "receiver" }).nextActions;
+    expect(receiver).not.toContainEqual(expect.objectContaining({ kind: "inspect_receipt" }));
+    expect(receiver).toContainEqual(expect.objectContaining({ kind: "source_material" }));
+  });
+
   it("keeps a project manager focused on blocked work before less urgent planning", () => {
     const data = emptyProject();
     data.scope = {

@@ -3,12 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
 import type { PreProjectCase } from "@/lib/pre-project/types";
-import type { DefinitionPageData } from "@/lib/pre-project/definition";
 import type { CommercialState } from "@/lib/commercial/types";
+import type { JourneyView } from "@/lib/pre-project/design-workspace";
 import { CaseOverview } from "./case-overview";
 
-const { caseRequest } = vi.hoisted(() => ({ caseRequest: vi.fn() }));
-vi.mock("@/lib/pre-project/content", () => ({ caseRequest }));
+const { caseRequest, commands } = vi.hoisted(() => ({ caseRequest: vi.fn(), commands: [] as unknown[] }));
+vi.mock("@/lib/pre-project/content", () => ({ caseRequest, caseApi: (_w: string, caseId: string, path: string) => `/api/workspace/pre-projects/${caseId}/${path}` }));
+vi.mock("./design-journey", () => ({ DesignJourney: () => null }));
 
 const initial: PreProjectCase = {
   id: "case-1", title: "Villa interiors", description: null, status: "active",
@@ -18,140 +19,107 @@ const initial: PreProjectCase = {
   phase: "define", version: 3, ownerMembershipId: "owner-1", engagementOwnerName: "Owner",
   targetDate: null, priority: "normal", riskLevel: "low", activatedAt: "2026-09-17T00:00:00Z",
   holdReason: null, cancellationReason: null, releasedAt: null, canManageLifecycle: true,
+  reference: "D-0007", enquiryTypeName: "Fit-out", salesMembershipId: "owner-2",
 };
+const journey: JourneyView = { journey: null, stages: [], canStart: false, timezone: "Asia/Dubai" };
 
-const members = [{ id: "owner-1", displayName: "Owner" }, { id: "owner-2", displayName: "Designer" }];
-function view(record = initial, progress?: DefinitionPageData, commercial?: CommercialState) {
+const members = [{ id: "owner-1", displayName: "Owner", email: "owner@example.test" }, { id: "owner-2", displayName: "Designer", email: "designer@example.test" }];
+function view(record = initial, commercial?: CommercialState) {
   const onUpdated = vi.fn();
-  render(<DesignSystemProvider><CaseOverview record={record} workspaceId="workspace-1" members={members} progress={progress} commercial={commercial} onUpdated={onUpdated} /></DesignSystemProvider>);
+  render(<DesignSystemProvider><CaseOverview record={record} workspaceId="workspace-1" members={members} commercial={commercial} onUpdated={onUpdated} /></DesignSystemProvider>);
   return onUpdated;
 }
-afterEach(() => caseRequest.mockReset());
+/** The journey read answers by itself; every other request takes the next queued answer. */
+function answer(...values: unknown[]) {
+  const queue = [...values];
+  caseRequest.mockImplementation(async (_w: string, _c: string, path: string, _m?: string, body?: unknown) => {
+    if (path === "design-journey") return journey;
+    // The client update calls (PLM-046) answer by themselves too: none on this case.
+    if (path === "client-calls") return { caseId: "case-1", frequency: "off", started: false, startedFrom: null, version: 0, ownerName: null, hasOwner: false, next: null };
+    // Value engineering (PLM-147) answers by itself: no round open.
+    if (path === "value-engineering") return { open: null, rounds: [], budget: null, freeRounds: null, designWork: true, quote: null, timezone: "Asia/Dubai", can: { start: false, lead: false, decide: false, withdraw: false } };
+    commands.push(body);
+    return queue.shift();
+  });
+}
+const commandsSent = () => caseRequest.mock.calls.filter(([, , path]) => path !== "design-journey" && path !== "client-calls" && path !== "value-engineering");
+afterEach(() => { caseRequest.mockReset(); commands.length = 0; });
 
-describe("pre-execution case overview", () => {
-  it("shows evidence-based preparation progress and the next safe action", () => {
-    view(initial, {
-      workspaceId: "workspace-1", caseId: "case-1",
-      definition: { caseStatus: "active", draft: { sourceHash: "hash", readyToPublish: false, issues: [] }, current: null, history: [], confirmed: false, nextAction: "COMPLETE_DEFINITION", canPublish: false, canRecordClientDecision: false },
-      readiness: { ready: false, summary: { includedItemCount: 2, readyItemCount: 1, blockerCount: 2, warningCount: 1 }, blockers: [
-        { code: "measurement", label: "Verified measurement", detail: "Verify the wardrobe dimensions before pricing.", scopeItemId: "scope-1", action: { code: "VERIFY_MEASUREMENT", label: "Verify measurement", targetType: "scope_item", targetId: "scope-1" } },
-        { code: "definition", label: "Client confirmation", detail: "Confirm the current scope with the client." },
-      ] },
-    });
-    expect(screen.getByRole("heading", { name: "2 blockers before pricing" })).toBeVisible();
-    expect(screen.getByText("1 of 2")).toBeVisible();
-    expect(screen.getByRole("list", { name: "Pre-execution preparation path" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Verify measurement" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/requirements?tab=measurements");
-    expect(screen.getByText("Verify the wardrobe dimensions before pricing.")).toBeVisible();
+describe("planning case overview", () => {
+  it("shows the case as a record: one title, where it stands, the next step and the stages", async () => {
+    answer();
+    view();
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 2, name: "Villa interiors" })).toBeVisible();
+    const header = screen.getByRole("heading", { level: 2 }).closest("header")!;
+    expect(header).toHaveTextContent("Palm client");
+    expect(header).toHaveTextContent("D-0007");
+    expect(header).toHaveTextContent("Fit-out");
+    const strip = screen.getByLabelText("Where the case stands");
+    // KPI tiles: the stage by name with its place in the line; the tile opens the Stages sub-tab.
+    const stage = within(strip).getByText("Stage", { selector: "dt" }).closest(".wd-kpi-tile")!;
+    expect(stage).toHaveTextContent("Scope confirmationStage 2 of 6");
+    expect(within(stage as HTMLElement).getByRole("button")).toBeInTheDocument();
+    expect(within(screen.getByRole("tablist", { name: "Lists" })).getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Stages", "History"]);
+    // Defining the scope is next; it opens where it's done.
+    expect(await screen.findByRole("heading", { level: 3, name: "Confirm the scope" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open the scope" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/definition");
+    expect(within(screen.getByRole("list", { name: "Stages" })).getAllByRole("listitem")).toHaveLength(6);
+    // Team: the sales owner and the case owner, each with email.
+    expect(screen.getByRole("link", { name: "Email Designer" })).toHaveAttribute("href", "mailto:designer@example.test");
   });
 
-  it("opens quotation work only after deterministic readiness passes", () => {
-    view(initial, {
-      workspaceId: "workspace-1", caseId: "case-1",
-      definition: { caseStatus: "active", draft: { sourceHash: "hash", readyToPublish: true, issues: [] }, current: null, history: [], confirmed: true, nextAction: null, canPublish: false, canRecordClientDecision: false },
-      readiness: { ready: true, summary: { includedItemCount: 2, readyItemCount: 2, blockerCount: 0, warningCount: 0 }, blockers: [] },
-    });
-    expect(screen.getByRole("heading", { name: "Ready to build the quotation" })).toBeVisible();
-    expect(screen.getByText("Pricing ready")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open quotations" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/quotations");
-  });
-
-  it("continues the overview through agreement, change control, approvals and release", () => {
-    const commercial = {
-      workspaceId: "workspace-1", caseId: "case-1", title: "Villa interiors", customerName: "Palm client", currency: "AED",
-      contacts: [], canEdit: true, canApprove: true, canVerifyFinance: true, canRelease: true, canManagePortal: true,
-      portalSlug: "client", portalEnabled: false, testMode: true,
-      data: { revision: 1, quotes: [], requests: [], agreement: null, payments: [], audit: [], release: null, ownerReview: null, dealFile: null, materialApprovals: [], credits: [] },
-    } as CommercialState;
-    view(initial, undefined, commercial);
-    // The case spine owns journey navigation; the overview no longer repeats it.
-    expect(screen.queryByRole("navigation", { name: "Pre-execution readiness timeline" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Case actions" })).toBeVisible();
-  });
-
-  it("does not offer a lifecycle action that a viewer cannot perform", () => {
-    view({ ...initial, status: "on_hold", canManageLifecycle: false }, {
-      workspaceId: "workspace-1", caseId: "case-1",
-      definition: { caseStatus: "on_hold", draft: { sourceHash: "hash", readyToPublish: false, issues: [] }, current: null, history: [], confirmed: false, nextAction: "RESUME_ENGAGEMENT", canPublish: false, canRecordClientDecision: false },
-      readiness: { ready: false, summary: { includedItemCount: 1, readyItemCount: 0, blockerCount: 1, warningCount: 0 }, blockers: [
-        { code: "engagement", label: "Active engagement", detail: "Resume this pre-execution before pricing.", action: { code: "RESUME_ENGAGEMENT", label: "Resume engagement", targetType: "engagement", targetId: "case-1" } },
-      ] },
-    });
-    expect(screen.queryByRole("link", { name: "Resume engagement" })).not.toBeInTheDocument();
-    expect(screen.getByText("Ask a case manager to resume engagement.")).toBeVisible();
-  });
-
-  it("saves operational ownership and risk with the current version", async () => {
-    caseRequest.mockResolvedValue({ ...initial, version: 4, ownerMembershipId: "owner-2", engagementOwnerName: "Designer", priority: "high", riskLevel: "medium" });
+  it("changes ownership and risk in place from Details, each with the current version", async () => {
+    answer(
+      { ...initial, version: 4, ownerMembershipId: "owner-2", engagementOwnerName: "Designer" },
+      { ...initial, version: 5, ownerMembershipId: "owner-2", engagementOwnerName: "Designer", riskLevel: "medium" },
+    );
     const updated = view();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit details" }));
-    await user.click(screen.getByRole("button", { name: /Case owner/ }));
-    await user.click(screen.getByRole("option", { name: "Designer" }));
-    await user.click(screen.getByRole("button", { name: /Priority/ }));
-    await user.click(screen.getByRole("option", { name: "High" }));
-    await user.click(screen.getByRole("button", { name: /Risk/ }));
-    await user.click(screen.getByRole("option", { name: "Medium" }));
-    await user.click(screen.getByRole("button", { name: "Save case" }));
-    await waitFor(() => expect(caseRequest).toHaveBeenCalledWith("workspace-1", "case-1", "profile", "PATCH", expect.objectContaining({ version: 3, ownerMembershipId: "owner-2", priority: "high", riskLevel: "medium", requestId: expect.any(String) })));
+    await user.click(screen.getByRole("tab", { name: "Details" }));
+    await user.click(await screen.findByRole("button", { name: "Edit Owner" }));
+    await user.click(await screen.findByRole("option", { name: "Designer" }));
+    await waitFor(() => expect(caseRequest).toHaveBeenCalledWith("workspace-1", "case-1", "profile", "PATCH", expect.objectContaining({ version: 3, ownerMembershipId: "owner-2", priority: "normal", riskLevel: "low", requestId: expect.any(String) })));
     expect(updated).toHaveBeenCalledWith(expect.objectContaining({ version: 4, canManageLifecycle: true }));
-    expect(screen.getByText("Designer")).toBeVisible();
+    await user.click(await screen.findByRole("button", { name: "Edit Risk" }));
+    await user.click(await screen.findByRole("option", { name: "Medium" }));
+    await waitFor(() => expect(caseRequest).toHaveBeenLastCalledWith("workspace-1", "case-1", "profile", "PATCH", expect.objectContaining({ version: 4, riskLevel: "medium" })));
   });
 
-  it("requires a reason for hold and resumes against the new version", async () => {
-    caseRequest
-      .mockResolvedValueOnce({ ...initial, status: "on_hold", version: 4, holdReason: "Waiting for client" })
-      .mockResolvedValueOnce({ ...initial, status: "active", version: 5, holdReason: null });
+  it("requires a reason for hold and resumes from the next step against the new version", async () => {
+    answer(
+      { ...initial, status: "on_hold", version: 4, holdReason: "Waiting for client" },
+      { ...initial, status: "active", version: 5, holdReason: null },
+    );
     view();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Case actions" }));
+    await user.click(screen.getByRole("button", { name: "Project actions" }));
     await user.click(await screen.findByRole("menuitem", { name: "Put on hold" }));
     const dialog = screen.getByRole("dialog", { name: "Put on hold" });
-    await user.type(within(dialog).getByLabelText("Reason *"), "Waiting for client");
+    await user.type(within(dialog).getByLabelText("Reason"), "Waiting for client");
     await user.click(within(dialog).getByRole("button", { name: "Put on hold" }));
-    await user.click(await screen.findByRole("button", { name: "Case actions" }));
-    await user.click(await screen.findByRole("menuitem", { name: "Resume" }));
+    // On hold, the next step says why and offers Resume.
+    expect(await screen.findByRole("heading", { level: 3, name: "On hold" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Resume" }));
     await user.click(within(screen.getByRole("dialog", { name: "Resume" })).getByRole("button", { name: "Resume" }));
-    await waitFor(() => expect(caseRequest).toHaveBeenCalledTimes(2));
-    expect(caseRequest.mock.calls[0][4]).toMatchObject({ version: 3, action: "hold", reason: "Waiting for client" });
-    expect(caseRequest.mock.calls[1][4]).toMatchObject({ version: 4, action: "resume" });
+    await waitFor(() => expect(commandsSent()).toHaveLength(2));
+    expect(commandsSent()[0][4]).toMatchObject({ version: 3, action: "hold", reason: "Waiting for client" });
+    expect(commandsSent()[1][4]).toMatchObject({ version: 4, action: "resume" });
   });
 
-  it("keeps viewers read-only", () => {
+  it("keeps viewers read-only", async () => {
+    answer();
     view({ ...initial, canManageLifecycle: false });
-    expect(screen.queryByRole("button", { name: "Edit details" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Case actions" })).not.toBeInTheDocument();
-    expect(screen.getByText("Villa interiors")).toBeVisible();
-    expect(screen.getByText(/View only/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Project actions" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Details" }));
+    expect(screen.queryByRole("button", { name: "Edit Owner" })).not.toBeInTheDocument();
   });
 
-  it("shows the frozen CRM decision and linked source records", async () => {
-    view({
-      ...initial,
-      conversionOrigin: "lead_qualification",
-      qualificationEvidenceHash: "frozen-hash",
-      qualificationEvidence: {
-        version: 1,
-        leadId: "lead-1",
-        serviceType: "interiors",
-        selection: "service_specific",
-        evaluatedAt: "2026-09-17T08:00:00.000Z",
-        form: {
-          id: "form-1",
-          code: "palm",
-          name: "Palm enquiry",
-          version: 4,
-          questions: [{ key: "property_type", label: "Property type", dataType: "select", required: true }],
-        },
-        answers: [{ questionKey: "property_type", value: "Villa" }],
-      },
-    });
-
-    expect(screen.getByText(/Palm enquiry/)).toBeInTheDocument();
-    await userEvent.setup().click(screen.getByText("Qualification answers from CRM"));
-    expect(screen.getByText("Property type")).toBeVisible();
-    expect(screen.getByText("Villa")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Original enquiry" })).toHaveAttribute("href", "/workspace/crm/leads?lead=lead-1");
-    expect(screen.getByRole("link", { name: "CRM opportunity" })).toHaveAttribute("href", "/workspace/crm/opportunities?record=opportunity-1");
+  it("lets the case owner change its details without the case-management permission", async () => {
+    answer();
+    view({ ...initial, canManageLifecycle: false, canEditDetails: true });
+    expect(screen.queryByRole("button", { name: "Project actions" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Details" }));
+    expect(await screen.findByRole("button", { name: "Edit Owner" })).toBeInTheDocument();
   });
 });

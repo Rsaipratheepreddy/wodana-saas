@@ -1,0 +1,51 @@
+.body { display: grid; gap: var(--wd-space-4); }
+.loading { display: flex; justify-content: center; padding-block: var(--wd-space-6); }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.danger { margin: 0; color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+
+/* Choose the source: a file, or a Google Sheet linked once. */
+.sources { display: grid; gap: var(--wd-space-6); }
+.sources > section { display: grid; gap: var(--wd-space-2); }
+.google { justify-items: start; padding-block-start: var(--wd-space-4); border-block-start: 1px solid var(--wd-color-structural-divider); }
+
+/* Map the columns: the import's settings, then each column heading with a sample and its field. */
+.map { display: grid; gap: var(--wd-space-4); }
+.settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: var(--wd-space-3) var(--wd-space-4); }
+/* Catalog: the prices are approved list prices (only for someone who approves prices). */
+.option { display: grid; gap: var(--wd-space-1); align-content: start; }
+.columns { display: grid; max-block-size: 22rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.columns li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 14rem); align-items: center; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.heading { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.heading small { overflow: hidden; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.columns :global(.wd-field-label:empty) { display: none; }
+/* The tabs to import (and, for a supplier list, each tab's company). */
+.tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: var(--wd-space-2) var(--wd-space-4); max-block-size: 14rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.tabs li { display: grid; gap: var(--wd-space-1); align-content: start; }
+.tabs :global(.wd-field-label:empty) { display: none; }
+
+/* The preview: counts, then every row that isn't unchanged (problems first). */
+.summary { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-6); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.summary strong { color: var(--wd-color-text); font-size: var(--wd-text-lg); }
+.summary [data-tone="danger"] strong { color: var(--wd-color-danger); }
+.rows { display: grid; max-block-size: 24rem; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.rows li { display: grid; grid-template-columns: 7rem minmax(0, 1fr); align-items: start; gap: var(--wd-space-3); padding-block: var(--wd-space-2); border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.rows li > :global(.wd-badge) { justify-self: start; }
+.rowText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.rowText small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.rowText span { color: var(--wd-color-text-secondary); }
+.rows li[data-outcome="error"] .rowText span { color: var(--wd-color-danger); }
+
+/* A linked sheet: name, source and state; when it last ran and what it did; its schedule and actions. */
+.links { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.link { display: grid; gap: var(--wd-space-2); padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.link > header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.link > p { margin: 0; }
+.counts { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: var(--wd-space-3) var(--wd-space-6); }
+.controls > :global(.wd-field) { min-inline-size: 12rem; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+
+@media (max-width: 48rem) {
+  .settings { grid-template-columns: minmax(0, 1fr); }
+  .columns li, .rows li { grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-1); }
+}

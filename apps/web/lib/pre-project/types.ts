@@ -1,3 +1,4 @@
+import { tKey } from "@/lib/i18n/keys";
 export const PRE_PROJECT_ROOT = "/workspace/pre-projects";
 export type PreProjectCase = {
   id: string; title: string; description: string | null; status: "draft" | "active" | "on_hold" | "released" | "cancelled";
@@ -10,20 +11,73 @@ export type PreProjectCase = {
   riskLevel: "none" | "low" | "medium" | "high" | "critical";
   activatedAt: string | null; holdReason: string | null; cancellationReason: string | null;
   releasedAt: string | null; canManageLifecycle?: boolean;
+  /** The case owner or someone who manages cases: may change owner, target, priority and risk. */
+  canEditDetails?: boolean;
   conversionOrigin?: string | null; convertedAt?: string | null;
   qualificationEvidence?: unknown; qualificationEvidenceHash?: string | null;
+  /** Set only after a paid Deal File has opened the linked project. */
+  projectId?: string | null;
+  servicePathEnabled?: boolean;
+  /** Where the job is: the property's address and position from the opportunity. */
+  siteAddress?: string | null; siteLatitude?: number | null; siteLongitude?: number | null;
+  /** The opportunity's number (D-0001), its sales owner and its enquiry type's name. */
+  reference?: string | null; salesMembershipId?: string | null; enquiryTypeName?: string | null;
+  /** PLM-100: the case's team by role (a person or "not applicable"), as tagged on the enquiry and the opportunity. */
+  team?: CaseTeamRole[];
+  /** PLM-121/126/098: the phases, site visit, design and release the job's enquiry type and path call for. */
+  plan?: CasePlan;
+  /** The day the client signed off the design (PLM-053), once they have: the case is priced next. */
+  designApprovedOn?: string | null;
+  /** A design-only job (Full ID) ended with that approval: "Design complete", nothing is priced next. */
+  designComplete?: boolean;
 };
-export type PreProjectListItem = Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt"> & {
+/**
+ * What a case goes through, from its job's configuration (never its enquiry type's name). `default` is the full
+ * planning journey; `path` is a path's own shape (e.g. stock goods: quotation, agreement, then fulfilment).
+ */
+export type CasePlan = {
+  source: "default" | "path";
+  phases: PreProjectCase["phase"][];
+  siteVisit: boolean;
+  design: boolean;
+  release: "production" | "fulfilment";
+};
+/** One of the workspace's roles on the case: the person holding it, or "not applicable" for this job. */
+export type CaseTeamRole = { role: string; label: string; member: { membershipId: string; name: string; email: string | null } | null; notApplicable: boolean };
+/**
+ * What a case's stage and next step are read from: its quotations (a design fee's round apart from the main one), its
+ * agreement and the numbers its quotations were issued under. The case page has the whole commercial record; the
+ * Planning list a summary of it.
+ */
+export type CaseCommercialFacts = {
+  data: {
+    quotes: Array<{ id: string; number: number; kind: string; round?: "design" | "main" | null; status: string }>;
+    agreement?: { quoteId: string; status: string } | null;
+  };
+  quoteReferences?: Record<string, string>;
+};
+export type CaseProjectFacts = {
+  id: string; caseId: string; name: string; reference: string; status: string; onHold: boolean; managerName: string | null; nextAction: string;
+  staged: boolean; stageName: string | null; phase: string; workflow: { templateCode: string; currentStageKey: string; currentStageName: string } | null;
+};
+export type PreProjectListItem =Pick<PreProjectCase, "id" | "title" | "description" | "customerId" | "customerName" | "opportunityStatus" | "leadId" | "leadManagerName" | "amount" | "currencyCode" | "createdAt" | "updatedAt" | "designApprovedOn" | "designComplete"> & {
   status: PreProjectCase["status"] | "qualified"; opportunityId: string | null; qualifiedLead?: boolean; leadVersion?: number;
   ownerMembershipId?: string | null; phase?: PreProjectCase["phase"]; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"];
+  projectId?: string | null;
+  /** Its project, the same for everyone who sees the case: on staged delivery (left Planning), or an older route's phase and stage. */
+  project?: CaseProjectFacts;
+  servicePathEnabled?: boolean;
+  plan?: CasePlan;
+  /** The case's quotations and agreement, so the list's stage and next step match its overview. */
+  commercial?: CaseCommercialFacts;
 };
 export type PreProjectList = { items: PreProjectListItem[]; canStartLead?: boolean; total: number; canCreate: boolean; workspaceId: string; error?: string };
 export type PreProjectCandidate = { id: string; title: string; customerName: string; status: string; caseId: string | null };
 export const requirementViews = [
-  { section: "requirements", view: "requirement", label: "Requirements" },
-  { section: "measurements", view: "measurements", label: "Measurements" },
-  { section: "inspiration", view: "inspiration", label: "Client inspirations" },
-  { section: "site-layouts", view: "file", label: "Site layouts" },
+  { section: "requirements", view: "requirement", label: tKey("Requirements") },
+  { section: "measurements", view: "measurements", label: tKey("Measurements") },
+  { section: "inspiration", view: "inspiration", label: tKey("Client inspirations") },
+  { section: "site-layouts", view: "file", label: tKey("Site layouts") },
 ] as const;
 export const caseSections = ["overview", ...requirementViews.map(item => item.section), "site", "designs", "definition", "boq", "quotations", "contracts", "payment-plan", "variations", "approvals", "execution-release", "client-portal", "documents"];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -45,4 +99,8 @@ export function listSearch(query: URLSearchParams) {
 export function caseHref(id: string, query = new URLSearchParams(), section = "requirements") {
   const state = listSearch(query).toString();
   return `${PRE_PROJECT_ROOT}/cases/${id}/${section}${state ? `?${state}` : ""}`;
+}
+/** One requirement of a case: its Requirements view, taken straight to that requirement's card. */
+export function requirementHref(caseId: string, requirementId: string) {
+  return `${caseHref(caseId)}?${new URLSearchParams({ requirement: requirementId })}`;
 }

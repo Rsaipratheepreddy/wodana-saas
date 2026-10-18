@@ -1,8 +1,10 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import {
   Fragment,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -34,19 +36,33 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, Hash, X } f
 import { IconButton } from "../components/actions";
 import { Checkbox } from "../components/forms";
 import { InspectorSheet } from "../components/overlays";
-import { Badge, EmptyState, ErrorState, Skeleton } from "../components/status";
+import { Badge, EmptyState, ErrorState } from "../components/status";
+import { useTableViewportRef } from "./table-viewport";
+import { TableSkeleton } from "../components/skeleton";
 import { Pagination } from "../components/navigation";
-import { DataGridToolbar } from "./data-grid-toolbar";
+import { DataGridToolbar, type ToolbarFilter } from "./data-grid-toolbar";
+export type { ToolbarFilter } from "./data-grid-toolbar";
+import { ColumnHeaderMenu } from "../molecules/column-header-menu";
+import { useDesignSystem } from "../foundations/provider";
+import { useGridDefaultsSource, type GridDefault } from "../foundations/grid-defaults";
+import { usePageToolbarSlot } from "./page-shell";
+import { createPortal } from "react-dom";
 
 export type CellEditorContext<T> = { columnId: string; row: T; value: unknown };
 export type DataGridColumnMeta<T> = {
   /** Render controlled fields without changing their React component identity on each edit. */
   renderCell?: (row: T) => ReactNode;
   align?: "start" | "center" | "end";
+  /** The column's text stays on one line at its natural width (dates, references), even when the table wraps text; the wrapping columns take the rest. */
+  nowrap?: boolean;
   editable?: boolean;
   editor?: (context: CellEditorContext<T>) => ReactNode;
   mobileHidden?: boolean;
+  /** Which columns give way first when the table is narrow (§5c D2): "low" hides below 80rem, "medium" below 64rem. */
+  priority?: "high" | "medium" | "low";
   primary?: boolean;
+  /** `renderCell` draws its own link or button: the grid shows it as is instead of wrapping it in the row's open button, so no control nests inside another. */
+  interactive?: boolean;
   headerIcon?: ReactNode;
   filterOptions?: { id: string; label: string }[];
   validate?: (value: string, row: T) => string | undefined;
@@ -55,13 +71,20 @@ export type DataGridColumn<T> = ColumnDef<T, unknown> & { meta?: DataGridColumnM
 export type SavedView = { id: string; label: string };
 
 export type DataGridProps<T> = {
-  appearance?: "card" | "flush";
+  /** Column lines between cells, for editable sheets. Every table has the same rounded frame. */
+  gridLines?: boolean;
+  /** Allow record text to wrap instead of silently truncating it. */
+  wrapText?: boolean;
   ariaLabel: string;
+  title?: string;
   bulkActions?: (rows: T[]) => ReactNode;
   columns: DataGridColumn<T>[];
   data: T[];
   emptyDescription?: string;
   emptyTitle?: string;
+  keepEmptyTable?: boolean;
+  emptyContent?: ReactNode;
+  compactToolbar?: boolean;
   error?: string | null;
   exportFileName?: string;
   getInspectorTitle?: (row: T) => string;
@@ -82,6 +105,8 @@ export type DataGridProps<T> = {
   renderInspector?: (row: T, close: () => void) => ReactNode;
   renderSubtable?: (row: T) => ReactNode;
   selectable?: boolean;
+  /** Clear selection when an external filter changes without remounting search. */
+  selectionResetKey?: string;
   showFooter?: boolean;
   showToolbar?: boolean;
   toolbarActions?: ReactNode;
@@ -94,7 +119,20 @@ export type DataGridProps<T> = {
   hasMoreRows?: boolean;
   totalRowCount?: number;
   initialColumnVisibility?: VisibilityState;
+  /**
+   * The list's key for its workspace default (e.g. "crm.enquiries", plan §0.7 R14): the columns the firm hides
+   * start hidden for everyone; a person can still show them, "Reset columns" returns to the default, and people
+   * who manage the module can save the current columns as the default for everyone.
+   */
+  gridKey?: string;
   savedViews?: SavedView[];
+  /** Content at the start of the toolbar row (e.g. ListTabs). */
+  toolbarLeading?: ReactNode;
+  /** Filters that are not columns; offered under "Filter" and shown as chips once used. */
+  filters?: ToolbarFilter[];
+  /** The page's secondary actions, at the top of the toolbar's ⋯ menu. */
+  menuActions?: Array<{ id: string; label: string }>;
+  onMenuAction?: (id: string) => void;
   selectedView?: string;
   onViewChange?: (view: string) => void;
   virtualizeAfter?: number;
@@ -131,6 +169,7 @@ function downloadCsv<T>(table: Table<T>, rows: Row<T>[], fileName: string) {
 }
 
 function EditableCell<T>({ columnId, display, meta, onOpen, onUpdate, row, value }: { columnId: string; display: ReactNode; meta?: DataGridColumnMeta<T>; onOpen?: () => void; onUpdate?: DataGridProps<T>["onCellUpdate"]; row: T; value: unknown }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value ?? ""));
   const [error, setError] = useState<string>();
@@ -151,7 +190,7 @@ function EditableCell<T>({ columnId, display, meta, onOpen, onUpdate, row, value
       return true;
     } catch (cause) {
       commitPhase.current='idle';
-      setError(cause instanceof Error && cause.message ? cause.message : "Could not save this value");
+      setError(cause instanceof Error && cause.message ? cause.message : t("Could not save this value"));
       return false;
     }
   };
@@ -163,7 +202,7 @@ function EditableCell<T>({ columnId, display, meta, onOpen, onUpdate, row, value
   };
   if (!meta?.editable || !editing) return <button className="wd-grid-value" data-primary={meta?.primary || undefined} onClick={(event) => { event.stopPropagation(); if (meta?.editable) { commitPhase.current="idle";setDraft(String(value ?? "")); setEditing(true); } else if (meta?.primary) onOpen?.(); }} onKeyDown={(event) => { if (meta?.editable && event.key === "Enter") { event.stopPropagation(); commitPhase.current="idle";setDraft(String(value ?? "")); setEditing(true); } }} type="button">{display}</button>;
   if (meta.editor) return <>{meta.editor({ columnId, row, value })}</>;
-  return <span className="wd-cell-editor" data-invalid={Boolean(error)}><input aria-invalid={Boolean(error)} aria-label={`Edit ${columnId}`} onBlur={() => void commit()} onChange={(event) => setDraft(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={keyDown} ref={input} value={draft} />{error ? <small role="alert">{error}</small> : null}</span>;
+  return <span className="wd-cell-editor" data-invalid={Boolean(error)}><input aria-invalid={Boolean(error)} aria-label={t("Edit {column}", { column: columnId })} onBlur={() => void commit()} onChange={(event) => setDraft(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={keyDown} ref={input} value={draft} />{error ? <small role="alert">{error}</small> : null}</span>;
 }
 
 function SortIcon({ direction }: { direction: false | "asc" | "desc" }) {
@@ -171,13 +210,18 @@ function SortIcon({ direction }: { direction: false | "asc" | "desc" }) {
 }
 
 export function DataGrid<T>({
-  appearance = "card",
+  gridLines = false,
+  wrapText = false,
   ariaLabel,
+  title,
   bulkActions,
   columns,
   data,
-  emptyDescription = "Create a record or adjust the current filters.",
-  emptyTitle = "No records found",
+  emptyDescription: emptyDescriptionProp,
+  emptyTitle: emptyTitleProp,
+  keepEmptyTable = false,
+  emptyContent,
+  compactToolbar = false,
   error,
   exportFileName = "wodana-export.csv",
   getRowId,
@@ -198,13 +242,18 @@ export function DataGrid<T>({
   renderInspector,
   renderSubtable,
   selectable = true,
+  selectionResetKey,
   savedViews = [],
+  toolbarLeading,
+  filters,
+  menuActions,
+  onMenuAction,
   selectedView,
   showFooter = true,
   showToolbar = true,
   toolbarActions,
   footerActions,
-  searchLabel = "Search records",
+  searchLabel: searchLabelProp,
   searchValue,
   onSearchChange,
   rowNumbers = true,
@@ -212,9 +261,16 @@ export function DataGrid<T>({
   hasMoreRows,
   totalRowCount,
   initialColumnVisibility = {},
+  gridKey,
   onViewChange,
   virtualizeAfter = 150,
 }: DataGridProps<T>) {
+  const t = useT();
+  const { locale } = useDesignSystem();
+  // Without a toolbar there are no filters to adjust, so an empty grid says only its title unless told more.
+  const emptyDescription = emptyDescriptionProp ?? (showToolbar ? t("Create a record or adjust the current filters.") : undefined);
+  const emptyTitle = emptyTitleProp ?? t("No records found");
+  const searchLabel = searchLabelProp ?? t("Search records");
   const [sorting, setSorting] = useState<SortingState>([]);
   const [internalView, setInternalView] = useState(selectedView ?? savedViews[0]?.id);
   const [globalFilter, setGlobalFilter] = useState("");
@@ -222,23 +278,42 @@ export function DataGrid<T>({
   const [defaultVisibility] = useState(initialColumnVisibility);
   const [visibility, setVisibility] = useState<VisibilityState>(defaultVisibility);
   const [selection, setSelection] = useState<RowSelectionState>({});
+  useEffect(() => { if (selectionResetKey !== undefined) setSelection({}); }, [selectionResetKey, columnFilters, globalFilter]);
   const [expanded, setExpanded] = useState<ExpandedState>({});
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize });
   const [inspected, setInspected] = useState<T | null>(null);
   const persistenceKey = persistKey ? `${persistKey}-view` : undefined;
   const hydratedPersistenceKey = useRef<string | undefined>(undefined);
+  // The page's tabs row can hold this list's toolbar (one row instead of two); the first list on the page claims it.
+  const pageSlot = usePageToolbarSlot();
+  const slotId = useId();
+  if (pageSlot && !toolbarLeading && (pageSlot.owner.current === null || pageSlot.owner.current === slotId)) pageSlot.owner.current = slotId;
+  useEffect(() => () => { if (pageSlot?.owner.current === slotId) pageSlot.owner.current = null; }, [pageSlot, slotId]);
+  const toolbarSlot = pageSlot && pageSlot.owner.current === slotId ? pageSlot.element : null;
+  // In the tabs row the page title is right above, so the grid's own title is not repeated there.
+  const toolbarTitle = toolbarSlot ? undefined : title;
+  const gridDefaults = useGridDefaultsSource();
+  const [workspaceDefault, setWorkspaceDefault] = useState<GridDefault | null>(null);
+  // Once a person shows or hides a column themselves, a late-arriving workspace default doesn't undo it.
+  const personalized = useRef(false);
+  useEffect(() => {
+    if (!gridKey || !gridDefaults) return;
+    let live = true;
+    gridDefaults.load(gridKey).then((result) => { if (live) setWorkspaceDefault(result); }).catch(() => { /* the list works with its own columns */ });
+    return () => { live = false; };
+  }, [gridKey, gridDefaults]);
 
   const leadingColumns = useMemo<DataGridColumn<T>[]>(() => selectable || rowNumbers ? [
     { id: "__select", size: 44, enableHiding: false, enableSorting: false, enableResizing: false,
-      header: ({ table }) => selectable ? <Checkbox aria-label="Select all visible rows" isIndeterminate={table.getIsSomePageRowsSelected()} isSelected={table.getIsAllPageRowsSelected()} onChange={table.toggleAllPageRowsSelected} /> : <Hash aria-label="Row number" size={13} />,
-      cell: ({ row, table }) => <span className="wd-row-index" data-selectable={selectable || undefined}>
+      header: ({ table }) => selectable ? <Checkbox aria-label={t("Select all visible rows")} isIndeterminate={table.getIsSomePageRowsSelected()} isSelected={table.getIsAllPageRowsSelected()} onChange={table.toggleAllPageRowsSelected} /> : <Hash aria-label={t("Row number")} size={13} />,
+      cell: ({ row, table }) => <span className="wd-row-index" data-selectable={selectable || undefined} data-numbered={rowNumbers || undefined}>
         {rowNumbers && <span aria-hidden={selectable || undefined}>{(manualPagination ? table.getState().pagination.pageIndex * table.getState().pagination.pageSize : 0) + table.getPrePaginationRowModel().rows.findIndex(item => item.id === row.id) + 1}</span>}
-        {selectable && <Checkbox aria-label={`Select row ${row.index + 1}`} isSelected={row.getIsSelected()} onChange={row.toggleSelected} />}
+        {selectable && <Checkbox aria-label={t("Select row {number}", { number: row.index + 1 })} isSelected={row.getIsSelected()} onChange={row.toggleSelected} />}
       </span> },
-  ] : [], [selectable, rowNumbers, manualPagination]);
+  ] : [], [selectable, rowNumbers, manualPagination, t]);
   const trailingColumns = useMemo<DataGridColumn<T>[]>(() => getSubRows || renderSubtable ? [
-    { id: "__expand", size: 42, enableSorting: false, enableResizing: false, header: () => <span className="wd-visually-hidden">Row details</span>, cell: ({ row }: { row: Row<T> }) => row.getCanExpand() || renderSubtable ? <IconButton aria-label={row.getIsExpanded() ? "Collapse row" : "Expand row"} onPress={() => row.toggleExpanded()} size="compact">{row.getIsExpanded() ? <ChevronDown size={14} /> : <ChevronRight data-directional="true" size={14} />}</IconButton> : null },
-  ] : [], [getSubRows, renderSubtable]);
+    { id: "__expand", size: 42, enableSorting: false, enableResizing: false, header: () => <span className="wd-visually-hidden">{t("Row details")}</span>, cell: ({ row }: { row: Row<T> }) => row.getCanExpand() || renderSubtable ? <IconButton aria-label={row.getIsExpanded() ? t("Collapse row") : t("Expand row")} onPress={() => row.toggleExpanded()} size="compact">{row.getIsExpanded() ? <ChevronDown size={14} /> : <ChevronRight data-directional="true" size={14} />}</IconButton> : null },
+  ] : [], [getSubRows, renderSubtable, t]);
 
   // TanStack Table intentionally exposes mutable callback references; the React compiler skips this hook.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -258,7 +333,7 @@ export function DataGrid<T>({
     getSubRows,
     globalFilterFn: "includesString",
     manualPagination,
-    onColumnVisibilityChange: setVisibility,
+    onColumnVisibilityChange: (updater) => { personalized.current = true; setVisibility(updater); },
     onColumnFiltersChange: setColumnFilters,
     onExpandedChange: setExpanded,
     onGlobalFilterChange: setGlobalFilter,
@@ -269,11 +344,32 @@ export function DataGrid<T>({
     state: { columnFilters, columnVisibility: visibility, expanded, globalFilter, pagination: page === undefined ? pagination : { ...pagination, pageIndex: Math.max(0, page - 1) }, rowSelection: selection, sorting },
   });
 
+  // The primary column is never hidden, by a person or by the workspace default.
+  const hideable = useMemo(() => new Set(table.getAllLeafColumns()
+    .filter((column) => !column.id.startsWith("__") && column.getCanHide() && !(column.columnDef.meta as DataGridColumnMeta<T> | undefined)?.primary)
+    .map((column) => column.id)), [table, columns]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hiddenByWorkspace = workspaceDefault?.hiddenColumns.filter((id) => hideable.has(id)).join("\n") ?? "";
+  const columnDefault = useMemo<VisibilityState>(() => ({
+    ...defaultVisibility, ...Object.fromEntries(hiddenByWorkspace.split("\n").filter(Boolean).map((id) => [id, false])),
+  }), [defaultVisibility, hiddenByWorkspace]);
+  useEffect(() => {
+    if (!personalized.current) setVisibility(columnDefault);
+  }, [columnDefault]);
+  const resetColumns = () => { personalized.current = false; setVisibility(columnDefault); };
+  const saveColumnDefault = gridKey && gridDefaults && workspaceDefault?.canManage ? async () => {
+    const hiddenColumns = table.getAllLeafColumns().filter((column) => hideable.has(column.id) && !column.getIsVisible()).map((column) => column.id);
+    const saved = await gridDefaults.save(gridKey, { hiddenColumns, version: workspaceDefault.version, requestId: crypto.randomUUID() });
+    // What everyone now starts with is what this person sees: keep their columns as they are.
+    personalized.current = true;
+    setWorkspaceDefault(saved);
+  } : undefined;
+
   useEffect(() => {
     if (!persistenceKey) return;
-    const saved = readUrlState(persistenceKey, { sorting: [] as SortingState, visibility: defaultVisibility });
-    setSorting(saved.sorting);
-    setVisibility(saved.visibility);
+    const saved = readUrlState<{ sorting: SortingState; visibility: VisibilityState } | null>(persistenceKey, null);
+    setSorting(saved?.sorting ?? []);
+    if (saved) personalized.current = true;
+    setVisibility(saved?.visibility ?? defaultVisibility);
   }, [persistenceKey, defaultVisibility]);
   useEffect(() => {
     if (!persistenceKey) return;
@@ -288,6 +384,7 @@ export function DataGrid<T>({
   const selectedRows = table.getSelectedRowModel().flatRows.map((row) => row.original);
   const activeView = selectedView ?? internalView;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useTableViewportRef(scrollRef);
   const virtual = rows.length > virtualizeAfter;
   const rowVirtualizer = useVirtualizer({ count: virtual ? rows.length : 0, getScrollElement: () => scrollRef.current, estimateSize: () => 48, overscan: 8 });
   const visibleRows = virtual ? rowVirtualizer.getVirtualItems().map((item) => ({ row: rows[item.index], virtual: item })) : rows.map((row) => ({ row, virtual: null }));
@@ -307,17 +404,17 @@ export function DataGrid<T>({
     openRow(row);
   };
 
-  return <section className="wd-data-grid" aria-label={ariaLabel} data-appearance={appearance} data-row-numbers={rowNumbers || undefined}>
-    {showToolbar ? <DataGridToolbar table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} onExport={exportRows} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} /> : null}
-    {selectedRows.length ? <div className="wd-bulk-bar"><strong>{selectedRows.length} selected</strong><div>{bulkActions?.(selectedRows)}</div><IconButton aria-label="Clear selection" onPress={() => setSelection({})}><X size={14} /></IconButton></div> : null}
-    {error ? <ErrorState title={error} /> : isLoading ? <div aria-label={`Loading ${ariaLabel}`} className="wd-grid-loading" role="status"><Skeleton lines={6} /></div> : !rows.length ? <EmptyState description={emptyDescription} title={emptyTitle} /> : <div className="wd-table-scroll" ref={scrollRef} tabIndex={0}>
+  return <section className="wd-data-grid" aria-label={ariaLabel} data-grid-lines={gridLines || undefined} data-row-numbers={rowNumbers || undefined} data-wrap-text={wrapText || undefined}>
+    {showToolbar ? (toolbarSlot ? createPortal(<DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={toolbarTitle} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} onResetColumns={resetColumns} onSaveColumnDefault={saveColumnDefault} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} />, toolbarSlot) : <DataGridToolbar compact={compactToolbar} leading={toolbarLeading} title={toolbarTitle} table={table} views={savedViews} activeView={activeView} onViewChange={id => { setInternalView(id); onViewChange?.(id); }} searchLabel={searchLabel} searchValue={searchValue} onSearchChange={onSearchChange} actions={toolbarActions} filters={filters} menuActions={menuActions} onMenuAction={onMenuAction} onExport={exportRows} onResetColumns={resetColumns} onSaveColumnDefault={saveColumnDefault} hasMoreRows={hasMoreRows} totalRowCount={totalRowCount} />) : null}
+    {selectedRows.length ? <div className="wd-bulk-bar"><strong>{t("{count} selected", { count: selectedRows.length })}</strong><div>{bulkActions?.(selectedRows)}</div><IconButton aria-label={t("Clear selection")} onPress={() => setSelection({})}><X size={14} /></IconButton></div> : null}
+    {error ? <div className="wd-table-scroll wd-grid-state"><ErrorState title={error} /></div> : isLoading ? <div className="wd-table-scroll wd-grid-state"><div aria-label={t("Loading {name}", { name: ariaLabel })} className="wd-grid-loading" role="status"><TableSkeleton rows={8} widths={table.getVisibleLeafColumns().filter((column) => !column.id.startsWith("__")).map((column) => Math.max(1, column.getSize() / 100))} /></div></div> : !rows.length && !keepEmptyTable ? <div className="wd-table-scroll wd-grid-state">{emptyContent ?? <EmptyState description={emptyDescription} title={emptyTitle} />}</div> : <div className="wd-table-scroll" ref={viewportRef} tabIndex={0}>
       <table aria-label={ariaLabel} className="wd-table wd-record-table" data-virtual={virtual || undefined} style={{ inlineSize: table.getCenterTotalSize(), minInlineSize: "100%" }}>
-        <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => { const meta = header.column.columnDef.meta as DataGridColumnMeta<T> | undefined; return <th data-column={header.column.id} data-pinned={isPinned(header.column.id) ? (header.column.id === '__select' ? 'index' : 'primary') : undefined} aria-sort={header.column.getIsSorted() ? (header.column.getIsSorted() === 'asc' ? 'ascending' : 'descending') : undefined} data-mobile-hidden={meta?.mobileHidden || undefined} data-primary={meta?.primary || undefined} key={header.id} style={columnStyle(header.column.id, header.getSize())}>{header.column.getCanSort() ? <button className="wd-sort-button" onClick={header.column.getToggleSortingHandler()} type="button"><span>{flexRender(header.column.columnDef.header, header.getContext())}</span><SortIcon direction={header.column.getIsSorted()} /></button> : <div className="wd-column-header">{flexRender(header.column.columnDef.header, header.getContext())}</div>}{header.column.getCanResize() ? <span className="wd-resizer" data-resizing={header.column.getIsResizing() || undefined} onDoubleClick={() => header.column.resetSize()} onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()} /> : null}</th>; })}</tr>)}</thead>
-        <tbody style={virtual ? { blockSize: rowVirtualizer.getTotalSize(), display: "block", position: "relative" } : undefined}>{visibleRows.map(({ row, virtual: virtualRow }) => <Fragment key={row.id}><tr {...getRowDragHandlers?.(row.original)} className="wd-table-row" data-index={virtualRow?.index} ref={virtualRow ? rowVirtualizer.measureElement : undefined} tabIndex={onRowAction || renderInspector ? 0 : undefined} data-actionable={Boolean(onRowAction || renderInspector) || undefined} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openRow(row.original); } }} data-selected={row.getIsSelected() || undefined} onClick={(event) => rowClick(event, row.original)} style={virtualRow ? { display: "table", tableLayout: "fixed", position: "absolute", transform: `translateY(${virtualRow.start}px)`, inlineSize: "100%" } : undefined}>{row.getVisibleCells().map((cell) => { const meta = cell.column.columnDef.meta as DataGridColumnMeta<T> | undefined; const content = meta?.renderCell ? meta.renderCell(row.original) : flexRender(cell.column.columnDef.cell, cell.getContext()); return <td data-align={meta?.align} data-column={cell.column.id} data-pinned={isPinned(cell.column.id) ? (cell.column.id === '__select' ? 'index' : 'primary') : undefined} data-mobile-hidden={meta?.mobileHidden || undefined} data-primary={meta?.primary || undefined} key={cell.id} onDoubleClick={(event) => event.stopPropagation()} style={columnStyle(cell.column.id, cell.column.getSize())}>{meta?.editable || (meta?.primary && (renderInspector || onRowAction)) ? <EditableCell columnId={cell.column.id} display={content} meta={meta} onOpen={() => openRow(row.original)} onUpdate={onCellUpdate} row={row.original} value={cell.getValue()} /> : content}</td>; })}</tr>{row.getIsExpanded() ? <tr className="wd-subtable-row"><td colSpan={row.getVisibleCells().length}>{renderSubtable ? renderSubtable(row.original) : null}</td></tr> : null}</Fragment>)}</tbody>
+        <thead>{table.getHeaderGroups().map((group) => <tr key={group.id}>{group.headers.map((header) => { const meta = header.column.columnDef.meta as DataGridColumnMeta<T> | undefined; const label = typeof header.column.columnDef.header === "string" ? header.column.columnDef.header : undefined; return <th data-column={header.column.id} data-pinned={isPinned(header.column.id) ? (header.column.id === '__select' ? 'index' : 'primary') : undefined} aria-sort={header.column.getIsSorted() ? (header.column.getIsSorted() === 'asc' ? 'ascending' : 'descending') : undefined} data-align={meta?.align} data-mobile-hidden={meta?.mobileHidden || undefined} data-priority={meta?.priority} data-primary={meta?.primary || undefined} data-nowrap={meta?.nowrap || undefined} key={header.id} style={columnStyle(header.column.id, header.getSize())}><div className="wd-column-head-content">{header.column.getCanSort() ? <button className="wd-sort-button" onClick={header.column.getToggleSortingHandler()} type="button">{meta?.headerIcon ? <span aria-hidden="true" className="wd-column-icon">{meta.headerIcon}</span> : null}<span>{flexRender(header.column.columnDef.header, header.getContext())}</span><SortIcon direction={header.column.getIsSorted()} /></button> : <div className="wd-column-header">{meta?.headerIcon ? <span aria-hidden="true" className="wd-column-icon">{meta.headerIcon}</span> : null}{flexRender(header.column.columnDef.header, header.getContext())}</div>}{label ? <ColumnHeaderMenu canHide={header.column.getCanHide()} canSort={header.column.getCanSort()} label={label} onHide={() => header.column.toggleVisibility(false)} onResetWidth={() => header.column.resetSize()} onSortAscending={() => header.column.toggleSorting(false)} onSortDescending={() => header.column.toggleSorting(true)} /> : null}</div>{header.column.getCanResize() ? <span className="wd-resizer" data-resizing={header.column.getIsResizing() || undefined} onDoubleClick={() => header.column.resetSize()} onMouseDown={header.getResizeHandler()} onTouchStart={header.getResizeHandler()} /> : null}</th>; })}</tr>)}</thead>
+        <tbody style={virtual ? { blockSize: rowVirtualizer.getTotalSize(), display: "block", position: "relative" } : undefined}>{!rows.length ? <tr className="wd-table-viewport-row"><td className="wd-table-viewport-cell" colSpan={table.getVisibleLeafColumns().length}><div className="wd-table-viewport-state">{emptyContent ?? <EmptyState description={emptyDescription} title={emptyTitle} />}</div></td></tr> : null}{visibleRows.map(({ row, virtual: virtualRow }) => <Fragment key={row.id}><tr {...getRowDragHandlers?.(row.original)} className="wd-table-row" data-index={virtualRow?.index} ref={virtualRow ? rowVirtualizer.measureElement : undefined} tabIndex={onRowAction || renderInspector ? 0 : undefined} data-actionable={Boolean(onRowAction || renderInspector) || undefined} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openRow(row.original); } }} data-selected={row.getIsSelected() || undefined} onClick={(event) => rowClick(event, row.original)} style={virtualRow ? { display: "table", tableLayout: "fixed", position: "absolute", transform: `translateY(${virtualRow.start}px)`, inlineSize: "100%" } : undefined}>{row.getVisibleCells().map((cell) => { const meta = cell.column.columnDef.meta as DataGridColumnMeta<T> | undefined; const content = meta?.renderCell ? meta.renderCell(row.original) : flexRender(cell.column.columnDef.cell, cell.getContext()); return <td data-align={meta?.align} data-column={cell.column.id} data-pinned={isPinned(cell.column.id) ? (cell.column.id === '__select' ? 'index' : 'primary') : undefined} data-mobile-hidden={meta?.mobileHidden || undefined} data-priority={meta?.priority} data-primary={meta?.primary || undefined} data-nowrap={meta?.nowrap || undefined} key={cell.id} onDoubleClick={(event) => event.stopPropagation()} style={columnStyle(cell.column.id, cell.column.getSize())}>{meta?.editable || (meta?.primary && !meta.interactive && (renderInspector || onRowAction)) ? <EditableCell columnId={cell.column.id} display={content} meta={meta} onOpen={() => openRow(row.original)} onUpdate={onCellUpdate} row={row.original} value={cell.getValue()} /> : content}</td>; })}</tr>{row.getIsExpanded() ? <tr className="wd-subtable-row"><td colSpan={row.getVisibleCells().length}>{renderSubtable ? renderSubtable(row.original) : null}</td></tr> : null}</Fragment>)}</tbody>
       </table>
     </div>}
-    {showFooter ? <footer className="wd-grid-footer"><span>{selectedRows.length ? `${selectedRows.length} selected · ` : ""}{rows.length === (totalRowCount ?? data.length) ? `${rows.length} record${rows.length === 1 ? "" : "s"}` : `${rows.length} of ${(totalRowCount ?? data.length).toLocaleString()} shown`}</span><div className="wd-record-footer-actions">{footerActions}{resolvedPageCount > 1 ? <Pagination ariaLabel={`${ariaLabel} pagination`} onPageChange={(nextPage) => { table.setPageIndex(nextPage - 1); onPageChange?.(nextPage); }} page={Math.min(page ?? pagination.pageIndex + 1, resolvedPageCount)} pageCount={resolvedPageCount} /> : null}</div></footer> : null}
-    {renderInspector && inspected ? <InspectorSheet isDirty={isInspectorDirty} isOpen onOpenChange={(open) => { if (!open) setInspected(null); }} size="md" title={getInspectorTitle?.(inspected) ?? "Record details"}>{renderInspector(inspected, () => setInspected(null))}</InspectorSheet> : null}
+    {showFooter ? <footer className="wd-grid-footer"><span>{/* No count while the rows are still loading ("0 records" under the placeholders would be untrue). */}{isLoading ? null : <>{selectedRows.length ? `${t("{count} selected", { count: selectedRows.length })} · ` : ""}{rows.length === (totalRowCount ?? data.length) ? (rows.length === 1 ? t("1 record") : t("{count} records", { count: rows.length })) : t("{shown} of {total} shown", { shown: rows.length, total: new Intl.NumberFormat(locale).format(totalRowCount ?? data.length) })}</>}</span><div className="wd-record-footer-actions">{footerActions}{resolvedPageCount > 1 ? <Pagination ariaLabel={t("{name} pagination", { name: ariaLabel })} onPageChange={(nextPage) => { table.setPageIndex(nextPage - 1); onPageChange?.(nextPage); }} page={Math.min(page ?? pagination.pageIndex + 1, resolvedPageCount)} pageCount={resolvedPageCount} /> : null}</div></footer> : null}
+    {renderInspector && inspected ? <InspectorSheet isDirty={isInspectorDirty} isOpen onOpenChange={(open) => { if (!open) setInspected(null); }} size="md" title={getInspectorTitle?.(inspected) ?? t("Record details")}>{renderInspector(inspected, () => setInspected(null))}</InspectorSheet> : null}
   </section>;
 }
 

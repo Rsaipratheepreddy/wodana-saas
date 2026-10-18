@@ -57,7 +57,7 @@ try {
   stage = "new enquiry";
   const requestId = randomUUID();
   const response = await page.request.post(`${web}/api/workspace/crm/leads`, { data: {
-    workspaceId, requestId, displayName: `Local alert QA ${Date.now()}`,
+    workspaceId, requestId, displayName: `Local alert QA ${String(Date.now()).replace(/\d/g, (digit) => "abcdefghij"[Number(digit)])}`,
     email: `alert-${requestId}@example.com`, title: "Local notification test",
     source: source.id, channel: channel.id, serviceType: serviceType.id,
     assignment: { mode: "automatic" },

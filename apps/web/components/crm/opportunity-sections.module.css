@@ -1,0 +1,36 @@
+/* The fact groups as quiet cards (tone, no border) and the sidebar's small groups. */
+.cards { display: grid; gap: var(--wd-space-2); }
+.card { border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.cardHead { display: flex; align-items: center; gap: var(--wd-space-2); padding-inline-end: var(--wd-space-2); }
+.toggle { display: flex; flex: 1; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; min-block-size: var(--wd-control-lg); padding-inline: var(--wd-space-3); border: 0; border-radius: var(--wd-radius-md); background: none; color: var(--wd-color-text); font: inherit; text-align: start; cursor: pointer; }
+.toggle:hover { background: var(--wd-color-surface-hover); }
+.toggle:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.toggle svg { flex: none; color: var(--wd-color-icon-subtle); transform: rotate(-90deg); transition: transform 120ms ease; }
+:global([dir="rtl"]) .toggle svg { transform: rotate(90deg); }
+.card[data-open] .toggle svg { transform: none; }
+.toggle h4 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.cardBody { padding: 0 var(--wd-space-3) var(--wd-space-3); }
+.cardBody[hidden] { display: none; }
+.missing { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.link { color: var(--wd-color-link); font-size: var(--wd-text-sm); text-decoration: none; white-space: nowrap; }
+.link:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+
+.contact, .activity { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.contact li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-inline-size: 0; }
+.name { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); text-decoration: none; overflow-wrap: anywhere; }
+a.name:hover { text-decoration: underline; }
+.value { min-inline-size: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.contactActions { display: inline-flex; flex: none; gap: var(--wd-space-1); }
+.iconLink { display: inline-grid; place-items: center; inline-size: var(--wd-control-sm); block-size: var(--wd-control-sm); border-radius: var(--wd-radius-sm); color: var(--wd-color-icon); }
+.iconLink:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.iconLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.activity li { display: flex; align-items: flex-start; gap: var(--wd-space-2); min-inline-size: 0; }
+.activityMark { display: inline-grid; flex: none; place-items: center; block-size: calc(var(--wd-text-sm) * var(--wd-leading-ui)); color: var(--wd-color-icon-subtle); }
+.activityText { display: grid; flex: 1; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.activity small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.activity li[data-status="pending"] .activityMark { color: var(--wd-color-action-primary); }
+.activity li[data-status="completed"] .activityMark { color: var(--wd-color-success); }
+.activity li[data-status="completed"] .value, .activity li[data-status="cancelled"] .value { color: var(--wd-color-text-secondary); }
+.activityActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-inline-start: calc(var(--wd-space-2) * -1); }
+.showAll { display: flex; margin-inline-start: calc(var(--wd-space-2) * -1); }
+@media (prefers-reduced-motion: reduce) { .toggle svg { transition: none; } }

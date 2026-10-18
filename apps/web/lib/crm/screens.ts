@@ -8,8 +8,7 @@ export type CrmScreenId =
   | "activities"
   | "conversations"
   | "sequences"
-  | "automations"
-  | "crm-reports";
+  | "automations";
 
 export type CrmRecord = Record<string, unknown> & { id: string };
 
@@ -95,6 +94,7 @@ const organizations: CrmRecord[] = [
 const opportunities: CrmRecord[] = [
   {
     id: "73000000-0000-4000-8000-000000000001",
+    reference: "D-0001",
     title: "Emirates Hills villa interior renovation",
     partyName: "Amira Al Mansoori",
     pipelineId: "pipeline-1",
@@ -113,6 +113,7 @@ const opportunities: CrmRecord[] = [
   },
   {
     id: "73000000-0000-4000-8000-000000000002",
+    reference: "D-0002",
     title: "DIFC executive office fit-out",
     partyName: "Khalid Rahman",
     pipelineId: "pipeline-1",
@@ -207,14 +208,6 @@ const automations: CrmRecord[] = [
   { id: "77000000-0000-4000-8000-000000000002", code: "appointment_reminder", name: "Appointment reminder", description: "Remind customers before scheduled design consultations.", status: "draft", activeVersionNumber: null, runOncePerAggregate: false, version: 1 },
 ];
 
-const reports: CrmRecord[] = [
-  { id: "sources-instagram-web", report: "sources", source: "instagram", channel: "web", enquiries: 3, leads: 3, opportunities: 1, won: 0 },
-  { id: "sources-referral-email", report: "sources", source: "referral", channel: "email", enquiries: 2, leads: 2, opportunities: 2, won: 0 },
-  { id: "pipeline-proposal-open", report: "pipeline", pipeline: "Design & build sales", stage: "Proposal", status: "open", count: 1, currency: "AED", value: 1850000 },
-  { id: "pipeline-negotiation-open", report: "pipeline", pipeline: "Design & build sales", stage: "Negotiation", status: "open", count: 1, currency: "AED", value: 3200000 },
-  { id: "sla-active", report: "sla", status: "active", count: 4, averageMinutes: 37 },
-];
-
 export function crmScreenFixture(id: CrmScreenId): CrmScreenPageData {
   const itemsByScreen: Record<CrmScreenId, CrmRecord[]> = {
     "crm-overview": [
@@ -230,7 +223,6 @@ export function crmScreenFixture(id: CrmScreenId): CrmScreenPageData {
     conversations,
     sequences,
     automations,
-    "crm-reports": reports,
   };
   return {
     canView: true,

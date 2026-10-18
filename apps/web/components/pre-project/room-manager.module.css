@@ -1,0 +1,17 @@
+.manager { display: flex; flex-direction: column; gap: var(--wd-space-5); }
+.heading { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0 0 var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.heading span { color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-regular); }
+.list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-md); }
+.item { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: calc(var(--wd-space-10) + var(--wd-space-1)); padding: var(--wd-space-1) var(--wd-space-2) var(--wd-space-1) var(--wd-space-3); border-block-end: 1px solid var(--wd-color-border); }
+.item:last-child { border-block-end: 0; }
+.name { flex: 1 1 auto; min-inline-size: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.renameForm { display: flex; flex: 1 1 auto; align-items: center; gap: var(--wd-space-2); }
+.renameForm :global(.wd-field) { flex: 1 1 auto; }
+.chips { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: var(--wd-space-3) 0; padding: 0; list-style: none; }
+.chip { display: inline-flex; align-items: center; gap: var(--wd-space-1); min-block-size: var(--wd-control-sm); padding: 0 var(--wd-space-3); border: 1px solid var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface); color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); cursor: pointer; }
+.chip:hover { border-color: var(--wd-color-text); background: var(--wd-color-surface-hover); }
+.chip:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.chip:disabled { cursor: progress; opacity: .7; }
+.muted { margin: var(--wd-space-2) 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.muted a { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); text-decoration: none; }
+.muted a:hover { color: var(--wd-color-action-primary); }

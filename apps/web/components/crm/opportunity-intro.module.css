@@ -1,0 +1,10 @@
+.intro { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.meeting, .designer { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.meeting small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.meeting a { color: var(--wd-color-text); text-decoration: underline; text-underline-offset: 2px; }
+.empty { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.changes { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.changes li { display: grid; }
+.changes small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.deck { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-3); }
+.deck a { display: inline-flex; align-items: center; gap: var(--wd-space-1); }

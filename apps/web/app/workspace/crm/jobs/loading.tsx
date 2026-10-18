@@ -1,5 +1,5 @@
-import { Container, Skeleton, Stack } from "@/design-system";
+import { PageSkeleton } from "@/design-system";
 
 export default function JobsLoading() {
-  return <Container as="section" size="full"><Stack gap={5}><Skeleton lines={2} /><Skeleton lines={8} /></Stack></Container>;
+  return <PageSkeleton page variant="list" />;
 }

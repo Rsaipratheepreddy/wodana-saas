@@ -3,7 +3,9 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
+import { isWorkspaceAdministrator } from "@/lib/workspace/access";
 import { leadsPageFixture, type LeadsPageData } from "./leads";
+import { roleVocabularyKeys, withRoleVocabulary, type LeadOptions } from "./lead-options";
 
 export async function getLeadsPageData(): Promise<LeadsPageData> {
   const authProfile = await getAuthenticatedProfile();
@@ -26,7 +28,7 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
     return {
       canView: false,
       items: [],
-      queues: [], assignmentPolicies: [], slaPolicies: [], intake: [], pipelines: [], members: [],
+      queues: [], assignmentPolicies: [], slaPolicies: [], intake: [], pipelines: [], members: [], salesOwners: [],
       nextCursor: null,
       referenceTime: new Date().toISOString(),
       workspaceId: membership.workspaceId,
@@ -36,16 +38,51 @@ export async function getLeadsPageData(): Promise<LeadsPageData> {
   if (!response.ok) throw new Error("Leads could not be loaded.");
 
   const page = await response.json() as Pick<LeadsPageData, "items" | "nextCursor"> & { data?: LeadsPageData["items"] };
-  const supporting = await Promise.all(["crm/queues", "crm/assignment-policies", "crm/sla-policies", "crm/intake-inbox?limit=100", "crm/pipelines", "members", "crm/lead-options"].map(async (path) => {
+  const supporting = await Promise.all(["crm/queues", "crm/assignment-policies", "crm/sla-policies", "crm/intake-inbox?limit=100", "crm/pipelines", "members", "crm/lead-options", "crm/enquiry-fields", "crm/sales-settings"].map(async (path) => {
     const result = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/${path}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
-    if (result.status === 403) return [];
+    const single = path === "crm/lead-options" || path === "crm/enquiry-fields" || path === "crm/sales-settings";
+    if (result.status === 403) return single && path !== "crm/lead-options" ? undefined : [];
+    // An older server without Sales settings keeps the page working with the defaults.
+    if (path === "crm/sales-settings" && result.status === 404) return undefined;
     if (!result.ok) throw new Error("CRM configuration could not be loaded.");
     const payload = await result.json();
-    return path === "crm/lead-options" ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
+    return single ? payload : Array.isArray(payload) ? payload : payload.data ?? [];
   }));
+  const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  // PLM-155: the teams whose people answer timeline questions are chosen in the Sales settings (only by those who manage them).
+  const teamsResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/teams`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
+  const teams = teamsResponse?.ok ? ((await teamsResponse.json()) as Array<{ code: string; name: string; status: string }>).filter((team) => team.status === "active").map(({ code, name }) => ({ code, name })) : [];
+  const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
+  // The sales owners come from their own list: a salesperson may not read the member directory.
+  const ownersResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}/crm/sales-owners`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!ownersResponse.ok && ownersResponse.status !== 403) throw new Error("CRM configuration could not be loaded.");
+  const owners = ownersResponse.ok
+    ? await ownersResponse.json() as { items: LeadsPageData["members"]; currentMembershipId: string | null }
+    : { items: [], currentMembershipId: null };
+  const currentMembership = authProfile.memberships.find((entry) => entry.workspaceId === membership.workspaceId);
+  // One role vocabulary: the member's roles and teams, lower-case, against the sources' saved limits.
+  const leadOptions = withRoleVocabulary(supporting[6] as LeadOptions | undefined);
   return {
+    // An Account Manager can't read the workspace's settings: the region every member's profile carries is used, so
+    // the form says "Emirate" (the region pack's word) and checks phones against the right country for them too.
+    defaultCurrency: workspace?.workspace?.defaultCurrency ?? currentMembership?.workspaceCurrency ?? undefined,
+    defaultLocale: workspace?.workspace?.defaultLocale ?? currentMembership?.workspaceLocale ?? undefined,
     canView: true,
-    leadOptions: supporting[6],
+    currentRoles: roleVocabularyKeys(currentMembership?.roles, leadOptions?.roleKeys),
+    canManagePipelines: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
+    canAssign: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.assign"),
+    canEdit: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.leads.manage"),
+    canManageSales: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.settings.manage"),
+    canChangeIdentity: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.parties.identity"),
+    // PLM-138: clears a wrong spam flag (owners and administrators by default).
+    canUnmarkSpam: isWorkspaceAdministrator(currentMembership?.roles) || (currentMembership?.allowedPermissions ?? []).includes("crm.spam.unmark"),
+    currentMembershipId: owners.currentMembershipId
+      ?? (supporting[5] as LeadsPageData["members"]).find(member => member.email.toLowerCase() === authProfile.primaryEmail.toLowerCase())?.id,
+    salesOwners: owners.items,
+    leadOptions,
+    enquiryFields: supporting[7] as LeadsPageData["enquiryFields"],
+    salesSettings: supporting[8] as LeadsPageData["salesSettings"],
+    teams,
     items: page.data ?? page.items ?? [],
     queues: supporting[0], assignmentPolicies: supporting[1], slaPolicies: supporting[2], intake: supporting[3], pipelines: supporting[4], members: supporting[5],
     nextCursor: page.nextCursor,

@@ -5,743 +5,1618 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1788431446989,
-      "tag": "0000_adorable_gateway",
-      "breakpoints": true
+      "when": 1790546400000,
+      "tag": "0000_v2_baseline",
+      "breakpoints": false
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1788431466470,
-      "tag": "0001_tenant_policies_and_reference_data",
+      "when": 1790550000000,
+      "tag": "0001_project_tasks",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1788432830063,
-      "tag": "0002_careful_silver_fox",
+      "when": 1790553600000,
+      "tag": "0002_deal_first_firm_kit",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1788433598334,
-      "tag": "0003_absent_sentinels",
+      "when": 1790557200000,
+      "tag": "0003_commercial_quotes",
       "breakpoints": true
     },
     {
       "idx": 4,
       "version": "7",
-      "when": 1788435000000,
-      "tag": "0004_business_unit_child_entity_guard",
+      "when": 1790560800000,
+      "tag": "0004_document_save_functions",
       "breakpoints": true
     },
     {
       "idx": 5,
       "version": "7",
-      "when": 1788435500000,
-      "tag": "0005_business_unit_active_hierarchy_guard",
+      "when": 1790564400000,
+      "tag": "0005_commercial_money",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1788548002910,
-      "tag": "0006_crm_backend",
+      "when": 1790568000000,
+      "tag": "0006_international_region_packs",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "7",
-      "when": 1788548023413,
-      "tag": "0007_crm_security_defaults",
+      "when": 1790571600000,
+      "tag": "0007_legal_entity_money_lock",
       "breakpoints": true
     },
     {
       "idx": 8,
       "version": "7",
-      "when": 1788624000000,
-      "tag": "0008_outbox_leases",
+      "when": 1790575200000,
+      "tag": "0008_tax_and_numbering",
       "breakpoints": true
     },
     {
       "idx": 9,
       "version": "7",
-      "when": 1788627600000,
-      "tag": "0009_crm_due_sla_work",
+      "when": 1790578800000,
+      "tag": "0009_catalog_v2",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1788631200000,
-      "tag": "0010_notification_delivery_guards",
+      "when": 1790582400000,
+      "tag": "0010_ai_gateway",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1788634800000,
-      "tag": "0011_due_work_precision",
+      "when": 1790586000000,
+      "tag": "0011_sales_intake_rules",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
-      "when": 1788638400000,
-      "tag": "0012_due_sequence_work",
+      "when": 1790589600000,
+      "tag": "0012_duplicates_and_returning",
       "breakpoints": true
     },
     {
       "idx": 13,
       "version": "7",
-      "when": 1788642000000,
-      "tag": "0013_default_crm_automations",
+      "when": 1790593200000,
+      "tag": "0013_takeover_working_hours",
       "breakpoints": true
     },
     {
       "idx": 14,
       "version": "7",
-      "when": 1788645600000,
-      "tag": "0014_safe_default_crm_automations",
+      "when": 1790679600000,
+      "tag": "0014_member_profiles",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "7",
-      "when": 1788649200000,
-      "tag": "0015_recoverable_notification_claims",
+      "when": 1790766000000,
+      "tag": "0015_lead_assigned_templates",
       "breakpoints": true
     },
     {
       "idx": 16,
       "version": "7",
-      "when": 1788652800000,
-      "tag": "0016_auth_onboarding_control_plane",
+      "when": 1790852400000,
+      "tag": "0016_design_packages",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1788660000000,
-      "tag": "0017_local_auth_sessions",
+      "when": 1790938800000,
+      "tag": "0017_opportunity_discovery",
       "breakpoints": true
     },
     {
       "idx": 18,
       "version": "7",
-      "when": 1788663600000,
-      "tag": "0018_workspace_brand_assets",
+      "when": 1791025200000,
+      "tag": "0018_intro_meeting_designer",
       "breakpoints": true
     },
     {
       "idx": 19,
       "version": "7",
-      "when": 1788676200000,
-      "tag": "0019_workspace_teams",
+      "when": 1791111600000,
+      "tag": "0019_design_journey",
       "breakpoints": true
     },
     {
       "idx": 20,
       "version": "7",
-      "when": 1788679800000,
-      "tag": "0020_module_crud_permissions",
+      "when": 1791198000000,
+      "tag": "0020_moodboard",
       "breakpoints": true
     },
     {
       "idx": 21,
       "version": "7",
-      "when": 1788683400000,
-      "tag": "0021_module_permission_backfill",
+      "when": 1791284400000,
+      "tag": "0021_enquiry_fields",
       "breakpoints": true
     },
     {
       "idx": 22,
       "version": "7",
-      "when": 1788687000000,
-      "tag": "0022_pre_project_cases",
+      "when": 1791288000000,
+      "tag": "0022_region_other",
       "breakpoints": true
     },
     {
       "idx": 23,
       "version": "7",
-      "when": 1788769200000,
-      "tag": "0024_workspace_catalog",
+      "when": 1791374400000,
+      "tag": "0023_design_stages",
       "breakpoints": true
     },
     {
       "idx": 24,
       "version": "7",
-      "when": 1788772800000,
-      "tag": "0025_execution_catalog_masters",
+      "when": 1791460800000,
+      "tag": "0024_design_notices",
       "breakpoints": true
     },
     {
       "idx": 25,
       "version": "7",
-      "when": 1788776400000,
-      "tag": "0026_tenant_catalog_groups",
+      "when": 1791547200000,
+      "tag": "0025_quotation_builder",
       "breakpoints": true
     },
     {
       "idx": 26,
       "version": "7",
-      "when": 1788780000000,
-      "tag": "0027_catalog_ownership",
+      "when": 1791633600000,
+      "tag": "0026_quotation_comments",
       "breakpoints": true
     },
     {
       "idx": 27,
       "version": "7",
-      "when": 1788783600000,
-      "tag": "0028_catalog_record_groups",
+      "when": 1791720000000,
+      "tag": "0027_quote_images",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "7",
-      "when": 1788787200000,
-      "tag": "0029_catalog_single_group",
+      "when": 1791806400000,
+      "tag": "0028_company_gallery",
       "breakpoints": true
     },
     {
       "idx": 29,
       "version": "7",
-      "when": 1788790800000,
-      "tag": "0030_hrms_attendance_leave",
+      "when": 1791892800000,
+      "tag": "0029_project_core",
       "breakpoints": true
     },
     {
       "idx": 30,
       "version": "7",
-      "when": 1788794400000,
-      "tag": "0031_background_work_rls",
+      "when": 1791979200000,
+      "tag": "0030_project_scope",
       "breakpoints": true
     },
     {
       "idx": 31,
       "version": "7",
-      "when": 1788798000000,
-      "tag": "0032_pre_project_designs",
+      "when": 1792065600000,
+      "tag": "0031_variations",
       "breakpoints": true
     },
     {
       "idx": 32,
       "version": "7",
-      "when": 1788801600000,
-      "tag": "0033_pre_project_item_specifications",
+      "when": 1792152000000,
+      "tag": "0032_material_list",
       "breakpoints": true
     },
     {
       "idx": 33,
       "version": "7",
-      "when": 1788805200000,
-      "tag": "0034_pre_project_site",
+      "when": 1792238400000,
+      "tag": "0033_requirement_trace",
       "breakpoints": true
     },
     {
       "idx": 34,
       "version": "7",
-      "when": 1788808800000,
-      "tag": "0035_commercial_client_portal",
+      "when": 1792324800000,
+      "tag": "0034_work_items",
       "breakpoints": true
     },
     {
       "idx": 35,
       "version": "7",
-      "when": 1788812400000,
-      "tag": "0036_pre_project_design_folders_review",
+      "when": 1792411200000,
+      "tag": "0035_plan_schedule",
       "breakpoints": true
     },
     {
       "idx": 36,
       "version": "7",
-      "when": 1788816000000,
-      "tag": "0037_internal_client_billing",
+      "when": 1792497600000,
+      "tag": "0036_work_templates",
       "breakpoints": true
     },
     {
       "idx": 37,
       "version": "7",
-      "when": 1788819600000,
-      "tag": "0038_design_threads",
+      "when": 1792584000000,
+      "tag": "0037_work_sprints",
       "breakpoints": true
     },
     {
       "idx": 38,
       "version": "7",
-      "when": 1788823200000,
-      "tag": "0039_pre_project_asset_markups",
+      "when": 1792670400000,
+      "tag": "0038_work_reminders",
       "breakpoints": true
     },
     {
       "idx": 39,
       "version": "7",
-      "when": 1788826800000,
-      "tag": "0040_project_execution",
+      "when": 1792756800000,
+      "tag": "0039_suppliers",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
-      "when": 1788830400000,
-      "tag": "0041_project_vendor_access",
+      "when": 1792843200000,
+      "tag": "0040_purchase_orders",
       "breakpoints": true
     },
     {
       "idx": 41,
       "version": "7",
-      "when": 1788834000000,
-      "tag": "0042_project_reporter_permission",
+      "when": 1792929600000,
+      "tag": "0041_price_requests",
       "breakpoints": true
     },
     {
       "idx": 42,
       "version": "7",
-      "when": 1788837600000,
-      "tag": "0043_project_crm_link_timestamp",
+      "when": 1793016000000,
+      "tag": "0042_receiving",
       "breakpoints": true
     },
     {
       "idx": 43,
       "version": "7",
-      "when": 1788841200000,
-      "tag": "0044_project_operational_controls",
+      "when": 1793102400000,
+      "tag": "0043_stock_ledger",
       "breakpoints": true
     },
     {
       "idx": 44,
       "version": "7",
-      "when": 1788844800000,
-      "tag": "0045_commercial_reconciliation",
+      "when": 1793188800000,
+      "tag": "0044_delivery_problems",
       "breakpoints": true
     },
     {
       "idx": 45,
       "version": "7",
-      "when": 1788848400000,
-      "tag": "0046_project_stock_transfers",
+      "when": 1793275200000,
+      "tag": "0045_purchasing_accuracy",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793361600000,
+      "tag": "0046_purchasing_followup",
       "breakpoints": true
     },
     {
       "idx": 47,
       "version": "7",
-      "when": 1788855600000,
-      "tag": "0048_quotation_templates",
+      "when": 1793448000000,
+      "tag": "0047_site_deliveries",
       "breakpoints": true
     },
     {
       "idx": 48,
       "version": "7",
-      "when": 1788860000000,
-      "tag": "0049_lead_enquiry_flow",
+      "when": 1793534400000,
+      "tag": "0048_supplier_alternates",
       "breakpoints": true
     },
     {
       "idx": 49,
       "version": "7",
-      "when": 1788897600000,
-      "tag": "0050_requirement_note_documents",
+      "when": 1793620800000,
+      "tag": "0049_supplier_controls",
       "breakpoints": true
     },
     {
       "idx": 50,
       "version": "7",
-      "when": 1788901200000,
-      "tag": "0051_design_folder_context",
+      "when": 1793707200000,
+      "tag": "0050_rate_contracts",
       "breakpoints": true
     },
     {
       "idx": 51,
       "version": "7",
-      "when": 1788904800000,
-      "tag": "0052_client_design_approval",
+      "when": 1793793600000,
+      "tag": "0051_stock_costing",
       "breakpoints": true
     },
     {
       "idx": 52,
       "version": "7",
-      "when": 1789300800000,
-      "tag": "0053_business_unit_color",
+      "when": 1793880000000,
+      "tag": "0052_project_closeout",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793966400000,
+      "tag": "0053_need_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1794052800000,
+      "tag": "0054_factory",
       "breakpoints": true
     },
     {
       "idx": 55,
       "version": "7",
-      "when": 1789311600000,
-      "tag": "0056_project_resource_business_unit",
+      "when": 1794139200000,
+      "tag": "0055_work_order_materials",
       "breakpoints": true
     },
     {
       "idx": 56,
       "version": "7",
-      "when": 1789315200000,
-      "tag": "0057_workspace_terminology",
+      "when": 1794225600000,
+      "tag": "0056_factory_changes",
       "breakpoints": true
     },
     {
       "idx": 57,
       "version": "7",
-      "when": 1789318800000,
-      "tag": "0058_customer_account_organizations",
+      "when": 1794312000000,
+      "tag": "0057_factory_capacity",
       "breakpoints": true
     },
     {
       "idx": 58,
       "version": "7",
-      "when": 1789322400000,
-      "tag": "0059_mfa_authentication",
+      "when": 1794398400000,
+      "tag": "0058_factory_outside",
       "breakpoints": true
     },
     {
       "idx": 59,
       "version": "7",
-      "when": 1789326000000,
-      "tag": "0060_project_workflow_templates",
+      "when": 1794484800000,
+      "tag": "0059_snags",
       "breakpoints": true
     },
     {
       "idx": 60,
       "version": "7",
-      "when": 1789329600000,
-      "tag": "0061_project_schedule_capacity",
+      "when": 1794571200000,
+      "tag": "0060_site_reports",
       "breakpoints": true
     },
     {
       "idx": 61,
       "version": "7",
-      "when": 1789416000000,
-      "tag": "0062_crm_sla_contract",
+      "when": 1794657600000,
+      "tag": "0061_handover",
       "breakpoints": true
     },
     {
       "idx": 62,
       "version": "7",
-      "when": 1789419600000,
-      "tag": "0063_crm_sla_state",
+      "when": 1794744000000,
+      "tag": "0062_warranty",
       "breakpoints": true
     },
     {
       "idx": 63,
       "version": "7",
-      "when": 1789423200000,
-      "tag": "0064_crm_response_evidence",
+      "when": 1794830400000,
+      "tag": "0063_payables",
       "breakpoints": true
     },
     {
       "idx": 64,
       "version": "7",
-      "when": 1789426800000,
-      "tag": "0065_crm_sla_accountability",
+      "when": 1794916800000,
+      "tag": "0064_project_budgets",
       "breakpoints": true
     },
     {
       "idx": 65,
       "version": "7",
-      "when": 1789430400000,
-      "tag": "0066_crm_intake_resolution",
+      "when": 1795003200000,
+      "tag": "0065_spending_guard",
       "breakpoints": true
     },
     {
       "idx": 66,
       "version": "7",
-      "when": 1789434000000,
-      "tag": "0067_crm_qualification_conversion",
+      "when": 1795089600000,
+      "tag": "0066_labour_petty_cash",
       "breakpoints": true
     },
     {
       "idx": 67,
       "version": "7",
-      "when": 1789437600000,
-      "tag": "0068_engagement_lifecycle",
+      "when": 1795176000000,
+      "tag": "0067_retention_payment_runs",
       "breakpoints": true
     },
     {
       "idx": 68,
       "version": "7",
-      "when": 1789441200000,
-      "tag": "0069_vendor_directory",
+      "when": 1795262400000,
+      "tag": "0068_client_invoices",
       "breakpoints": true
     },
     {
       "idx": 69,
       "version": "7",
-      "when": 1789444800000,
-      "tag": "0070_supplier_offers",
+      "when": 1795348800000,
+      "tag": "0069_accounting_sync",
       "breakpoints": true
     },
     {
       "idx": 70,
       "version": "7",
-      "when": 1789448400000,
-      "tag": "0071_catalog_adoption",
+      "when": 1795435200000,
+      "tag": "0070_petty_cash_postings",
       "breakpoints": true
     },
     {
       "idx": 71,
       "version": "7",
-      "when": 1789452000000,
-      "tag": "0072_commercial_price_override",
+      "when": 1795521600000,
+      "tag": "0071_hrms_ready",
       "breakpoints": true
     },
     {
       "idx": 72,
       "version": "7",
-      "when": 1789455600000,
-      "tag": "0073_pre_project_definition_baselines",
+      "when": 1795608000000,
+      "tag": "0072_hrms_crews",
       "breakpoints": true
     },
     {
       "idx": 73,
       "version": "7",
-      "when": 1789459200000,
-      "tag": "0074_quotation_proposal_runs",
+      "when": 1795694400000,
+      "tag": "0073_hrms_documents",
       "breakpoints": true
     },
     {
       "idx": 74,
       "version": "7",
-      "when": 1789462800000,
-      "tag": "0075_workspace_primary_color",
+      "when": 1795780800000,
+      "tag": "0074_hrms_timesheets",
       "breakpoints": true
     },
     {
       "idx": 75,
       "version": "7",
-      "when": 1789466400000,
-      "tag": "0076_crm_unanswered_ownership",
+      "when": 1795867200000,
+      "tag": "0075_quote_line_material",
       "breakpoints": true
     },
     {
       "idx": 76,
       "version": "7",
-      "when": 1789470000000,
-      "tag": "0077_workspace_team_access",
+      "when": 1795953600000,
+      "tag": "0076_client_portal",
       "breakpoints": true
     },
     {
       "idx": 77,
       "version": "7",
-      "when": 1789473600000,
-      "tag": "0078_platform_operator_auth",
+      "when": 1796040000000,
+      "tag": "0077_quote_custom_columns",
       "breakpoints": true
     },
     {
       "idx": 78,
       "version": "7",
-      "when": 1789477200000,
-      "tag": "0079_tenant_provisioning_drafts",
+      "when": 1796126400000,
+      "tag": "0078_control_plane_console",
       "breakpoints": true
     },
     {
       "idx": 79,
       "version": "7",
-      "when": 1789480800000,
-      "tag": "0080_internal_slug_check",
+      "when": 1796212800000,
+      "tag": "0079_finance_reviewer_reads_finance",
       "breakpoints": true
     },
     {
       "idx": 80,
       "version": "7",
-      "when": 1789484400000,
-      "tag": "0081_customer_account_trial_contract",
+      "when": 1796731200000,
+      "tag": "0085_proposal_kit",
       "breakpoints": true
     },
     {
       "idx": 81,
       "version": "7",
-      "when": 1789488000000,
-      "tag": "0082_invitation_delivery_commands",
+      "when": 1800619200000,
+      "tag": "0130_firm_kit_role_templates",
       "breakpoints": true
     },
     {
       "idx": 82,
       "version": "7",
-      "when": 1789491600000,
-      "tag": "0083_design_build_setup_profile",
+      "when": 1800705600000,
+      "tag": "0131_default_sales_pipeline",
       "breakpoints": true
     },
     {
       "idx": 83,
       "version": "7",
-      "when": 1789495200000,
-      "tag": "0084_workspace_domain_lifecycle",
+      "when": 1800709200000,
+      "tag": "0132_role_avatar_presets",
       "breakpoints": true
     },
     {
       "idx": 84,
       "version": "7",
-      "when": 1789498800000,
-      "tag": "0085_public_tenant_host_lookup",
+      "when": 1800792000000,
+      "tag": "0133_client_portal_invitations",
       "breakpoints": true
     },
     {
       "idx": 85,
       "version": "7",
-      "when": 1789502400000,
-      "tag": "0086_domain_ownership_loss",
+      "when": 1800964800000,
+      "tag": "0135_client_portal_demo_code",
       "breakpoints": true
     },
     {
       "idx": 86,
       "version": "7",
-      "when": 1789506000000,
-      "tag": "0087_domain_host_rollback_guard",
+      "when": 1801051200000,
+      "tag": "0136_site_report_photos_share",
       "breakpoints": true
     },
     {
       "idx": 87,
       "version": "7",
-      "when": 1789509600000,
-      "tag": "0088_job_identity_registry",
+      "when": 1801113700000,
+      "tag": "0137_client_portal_v2",
       "breakpoints": true
     },
     {
       "idx": 88,
       "version": "7",
-      "when": 1789596000000,
-      "tag": "0089_one_tree_identity",
+      "when": 1801113800000,
+      "tag": "0138_delivery_health",
       "breakpoints": true
     },
     {
       "idx": 89,
       "version": "7",
-      "when": 1789599600000,
-      "tag": "0090_catalog_commercial_context",
+      "when": 1801114300000,
+      "tag": "0143_sales_no_lost_leads",
       "breakpoints": true
     },
     {
       "idx": 90,
       "version": "7",
-      "when": 1789603200000,
-      "tag": "0091_commercial_cost_permissions",
+      "when": 1801117400000,
+      "tag": "0139_conversation_assigned_notice",
       "breakpoints": true
     },
     {
       "idx": 91,
       "version": "7",
-      "when": 1789606800000,
-      "tag": "0092_design_round_policy",
+      "when": 1801121000000,
+      "tag": "0144_team_inbox",
       "breakpoints": true
     },
     {
       "idx": 92,
       "version": "7",
-      "when": 1789610400000,
-      "tag": "0093_design_rejection",
+      "when": 1801124600000,
+      "tag": "0145_whatsapp_template_manager",
       "breakpoints": true
     },
     {
       "idx": 93,
       "version": "7",
-      "when": 1789614000000,
-      "tag": "0094_design_review_expiry",
+      "when": 1801128200000,
+      "tag": "0146_client_event_messages",
       "breakpoints": true
     },
     {
       "idx": 94,
       "version": "7",
-      "when": 1789617600000,
-      "tag": "0095_commercial_finance_permission",
+      "when": 1801131800000,
+      "tag": "0147_payment_reminders",
       "breakpoints": true
     },
     {
       "idx": 95,
       "version": "7",
-      "when": 1789621200000,
-      "tag": "0096_job_operating_state",
+      "when": 1801135400000,
+      "tag": "0148_block_and_hide",
       "breakpoints": true
     },
     {
       "idx": 96,
       "version": "7",
-      "when": 1789624800000,
-      "tag": "0097_ai_suggestion_review",
+      "when": 1801139000000,
+      "tag": "0149_number_health",
       "breakpoints": true
     },
     {
       "idx": 97,
       "version": "7",
-      "when": 1789628400000,
-      "tag": "0098_native_notification_devices",
+      "when": 1801157000000,
+      "tag": "0154_ai_credits",
       "breakpoints": true
     },
     {
       "idx": 98,
       "version": "7",
-      "when": 1789632000000,
-      "tag": "0099_region_firm_kit_profiles",
+      "when": 1801160600000,
+      "tag": "0155_ai_credit_notices",
       "breakpoints": true
     },
     {
       "idx": 99,
       "version": "7",
-      "when": 1789635600000,
-      "tag": "0100_tenant_brand_system",
+      "when": 1801170000000,
+      "tag": "0152_operations_v2",
       "breakpoints": true
     },
     {
       "idx": 100,
       "version": "7",
-      "when": 1789639200000,
-      "tag": "0101_safe_configuration_revisions",
+      "when": 1801170000001,
+      "tag": "0153_factory_rework",
       "breakpoints": true
     },
     {
       "idx": 101,
       "version": "7",
-      "when": 1789642800000,
-      "tag": "0102_tenant_operations",
+      "when": 1801180000000,
+      "tag": "0150_project_delivery_v2",
       "breakpoints": true
     },
     {
       "idx": 102,
       "version": "7",
-      "when": 1789646400000,
-      "tag": "0103_managed_object_governance",
+      "when": 1801180000001,
+      "tag": "0151_warranty_variation",
       "breakpoints": true
     },
     {
       "idx": 103,
       "version": "7",
-      "when": 1789650000000,
-      "tag": "0104_tenant_operation_versions",
+      "when": 1801190000000,
+      "tag": "0156_inbox_auto_replies",
       "breakpoints": true
     },
     {
       "idx": 104,
       "version": "7",
-      "when": 1789653600000,
-      "tag": "0105_tenant_data_exports",
+      "when": 1801190000001,
+      "tag": "0157_default_quick_replies",
       "breakpoints": true
     },
     {
       "idx": 105,
       "version": "7",
-      "when": 1789657200000,
-      "tag": "0106_operator_roles_and_seat_capacity",
+      "when": 1801200000000,
+      "tag": "0158_quote_to_deal_handoffs",
       "breakpoints": true
     },
     {
       "idx": 106,
       "version": "7",
-      "when": 1789660800000,
-      "tag": "0107_commercial_entitlements",
+      "when": 1801210000000,
+      "tag": "0159_view_as",
       "breakpoints": true
     },
     {
       "idx": 107,
       "version": "7",
-      "when": 1789664400000,
-      "tag": "0108_account_billing_authority",
+      "when": 1801210000001,
+      "tag": "0160_view_as_notices",
       "breakpoints": true
     },
     {
       "idx": 108,
       "version": "7",
-      "when": 1789668000000,
-      "tag": "0109_tenant_lifecycle_versions",
+      "when": 1801220000000,
+      "tag": "0161_woddy_tool_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1801220000001,
+      "tag": "0162_audit_command_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1801230000000,
+      "tag": "0163_woddy_for_staff",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1801240000000,
+      "tag": "0164_mcp_server",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1801240000001,
+      "tag": "0165_mcp_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1801250000000,
+      "tag": "0166_inbox_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1801250000001,
+      "tag": "0167_scheduled_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1801260000009,
+      "tag": "0169_client_follow_up_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1801280000000,
+      "tag": "0170_sales_enquiries",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1801290000100,
+      "tag": "0172_project_auto_finish",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1801290000200,
+      "tag": "0173_client_update_auto_send",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1801290000300,
+      "tag": "0174_user_feedback_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1801290000400,
+      "tag": "0175_staff_request_reply_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1801290000500,
+      "tag": "0176_site_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1801290000600,
+      "tag": "0177_leftover_notice_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1801310000100,
+      "tag": "0181_client_decision_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1801310000200,
+      "tag": "0182_record_client_decision",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1801310000300,
+      "tag": "0183_quote_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1801310000400,
+      "tag": "0184_default_payment_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1801310000500,
+      "tag": "0185_member_offboarding",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1801310000600,
+      "tag": "0186_quiet_chats_resolve",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1801310000700,
+      "tag": "0187_approval_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1801310000800,
+      "tag": "0188_scheduled_cancel_on_reply",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1801310000900,
+      "tag": "0189_enquiry_spam",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1801310001000,
+      "tag": "0191_service_path_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1801320000100,
+      "tag": "0190_daily_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1801740000100,
+      "tag": "0240_platform_integration_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1801740000200,
+      "tag": "0241_role_notice_wording",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1801740000300,
+      "tag": "0242_push_on_for_registered_phones",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1801740000400,
+      "tag": "0243_pipeline_flows",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1801740000500,
+      "tag": "0244_crm_flows",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1801740000600,
+      "tag": "0245_sales_edit_opportunities",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1801740000700,
+      "tag": "0246_enquiry_type_flows",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1801740000800,
+      "tag": "0247_booking_pages",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1801740000900,
+      "tag": "0248_workspace_grid_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1801740001100,
+      "tag": "0250_inbox_visibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1801740001200,
+      "tag": "0251_enquiry_team_requirements",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1801740001300,
+      "tag": "0252_quotation_proposals_esign",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1801740001500,
+      "tag": "0253_design_flow",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1801740001600,
+      "tag": "0254_design_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1801740001700,
+      "tag": "0255_portal_design_threads",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1801740001800,
+      "tag": "0256_approval_engine_deal_file",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1801740001900,
+      "tag": "0257_flow_step_skips",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1801740002000,
+      "tag": "0258_product_sourcing",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1801740002100,
+      "tag": "0259_client_portal_changes",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1801740002200,
+      "tag": "0260_client_portal_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1801740002300,
+      "tag": "0261_property_coordinates",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1801740002400,
+      "tag": "0262_factory_order_ready",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1801740002500,
+      "tag": "0263_purchasing_line_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1801740002600,
+      "tag": "0264_project_team_carry",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1801740002700,
+      "tag": "0265_technical_release",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1801740002800,
+      "tag": "0266_finance_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1801740002900,
+      "tag": "0267_production_installation",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1801740003000,
+      "tag": "0268_linked_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1801740003100,
+      "tag": "0269_team_calendars",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1801740003200,
+      "tag": "0270_fulfilment_paths",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1801740003300,
+      "tag": "0271_inbound_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1801740003400,
+      "tag": "0272_supplier_sheets_entity_letterheads",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1801740003500,
+      "tag": "0273_logistics_bookings",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1801740003600,
+      "tag": "0274_management_report_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1801740003700,
+      "tag": "0275_workspace_clear_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1801740003800,
+      "tag": "0276_refund_methods_qs_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1801740003900,
+      "tag": "0277_permit_reminders_drawing_needs",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1801740004000,
+      "tag": "0278_stock_item_category",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1801740004100,
+      "tag": "0279_import_link_approved_prices",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1801740004200,
+      "tag": "0280_enquiry_titles_without_dashes",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1801740004300,
+      "tag": "0281_workspace_readiness_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1801740004400,
+      "tag": "0282_books_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1801740004500,
+      "tag": "0283_books_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1801740004600,
+      "tag": "0284_books_posting",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1801740004800,
+      "tag": "0286_books_bill_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1801740005000,
+      "tag": "0288_books_commands_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1801740005100,
+      "tag": "0289_reminders_core",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1801740005200,
+      "tag": "0290_reminders_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1801740006100,
+      "tag": "0299_finance_reads_bills",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1801740006200,
+      "tag": "0300_operator_sandbox_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1801740006300,
+      "tag": "0301_change_requests_on_projects",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1801740006400,
+      "tag": "0302_change_request_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1801740006500,
+      "tag": "0303_books_statement_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1801740006800,
+      "tag": "0306_reminders_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1801740006900,
+      "tag": "0307_change_reminders_engine",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1801740007000,
+      "tag": "0308_archived_organizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1801740007500,
+      "tag": "0313_site_day_cards",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1801740007700,
+      "tag": "0315_stuck_deal_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1801740008200,
+      "tag": "0320_design_flow_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1801740008300,
+      "tag": "0321_design_review_and_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1801740008700,
+      "tag": "0325_factory_design_inspections",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1801740008800,
+      "tag": "0326_factory_inspection_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1801740008900,
+      "tag": "0327_factory_inspection_classification",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1801740009000,
+      "tag": "0328_technical_measure",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1801740009100,
+      "tag": "0329_meeting_minutes",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1801740009200,
+      "tag": "0330_meeting_minutes_reminder",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1801740009300,
+      "tag": "0331_portal_designs_section",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1801740009400,
+      "tag": "0332_inbox_chat_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1801740009500,
+      "tag": "0333_spam_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1801740009600,
+      "tag": "0334_opportunity_timeline_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1801740009700,
+      "tag": "0335_timeline_and_closing_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1801740009800,
+      "tag": "0336_finishes_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1801740009900,
+      "tag": "0337_sample_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1801740010000,
+      "tag": "0338_finish_signatures_and_shares",
+      "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1801740010100,
+      "tag": "0339_finish_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1801740010200,
+      "tag": "0340_value_engineering",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1801740010300,
+      "tag": "0341_value_engineering_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1801740010400,
+      "tag": "0342_work_order_checks_update",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1801740010500,
+      "tag": "0343_design_checklists",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1801740010600,
+      "tag": "0344_login_backgrounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1801740011000,
+      "tag": "0346_queue_assignment_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1801740011100,
+      "tag": "0347_unassign_after_working_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1801740011700,
+      "tag": "0355_project_boq_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1801740011800,
+      "tag": "0356_ordering_gates",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1801740011900,
+      "tag": "0357_boq_notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1801740012200,
+      "tag": "0360_catalog_recipe_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1801740012300,
+      "tag": "0361_project_factory_requirements",
+      "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1801740012400,
+      "tag": "0362_project_technical_handovers",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1801740012500,
+      "tag": "0363_factory_bespoke_release_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1801740012600,
+      "tag": "0364_technical_handover_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1801740012700,
+      "tag": "0365_portal_boq_section",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1801740020000,
+      "tag": "0350_design_work_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1801740020100,
+      "tag": "0351_client_update_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1801740020200,
+      "tag": "0352_design_deposit_percent",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1801740020300,
+      "tag": "0353_design_complete",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1801740020400,
+      "tag": "0370_qs_scope_lines",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1801740020500,
+      "tag": "0371_ready_to_start_notice",
       "breakpoints": true
     }
   ]

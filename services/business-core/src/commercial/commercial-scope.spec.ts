@@ -17,3 +17,16 @@ describe('Preparation to commercial scope',()=>{
  it('preserves product codes, brand, finishes, construction and measurement qualification',()=>{const result=importedScopeDetails({specification:{refinedRequirement:'Wardrobe',construction:'18 mm carcass',materials:[{application:'Shutter',productCode:'OAK-01',finishCode:'F2',status:'selected',catalog:{material:{name:'Oak'},brand:{name:'Sample brand'},finish:{name:'Matte'}}},{application:'Carcass',productName:'Plywood',status:'proposed'},{application:'Unused',productName:'Removed',status:'not_applicable'}],dimensions:[{name:'Width',approximate:2400,unit:'mm'}]}});expect(result.material).toBe('Shutter: Oak · Sample brand · OAK-01\nCarcass: Plywood: Proposed');expect(result.finish).toBe('Matte · F2');expect(result.specification).toContain('Width: 2400 mm (approx.)');expect(result.specification).toContain('18 mm carcass');});
  it('seeds every preparation room into a quotation without duplicating an imported room',async()=>{const service=new CommercialService({} as WorkspaceAccessService,{} as ConfigService,{} as CatalogSellingPriceService,{} as PreProjectReadinessService),snapshot={id:'catalog-room',name:'Reception',code:'REC',kind:'room',version:3,catalogId:'master'},query=vi.fn().mockResolvedValue({rows:[{id:'room-1',name:'Reception',catalogRecordId:'catalog-room',catalogSnapshot:snapshot},{id:'room-2',name:'Meeting room'}]}),quote={rooms:[{id:'room-1',name:'Reception'}],lines:[]} as Quote;await (service as unknown as {seedPreparationRooms:(client:{query:typeof query},workspaceId:string,caseId:string,quote:Quote)=>Promise<void>}).seedPreparationRooms({query},'workspace','case',quote);expect(quote.rooms?.map(room=>room.name)).toEqual(['Reception','Meeting room']);expect(query).toHaveBeenCalledWith(expect.stringContaining('pre_project_rooms'),['workspace','case']);});
 });
+
+it("normalizes blank rich-text table rows without flattening paragraphs or bullets",()=>{expect(importedScopeDetails({note:"\n\nKitchen\n\n\n\n\n- Soft close\n- Adjustable shelves\n"}).specification).toBe("Kitchen\n\n- Soft close\n- Adjustable shelves");});
+
+it('imports only selected scope and preserves negotiated rates when refreshing',async()=>{
+ const service=new CommercialService({} as WorkspaceAccessService,{} as ConfigService,{} as CatalogSellingPriceService,{} as PreProjectReadinessService);
+ const query=vi.fn().mockResolvedValue({rows:[{id:'a',version:2,title:'Cabinets',note:'Updated note',catalog_links:[],room:'General'},{id:'b',version:1,title:'Wardrobe',catalog_links:[],room:'General'}],rowCount:2});
+ const quote={lines:[{id:'line-a',scopeId:'a',rate:950,unitCost:500}],rooms:[]} as unknown as Quote;
+ const importer=service as unknown as {importIncludedScope:(client:{query:typeof query},w:string,c:string,q:Quote,refresh:boolean,ids:string[])=>Promise<number>};
+ expect(await importer.importIncludedScope({query},'w','c',quote,true,['a'])).toBe(1);
+ expect(quote.lines).toHaveLength(1);expect(quote.lines[0]).toMatchObject({id:'line-a',scopeId:'a',scopeVersion:2,rate:950,unitCost:500,specification:'Updated note'});
+ await expect(importer.importIncludedScope({query},'w','c',quote,false,['missing'])).rejects.toThrow('no longer available');
+ expect(quote.lines).toHaveLength(1);
+});

@@ -1,3 +1,4 @@
+import { acceptPendingInvitation } from "../workspaces/invitation-acceptance";
 import {
   ConflictException,
   ForbiddenException,
@@ -9,7 +10,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import type { PoolClient } from "pg";
-import { MAX_ACTIVE_DEVICES, sessionDeviceLimit } from "./session-policy";
+import { configuredDeviceLimit, sessionDeviceLimit } from "./session-policy";
 import { ConfigService } from "@nestjs/config";
 import { randomBytes, randomUUID } from "node:crypto";
 import * as jwt from "jsonwebtoken";
@@ -19,6 +20,7 @@ import { RequestActor } from "./actor";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import { hashOpaqueToken, hashPassword, verifyPassword } from "./local-password";
 import { MfaService, MfaSessionAssurance } from "./mfa.service";
+import { PLATFORM_OPERATOR_ROLES } from "./platform-operator-policy";
 
 interface LoginMetadata {
   ipAddress?: string;
@@ -70,6 +72,18 @@ const ACCESS_TOKEN_SECONDS = 15 * 60;
 const REFRESH_TOKEN_DAYS = 30;
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_MINUTES = 15;
+const RESET_EMAILS_PER_HOUR = 3;
+/** The tenant's own sign-in background (tenant_login_branding columns), versioned by its asset; null: the default. */
+const LOGIN_BACKGROUND_URL = `CASE WHEN login_background_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-background/' || login_slug || '?v=' || login_background_asset_id::text
+                   END AS "loginBackgroundUrl"`;
+
+/** Raised inside the activation transaction; the failed attempt is recorded after its rollback. */
+class ExistingAccountPasswordError extends Error {
+  constructor(readonly userId: string) {
+    super("existing account password mismatch");
+  }
+}
 
 @Injectable()
 export class LocalAuthService {
@@ -90,38 +104,85 @@ export class LocalAuthService {
       secondaryColor: string | null;
       headingFont: string | null;
       bodyFont: string | null;
+      loginBackgroundUrl: string | null;
     }>(
       `SELECT display_name AS "displayName", login_slug AS "loginSlug",
               CASE WHEN logo_asset_id IS NOT NULL
                    THEN '/api/auth/tenant-logo/' || login_slug || '?v=' || logo_asset_id::text
                    ELSE logo_url END AS "logoUrl",
               primary_color AS "primaryColor", secondary_color AS "secondaryColor",
-              heading_font AS "headingFont", body_font AS "bodyFont"
-       FROM tenant_login_branding WHERE login_slug = $1`,
+              heading_font AS "headingFont", body_font AS "bodyFont",
+              ${LOGIN_BACKGROUND_URL}
+       FROM tenant_login_branding WHERE login_slug = $1 AND tenant_login_open(workspace_id)`,
       [loginSlug.toLowerCase()],
     );
     if (!result.rowCount) throw new NotFoundException("Tenant login was not found");
     return result.rows[0];
   }
 
+  async resolveOrganization(identifier: string) {
+    const value = identifier.trim().toLowerCase();
+    if (!value || value.length > 160) throw new NotFoundException("Organization was not found");
+    const slug = value.replace(/\s+/g, "-");
+    // Public branding is readable without an actor; workspace rows are RLS-protected. An archived organization's
+    // login address is closed (tenant_login_open). The login flow independently enforces active workspace membership.
+    const fields = `SELECT branding.display_name AS "displayName", branding.login_slug AS "loginSlug",
+              CASE WHEN branding.logo_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-logo/' || branding.login_slug || '?v=' || branding.logo_asset_id::text
+                   ELSE branding.logo_url END AS "logoUrl",
+              branding.primary_color AS "primaryColor", branding.secondary_color AS "secondaryColor",
+              branding.heading_font AS "headingFont", branding.body_font AS "bodyFont"
+       FROM tenant_login_branding branding
+       WHERE tenant_login_open(branding.workspace_id) AND `;
+    const direct = await this.database.query<{
+      displayName: string; loginSlug: string; logoUrl: string | null;
+      primaryColor: string | null; secondaryColor: string | null;
+      headingFont: string | null; bodyFont: string | null;
+    }>(`${fields}(branding.login_slug = $1 OR branding.workspace_id::text = $2)
+       ORDER BY CASE WHEN branding.login_slug = $1 THEN 0 ELSE 1 END LIMIT 1`, [slug, value]);
+    if (direct.rowCount) return direct.rows[0];
+    const byName = await this.database.query<{
+      displayName: string; loginSlug: string; logoUrl: string | null;
+      primaryColor: string | null; secondaryColor: string | null;
+      headingFont: string | null; bodyFont: string | null;
+    }>(`${fields}lower(branding.display_name) = $1 LIMIT 2`, [value]);
+    if (!byName.rowCount) throw new NotFoundException("Organization was not found");
+    if (byName.rowCount > 1) throw new ConflictException("More than one organization has this name. Use its slug or ID.");
+    return byName.rows[0];
+  }
+
   async getTenantBrandingForHost(hostname: string) {
     if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(hostname) || hostname.length > 253) {
       throw new NotFoundException("Tenant login was not found");
     }
+    // The custom domain's tenant, with its sign-in background (public branding, as the slug's own lookup reads it).
     const result = await this.database.query<{
       displayName: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null;
-      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null; loginBackgroundUrl: string | null;
     }>(
-      "SELECT * FROM wodana_public_tenant_host($1::varchar)",
+      `SELECT host.*, ${LOGIN_BACKGROUND_URL}
+       FROM wodana_public_tenant_host($1::varchar) host
+       LEFT JOIN tenant_login_branding ON tenant_login_branding.login_slug = host."loginSlug"`,
       [hostname.toLowerCase()],
     );
     if (!result.rowCount) throw new NotFoundException("Tenant login was not found");
     return result.rows[0];
   }
 
-  async login(email: string, password: string, tenantSlug: string, metadata: LoginMetadata = {}) {
+  async login(email: string, password: string, tenantSlug: string | undefined, metadata: LoginMetadata = {}) {
     this.assertLocalAuthAvailable();
     const user = await this.verifyLocalPassword(email, password);
+
+    if (!tenantSlug) {
+      // Email-first sign-in: the verified user's active workspaces decide the next step.
+      const workspaces = await this.activeLoginWorkspaces(user.id);
+      if (!workspaces.length) throw new UnauthorizedException("Email, password, or tenant is incorrect");
+      if (workspaces.length > 1) {
+        // No session yet: the client resubmits with the chosen workspace's slug.
+        return { workspaceSelectionRequired: true as const, workspaces };
+      }
+      tenantSlug = workspaces[0].loginSlug;
+    }
 
     const branding = await this.database.query<{ workspaceId: string }>(
       `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
@@ -134,7 +195,7 @@ export class LocalAuthService {
          WHERE membership.workspace_id = $1
            AND membership.user_id = $2
            AND membership.status = 'active'
-           AND workspace.status = 'active'`,
+           AND workspace.status IN ('active', 'suspended')`,
         [branding.rows[0].workspaceId, user.id],
       ))
       : null;
@@ -153,13 +214,34 @@ export class LocalAuthService {
     );
   }
 
+  private async activeLoginWorkspaces(userId: string) {
+    const result = await this.database.actorTransaction(userId, (client) => client.query<{
+      workspaceId: string; name: string; loginSlug: string; logoUrl: string | null; primaryColor: string | null;
+    }>(
+      `SELECT workspace.id AS "workspaceId", COALESCE(branding.display_name, workspace.name) AS name,
+              branding.login_slug AS "loginSlug",
+              CASE WHEN branding.logo_asset_id IS NOT NULL
+                   THEN '/api/auth/tenant-logo/' || branding.login_slug || '?v=' || branding.logo_asset_id::text
+                   ELSE branding.logo_url END AS "logoUrl",
+              branding.primary_color AS "primaryColor"
+       FROM workspace_memberships membership
+       JOIN workspaces workspace ON workspace.id = membership.workspace_id
+       JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
+       WHERE membership.user_id = $1 AND membership.status = 'active' AND workspace.status IN ('active', 'suspended')
+       ORDER BY lower(COALESCE(branding.display_name, workspace.name))`,
+      [userId],
+    ));
+    return result.rows;
+  }
+
   async verifyPlatformCredentials(email: string, password: string) {
     this.assertLocalAuthAvailable();
     const user = await this.verifyLocalPassword(email, password);
+    // Every scoped operator role signs in; what each one may do is enforced per route by its policy.
     const administrator = await this.database.query(
       `SELECT 1 FROM platform_administrators
-       WHERE user_id = $1 AND status = 'active' AND role = 'administrator'`,
-      [user.id],
+       WHERE user_id = $1 AND status = 'active' AND role = ANY($2::text[])`,
+      [user.id, [...PLATFORM_OPERATOR_ROLES]],
     );
     if (!administrator.rowCount) throw new UnauthorizedException("Email or password is incorrect");
     await this.recordSuccessfulPasswordLogin(user.id);
@@ -193,19 +275,23 @@ export class LocalAuthService {
 
     const validPassword = await verifyPassword(password, user.passwordSalt, user.passwordHash);
     if (!validPassword) {
-      await this.database.query(
-        `UPDATE local_auth_credentials
-         SET failed_attempts = failed_attempts + 1,
-             locked_until = CASE WHEN failed_attempts + 1 >= $2
-               THEN now() + ($3 * interval '1 minute') ELSE NULL END,
-             updated_at = now()
-         WHERE user_id = $1`,
-        [user.id, MAX_FAILED_ATTEMPTS, LOCK_MINUTES],
-      );
+      await this.recordFailedPassword(user.id);
       throw new UnauthorizedException("Email, password, or tenant is incorrect");
     }
 
     return user;
+  }
+
+  private async recordFailedPassword(userId: string) {
+    await this.database.query(
+      `UPDATE local_auth_credentials
+       SET failed_attempts = failed_attempts + 1,
+           locked_until = CASE WHEN failed_attempts + 1 >= $2
+             THEN now() + ($3 * interval '1 minute') ELSE NULL END,
+           updated_at = now()
+       WHERE user_id = $1`,
+      [userId, MAX_FAILED_ATTEMPTS, LOCK_MINUTES],
+    );
   }
 
   private async recordSuccessfulPasswordLogin(userId: string) {
@@ -260,16 +346,41 @@ export class LocalAuthService {
         || locked.rows[0].expiresAt.getTime() <= Date.now()) {
         throw new GoneException("Invitation is no longer active");
       }
-      const encoded = await hashPassword(password);
-      const credential = await client.query<{ passwordChangedAt: Date }>(
-        `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
-           password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
-           password_changed_at = now(), updated_at = now()
-         RETURNING password_changed_at AS "passwordChangedAt"`,
-        [row.userId, encoded.hash, encoded.salt],
+      // A person who already has a Wodana password accepts with that password: an invitation link (which the inviter
+      // can see) must never replace an existing account's password, or any inviter could take the account over.
+      const existing = await client.query<{
+        passwordHash: string; passwordSalt: string; lockedUntil: Date | null; passwordChangedAt: Date;
+      }>(
+        `SELECT password_hash AS "passwordHash", password_salt AS "passwordSalt", locked_until AS "lockedUntil",
+                password_changed_at AS "passwordChangedAt"
+         FROM local_auth_credentials WHERE user_id = $1 FOR UPDATE`,
+        [row.userId],
       );
+      let credential: { passwordChangedAt: Date; passwordHash: string };
+      if (existing.rowCount) {
+        const current = existing.rows[0];
+        if (current.lockedUntil && current.lockedUntil.getTime() > Date.now()) {
+          throw new HttpException("Too many sign-in attempts. Try again later", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (!(await verifyPassword(password, current.passwordSalt, current.passwordHash))) {
+          throw new ExistingAccountPasswordError(row.userId);
+        }
+        await client.query(
+          `UPDATE local_auth_credentials SET failed_attempts = 0, locked_until = NULL, updated_at = now()
+           WHERE user_id = $1`,
+          [row.userId],
+        );
+        credential = { passwordChangedAt: current.passwordChangedAt, passwordHash: current.passwordHash };
+      } else {
+        const encoded = await hashPassword(password);
+        const created = await client.query<{ passwordChangedAt: Date }>(
+          `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
+           VALUES ($1, $2, $3)
+           RETURNING password_changed_at AS "passwordChangedAt"`,
+          [row.userId, encoded.hash, encoded.salt],
+        );
+        credential = { passwordChangedAt: created.rows[0].passwordChangedAt, passwordHash: encoded.hash };
+      }
       await client.query(
         `INSERT INTO user_identities
           (user_id, provider, provider_subject, email_at_provider, last_login_at)
@@ -278,35 +389,19 @@ export class LocalAuthService {
            email_at_provider = EXCLUDED.email_at_provider, last_login_at = now(), updated_at = now()`,
         [row.userId, `local:${row.userId}`, row.email],
       );
-      const membership = await client.query<{ id: string }>(
-        `INSERT INTO workspace_memberships (workspace_id, user_id, status, joined_at)
-         VALUES ($1, $2, 'active', now())
-         ON CONFLICT (workspace_id, user_id) DO UPDATE SET status = 'active',
-           joined_at = COALESCE(workspace_memberships.joined_at, now()), updated_at = now()
-         RETURNING id`,
-        [row.workspaceId, row.userId],
-      );
+      const accepted = await acceptPendingInvitation(client, { invitationId: row.id, userId: row.userId });
       await client.query(
-        `INSERT INTO member_roles (workspace_id, membership_id, role_id)
-         SELECT $1, $2, assigned.role_id FROM invitation_roles assigned
-         WHERE assigned.invitation_id = $3
-         ON CONFLICT DO NOTHING`,
-        [row.workspaceId, membership.rows[0].id, row.id],
+        `INSERT INTO audit_events (workspace_id, actor_user_id, source, action, entity_type, entity_id, after, correlation_id)
+         VALUES ($1, $2, 'user', 'workspace.invitation_accepted', 'workspace_membership', $3, $4::jsonb, $5)`,
+        [row.workspaceId, row.userId, accepted.membershipId, JSON.stringify({ invitationId: row.id, email: row.email }), randomUUID()],
       );
-      await client.query(
-        `INSERT INTO workspace_team_members (workspace_id, team_id, membership_id, is_lead)
-         SELECT invited_team.workspace_id, invited_team.team_id, $2, false
-         FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
-         WHERE invited_team.invitation_id=$1 AND team.status='active'
-         ON CONFLICT (team_id,membership_id) DO NOTHING`,
-        [row.id, membership.rows[0].id],
+      return { ...row, passwordChangedAt: credential.passwordChangedAt, passwordHash: credential.passwordHash };
+    }).catch(async (error: unknown) => {
+      if (!(error instanceof ExistingAccountPasswordError)) throw error;
+      await this.recordFailedPassword(error.userId);
+      throw new UnauthorizedException(
+        "You already have a Wodana account. Enter your current password to accept this invitation, or reset it first.",
       );
-      await client.query(
-        `UPDATE workspace_invitations SET status = 'accepted', accepted_at = now(), updated_at = now()
-         WHERE id = $1`,
-        [row.id],
-      );
-      return { ...row, passwordChangedAt: credential.rows[0].passwordChangedAt, passwordHash: encoded.hash };
     });
 
     return this.completePrimaryAuthentication({
@@ -412,7 +507,7 @@ export class LocalAuthService {
           mfaEnrollmentDeadline: prior.mfaEnrollmentDeadline ?? undefined,
         }),
         refreshToken: nextToken,
-        accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+        accessTokenExpiresIn: this.accessTokenSeconds(),
         refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       };
     });
@@ -477,7 +572,7 @@ export class LocalAuthService {
       enabled: true,
       recoveryCodes: confirmed.recoveryCodes,
       accessToken: this.signAccessToken(actor, current.familyId, confirmed.assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
     };
   }
 
@@ -495,7 +590,7 @@ export class LocalAuthService {
     await this.updateSessionAssurance(actorUser.userId, current.familyId, assurance);
     return {
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
       verifiedAt: assurance.mfaVerifiedAt,
       authenticationMethods: assurance.authenticationMethods,
     };
@@ -536,10 +631,13 @@ export class LocalAuthService {
         [actorUser.userId, current.familyId, mfaSessionVersion],
       );
     });
+    if (actorUser.email) {
+      await this.email.sendSecurityNotice({ email: actorUser.email, kind: "mfa_disabled", workspaceId }).catch(() => undefined);
+    }
     return {
       enabled: false,
       accessToken: this.signAccessToken(actor, current.familyId, assurance),
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
     };
   }
 
@@ -562,7 +660,7 @@ export class LocalAuthService {
       authenticationMethod: actor.provider,
       passwordChangedAt: credential.rows[0]?.passwordChangedAt ?? null,
       policy: {
-        accessTokenMinutes: ACCESS_TOKEN_SECONDS / 60,
+        accessTokenMinutes: this.accessTokenSeconds() / 60,
         refreshSessionDays: REFRESH_TOKEN_DAYS,
         maxFailedAttempts: MAX_FAILED_ATTEMPTS,
         lockMinutes: LOCK_MINUTES,
@@ -628,7 +726,7 @@ export class LocalAuthService {
     return { revoked: count };
   }
 
-  async forgotPassword(email: string, tenantSlug: string) {
+  async forgotPassword(email: string, tenantSlug: string | undefined) {
     this.assertLocalAuthAvailable();
     const user = await this.database.query<{ id: string }>(
       `SELECT app_user.id FROM users app_user
@@ -637,6 +735,11 @@ export class LocalAuthService {
       [email.toLowerCase()],
     );
     let developmentResetToken: string | undefined;
+    if (!tenantSlug) {
+      // Email-first recovery: brand the link with the user's first active workspace.
+      const workspaces = user.rowCount ? await this.activeLoginWorkspaces(user.rows[0].id) : [];
+      tenantSlug = workspaces[0]?.loginSlug ?? "";
+    }
     const branding = await this.database.query<{ workspaceId: string }>(
       `SELECT workspace_id AS "workspaceId" FROM tenant_login_branding WHERE login_slug = $1`,
       [tenantSlug.toLowerCase()],
@@ -648,11 +751,20 @@ export class LocalAuthService {
          WHERE membership.workspace_id = $1
            AND membership.user_id = $2
            AND membership.status = 'active'
-           AND workspace.status = 'active'`,
+           AND workspace.status IN ('active', 'suspended')`,
         [branding.rows[0].workspaceId, user.rows[0].id],
       ))
       : null;
-    if (user.rowCount && membership?.rowCount) {
+    // At most RESET_EMAILS_PER_HOUR reset emails per person, with the same answer either way: a flood of requests can
+    // neither fill someone's inbox nor hold up every workspace's email behind the shared send limiter.
+    const recent = user.rowCount && membership?.rowCount
+      ? await this.database.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM password_reset_tokens
+         WHERE user_id = $1 AND created_at > now() - interval '1 hour'`,
+        [user.rows[0].id],
+      )
+      : null;
+    if (user.rowCount && membership?.rowCount && (recent?.rows[0]?.count ?? 0) < RESET_EMAILS_PER_HOUR) {
       const token = randomBytes(32).toString("base64url");
       await this.database.query(
         `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
@@ -675,7 +787,7 @@ export class LocalAuthService {
   async resetPassword(resetToken: string, password: string) {
     this.assertLocalAuthAvailable();
     const encoded = await hashPassword(password);
-    await this.database.transaction(async (client) => {
+    const userId = await this.database.transaction(async (client) => {
       const result = await client.query<{ id: string; userId: string; expiresAt: Date; usedAt: Date | null }>(
         `SELECT id, user_id AS "userId", expires_at AS "expiresAt", used_at AS "usedAt"
          FROM password_reset_tokens WHERE token_hash = $1 FOR UPDATE`,
@@ -692,14 +804,86 @@ export class LocalAuthService {
          WHERE user_id = $1`,
         [row.userId, encoded.hash, encoded.salt],
       );
-      await client.query("UPDATE password_reset_tokens SET used_at = now() WHERE id = $1", [row.id]);
+      // Any other reset link still in the inbox stops working too.
+      await client.query(
+        "UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL",
+        [row.userId],
+      );
       await client.query(
         `UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now())
          WHERE user_id = $1`,
         [row.userId],
       );
+      return row.userId;
     });
+    const account = await this.database.query<{ email: string }>(`SELECT primary_email AS email FROM users WHERE id = $1`, [userId]);
+    const workspace = (await this.activeLoginWorkspaces(userId))[0];
+    if (account.rows[0]) {
+      await this.email.sendSecurityNotice({ email: account.rows[0].email, kind: "password_changed", loginSlug: workspace?.loginSlug })
+        .catch(() => undefined);
+    }
     return { passwordReset: true };
+  }
+
+  /** Whether an active member of the workspace has a local password and sign-in identity (the operator CLI's sandbox). */
+  async hasLocalPassword(workspaceId: string, userId: string) {
+    const found = await this.database.tenantTransaction(workspaceId, userId, (client) => client.query(
+      `SELECT 1 FROM workspace_memberships membership
+         JOIN local_auth_credentials credential ON credential.user_id = membership.user_id
+         JOIN user_identities identity ON identity.user_id = membership.user_id AND identity.provider = 'local'
+        WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active'`,
+      [workspaceId, userId]));
+    return Boolean(found.rowCount);
+  }
+
+  /**
+   * The operator CLI's sandbox (src/ops): gives an active member a local password, hashed as activating an invitation
+   * does (scrypt), with their local sign-in identity. Not a sign-in: no session is issued. The same password again
+   * changes nothing; a new one ends the member's sessions, as a password reset does. Audited in the workspace as an
+   * internal change (the platform, not a person); the password itself is never stored or recorded.
+   */
+  async setMemberPassword(workspaceId: string, userId: string, password: string): Promise<{ changed: boolean }> {
+    return this.database.tenantTransaction(workspaceId, userId, async (client) => {
+      const member = await client.query<{ email: string }>(
+        `SELECT app_user.primary_email AS email FROM workspace_memberships membership JOIN users app_user ON app_user.id = membership.user_id
+          WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active' AND app_user.status = 'active'`,
+        [workspaceId, userId],
+      );
+      if (!member.rowCount) throw new NotFoundException("This person is not an active member of the workspace");
+      await this.lockSessions(client, userId);
+      const current = await client.query<{ passwordHash: string; passwordSalt: string }>(
+        `SELECT password_hash AS "passwordHash", password_salt AS "passwordSalt" FROM local_auth_credentials WHERE user_id = $1`, [userId]);
+      const identity = await client.query(`SELECT 1 FROM user_identities WHERE provider = 'local' AND provider_subject = $1`, [`local:${userId}`]);
+      const credential = current.rows[0];
+      const same = credential ? await verifyPassword(password, credential.passwordSalt, credential.passwordHash) : false;
+      if (same && identity.rowCount) return { changed: false };
+      if (!same) {
+        const encoded = await hashPassword(password);
+        await client.query(
+          `INSERT INTO local_auth_credentials (user_id, password_hash, password_salt)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash,
+             password_salt = EXCLUDED.password_salt, failed_attempts = 0, locked_until = NULL,
+             password_changed_at = now(), updated_at = now()`,
+          [userId, encoded.hash, encoded.salt],
+        );
+        if (credential) {
+          await client.query(`UPDATE auth_refresh_sessions SET revoked_at = COALESCE(revoked_at, now()) WHERE user_id = $1`, [userId]);
+        }
+      }
+      await client.query(
+        `INSERT INTO user_identities (user_id, provider, provider_subject, email_at_provider)
+         VALUES ($1, 'local', $2, $3)
+         ON CONFLICT (provider, provider_subject) DO UPDATE SET email_at_provider = EXCLUDED.email_at_provider, updated_at = now()`,
+        [userId, `local:${userId}`, member.rows[0].email.toLowerCase()],
+      );
+      await client.query(
+        `INSERT INTO audit_events (workspace_id, actor_user_id, source, action, entity_type, entity_id, after, correlation_id)
+         VALUES ($1, NULL, 'internal', 'auth.local_password_set', 'user', $2, $3::jsonb, $4)`,
+        [workspaceId, userId, JSON.stringify({ firstPassword: !credential }), randomUUID()],
+      );
+      return { changed: true };
+    });
   }
 
   async ensureDemoAccount(workspaceId: string, email: string, password: string) {
@@ -771,7 +955,7 @@ export class LocalAuthService {
        WHERE membership.workspace_id = $1
          AND membership.user_id = $2
          AND membership.status = 'active'
-         AND workspace.status = 'active'`,
+         AND workspace.status IN ('active', 'suspended')`,
       [workspaceId, userId],
     ));
     if (!membership.rowCount) throw new ForbiddenException("Workspace access is required");
@@ -892,7 +1076,7 @@ export class LocalAuthService {
     const selectedProfile = selectedMembership
       ? {
           ...profile,
-          nextAction: deriveWorkspaceOnboardingNextAction(selectedMembership.onboarding?.status),
+          nextAction: deriveWorkspaceOnboardingNextAction(selectedMembership.onboarding?.status, selectedMembership.roles),
         }
       : profile;
     const result = await this.database.transaction(async (client) => {
@@ -935,7 +1119,7 @@ export class LocalAuthService {
       const deviceLimit = this.deviceLimit(user.userId);
       if (deviceLimit !== null && sessions.length - (currentFamilyId ? 1 : 0) >= deviceLimit) {
         // Return normally so any chosen logout commits even if more devices still need removal.
-        return { blocked: true as const, sessions };
+        return { blocked: true as const, sessions, deviceLimit };
       }
       if (currentFamilyId) {
         await client.query(
@@ -960,15 +1144,15 @@ export class LocalAuthService {
     if (result.blocked) {
       throw new ConflictException({
         code: "DEVICE_LIMIT_REACHED",
-        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${MAX_ACTIVE_DEVICES} devices. Log out a device to continue.`,
-        maxActiveDevices: MAX_ACTIVE_DEVICES,
+        message: `You are already signed in on ${result.sessions.length} devices. You can use a maximum of ${result.deviceLimit} devices. Log out a device to continue.`,
+        maxActiveDevices: result.deviceLimit,
         sessions: result.sessions,
       });
     }
     return {
       accessToken: this.signAccessToken(actor, result.familyId, assurance),
       refreshToken: result.refreshToken,
-      accessTokenExpiresIn: ACCESS_TOKEN_SECONDS,
+      accessTokenExpiresIn: this.accessTokenSeconds(),
       refreshTokenExpiresIn: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
       selectedWorkspaceId,
       profile: selectedProfile,
@@ -1012,13 +1196,19 @@ export class LocalAuthService {
         subject: actor.subject,
         issuer: this.config.get<string>("LOCAL_AUTH_ISSUER", "wodana-local"),
         audience: this.config.get<string>("LOCAL_AUTH_AUDIENCE", "wodana-web"),
-        expiresIn: ACCESS_TOKEN_SECONDS,
+        expiresIn: this.accessTokenSeconds(),
       },
     );
   }
 
+  /** How long a sign-in stays valid before a silent refresh: AUTH_ACCESS_TOKEN_MINUTES (5–1440), default 15. */
+  private accessTokenSeconds() {
+    const minutes = Number(this.config.get<string>("AUTH_ACCESS_TOKEN_MINUTES", ""));
+    return Number.isInteger(minutes) && minutes >= 5 && minutes <= 1440 ? minutes * 60 : ACCESS_TOKEN_SECONDS;
+  }
+
   private deviceLimit(userId: string) {
-    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""));
+    return sessionDeviceLimit(userId, this.config.get<string>("AUTH_DEVICE_LIMIT_EXEMPT_USER_IDS", ""), configuredDeviceLimit(this.config.get<string>("AUTH_MAX_ACTIVE_DEVICES", "")));
   }
 
   private assertLocalAuthAvailable() {

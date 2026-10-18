@@ -1,0 +1,5 @@
+PASS: self-service, scoped access, photos, idempotency, multiple sessions, corrections and matching CSV
+SKIP: legacy project release fixture lacks commercial release evidence; no release bypass used.
+PASS: half days, overlaps, holidays, year-split balances, cancellation and independent approval
+PASS: cross-workspace RLS and immutable evidence
+HRMS HTTP/database acceptance checks passed.

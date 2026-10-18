@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Req,
   UseGuards,
 } from "@nestjs/common";
 import {
@@ -25,6 +26,13 @@ import {
 import { WorkspacesService } from "./workspaces.service";
 import { TenantManagementService } from "./tenant-management.service";
 import { UpdateTenantManagementDto } from "./dto/update-tenant-management.dto";
+import { ClearWorkspaceRecordsDto } from "./dto/clear-workspace-records.dto";
+import { WorkspaceClearRecordsService } from "./workspace-clear-records.service";
+import { PlatformOperatorGuard, type OperatorRequest } from "../auth/platform-operator.guard";
+import {
+  PlatformOperatorPermissionGuard,
+  RequireOperatorPermission,
+} from "../auth/platform-operator-permission.guard";
 
 @ApiTags("internal tenant provisioning")
 @Public()
@@ -39,6 +47,7 @@ export class InternalTenantsController {
   constructor(
     private readonly workspaces: WorkspacesService,
     private readonly tenants: TenantManagementService,
+    private readonly clearRecords: WorkspaceClearRecordsService,
   ) {}
 
   @Get()
@@ -99,5 +108,21 @@ export class InternalTenantsController {
   @ApiCreatedResponse({ type: ProvisionedOwnerInvitationResponseDto })
   resendOwnerInvitation(@Param("externalTenantId") externalTenantId: string) {
     return this.workspaces.resendProvisionedOwnerInvitation(externalTenantId);
+  }
+
+  // Go-live reset. Operator-only (internal credential plus a platform operator session with data.manage);
+  // never reachable from the tenant UI. Counts only unless dryRun is explicitly false.
+  @Post(":externalTenantId/clear-records")
+  @UseGuards(PlatformOperatorGuard, PlatformOperatorPermissionGuard)
+  @RequireOperatorPermission("data.manage")
+  @ApiHeader({ name: "x-wodana-operator-session", required: true })
+  @ApiOperation({ summary: "Clear a tenant's business records and keep its configuration (dry run by default)" })
+  @ApiCreatedResponse()
+  clearWorkspaceRecords(
+    @Param("externalTenantId") externalTenantId: string,
+    @Body() input: ClearWorkspaceRecordsDto,
+    @Req() request: OperatorRequest,
+  ) {
+    return this.clearRecords.clear(externalTenantId, input, request.platformOperator!.userId);
   }
 }

@@ -457,6 +457,8 @@ export const crmQueues = pgTable(
     isFallback: boolean("is_fallback").notNull().default(false),
     takeoverAfterMinutes: integer("takeover_after_minutes"),
     roundRobinCursor: integer("round_robin_cursor").notNull().default(0),
+    /** balanced (lightest load first) or round_robin (strict turns), 0346. */
+    assignmentMode: varchar("assignment_mode", { length: 20 }).notNull().default("balanced"),
     ...versionColumn,
     ...auditColumns,
   },
@@ -464,6 +466,7 @@ export const crmQueues = pgTable(
     uniqueIndex("crm_queues_code_uidx").on(table.workspaceId, table.code),
     index("crm_queues_fallback_idx").on(table.workspaceId, table.isFallback),
     check("crm_queues_takeover_after_minutes_check", sql`${table.takeoverAfterMinutes} IS NULL OR ${table.takeoverAfterMinutes} BETWEEN 1 AND 10080`),
+    check("crm_queues_assignment_mode_check", sql`${table.assignmentMode} IN ('balanced', 'round_robin')`),
   ],
 );
 
@@ -817,6 +820,12 @@ export const crmConversations = pgTable(
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
     lastInboundAt: timestamp("last_inbound_at", { withTimezone: true }),
     unreadCount: integer("unread_count").notNull().default(0),
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    waitingSince: timestamp("waiting_since", { withTimezone: true }),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    /** The WhatsApp number the client last wrote to; replies go from it (0166). */
+    connectionId: uuid("connection_id"),
     ...versionColumn,
     ...auditColumns,
   },
@@ -876,13 +885,26 @@ export const crmMessageAttachments = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-    messageId: uuid("message_id").notNull().references(() => crmMessages.id, { onDelete: "cascade" }),
-    objectKey: varchar("object_key", { length: 500 }).notNull(),
-    fileName: varchar("file_name", { length: 255 }).notNull(),
-    contentType: varchar("content_type", { length: 120 }).notNull(),
-    byteSize: integer("byte_size").notNull(),
-    checksum: varchar("checksum", { length: 128 }).notNull(),
+    // 0166: a chat file both ways; inbound ones wait ('pending') until the worker fetches them.
+    conversationId: uuid("conversation_id").notNull(),
+    messageId: uuid("message_id").references(() => crmMessages.id, { onDelete: "cascade" }),
+    direction: varchar("direction", { length: 10 }).notNull(),
+    kind: varchar("kind", { length: 20 }).notNull(),
+    objectKey: varchar("object_key", { length: 500 }),
+    fileName: varchar("file_name", { length: 255 }),
+    contentType: varchar("content_type", { length: 160 }),
+    byteSize: integer("byte_size"),
+    checksum: varchar("checksum", { length: 128 }),
+    providerMediaId: varchar("provider_media_id", { length: 120 }),
+    connectionId: uuid("connection_id"),
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    attempts: smallint("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    failureCode: varchar("failure_code", { length: 120 }),
+    uploadedBy: uuid("uploaded_by"),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("crm_message_attachments_message_idx").on(table.workspaceId, table.messageId)],
 );
@@ -976,11 +998,17 @@ export const crmPipelineStages = pgTable(
   ],
 );
 
+export const crmOpportunityCounters = pgTable("crm_opportunity_counters", {
+  workspaceId: uuid("workspace_id").primaryKey().references(() => workspaces.id, { onDelete: "cascade" }),
+  lastValue: bigint("last_value", { mode: "bigint" }).notNull().default(0n),
+}, table => [check("crm_opportunity_counters_last_value_check", sql`${table.lastValue} >= 0`)]);
+
 export const crmOpportunities = pgTable(
   "crm_opportunities",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    reference: varchar("reference", { length: 40 }).notNull(),
     legalEntityId: uuid("legal_entity_id").references(() => legalEntities.id, { onDelete: "set null" }),
     businessUnitId: uuid("business_unit_id").references(() => businessUnits.id, { onDelete: "set null" }),
     partyId: uuid("party_id").notNull().references(() => crmParties.id),
@@ -1018,6 +1046,7 @@ export const crmOpportunities = pgTable(
     index("crm_opportunities_stage_idx").on(table.workspaceId, table.pipelineId, table.stageId, table.status),
     index("crm_opportunities_owner_idx").on(table.workspaceId, table.ownerMembershipId, table.status),
     index("crm_opportunities_party_idx").on(table.workspaceId, table.partyId, table.createdAt),
+    uniqueIndex("crm_opportunities_reference_uidx").on(table.workspaceId, table.reference),
     uniqueIndex("crm_opportunities_lead_uidx").on(table.workspaceId, table.leadId).where(sql`${table.leadId} IS NOT NULL`),
     check("crm_opportunities_amount_currency_check", sql`(${table.amount} IS NULL AND ${table.currencyCode} IS NULL) OR (${table.amount} IS NOT NULL AND ${table.currencyCode} IS NOT NULL)`),
     check("crm_opportunities_probability_check", sql`${table.probability} IS NULL OR (${table.probability} >= 0 AND ${table.probability} <= 100)`),
@@ -1158,10 +1187,26 @@ export const crmCustomFieldDefinitions = pgTable(
     searchable: boolean("searchable").notNull().default(false),
     configuration: jsonb("configuration").$type<Record<string, unknown>>().notNull().default({}),
     status: varchar("status", { length: 30 }).notNull().default("active"),
+    visible: boolean("visible").notNull().default(true),
+    position: integer("position").notNull().default(0),
     ...versionColumn,
     ...auditColumns,
   },
   (table) => [uniqueIndex("crm_custom_field_definitions_key_uidx").on(table.workspaceId, table.entityType, table.key)],
+);
+
+/** Show or hide the optional fixed enquiry fields; the required ones are always shown. */
+export const crmEnquiryFieldSettings = pgTable(
+  "crm_enquiry_field_settings",
+  {
+    workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    fieldKey: varchar("field_key", { length: 40 }).notNull(),
+    visible: boolean("visible").notNull().default(true),
+    version: integer("version").notNull().default(1),
+    updatedBy: uuid("updated_by"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.workspaceId, table.fieldKey] })],
 );
 
 export const crmCustomFieldValues = pgTable(

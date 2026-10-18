@@ -1,0 +1,31 @@
+/* The finishes schedule (PLM-156): one compact page; the table carries the rows, the sheet the details. */
+.schedule { display: flex; flex-direction: column; gap: var(--wd-space-4); min-inline-size: 0; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.spacer { flex: 1 1 auto; }
+.facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.cell { display: flex; flex-direction: column; gap: var(--wd-space-1); min-inline-size: 0; overflow-wrap: anywhere; }
+.cell small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); }
+.muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thumb { inline-size: var(--wd-space-10); block-size: var(--wd-space-10); border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); }
+.details { margin: 0; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: var(--wd-space-1) var(--wd-space-3); font-size: var(--wd-text-sm); }
+.details dt { color: var(--wd-color-text-secondary); }
+.details dd { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
+.section { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.sectionTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--wd-space-2); }
+.list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+
+/* A render snapshot with its marker: the picture keeps its own left-to-right coordinates in either direction. */
+.canvas { position: relative; border-radius: var(--wd-radius-md); overflow: hidden; background: var(--wd-color-surface-muted); }
+.canvas img { display: block; inline-size: 100%; block-size: auto; }
+.canvasButton { display: block; inline-size: 100%; padding: 0; border: 0; background: none; cursor: crosshair; }
+.canvasButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.marker { position: absolute; inset-inline-start: calc(var(--x) * 1%); inset-block-start: calc(var(--y) * 1%); transform: translate(-50%, -50%); inline-size: var(--wd-space-5); block-size: var(--wd-space-5);
+  border-radius: var(--wd-radius-round); border: 2px solid var(--wd-color-surface); background: var(--wd-color-action-primary); box-shadow: var(--wd-shadow-sm); pointer-events: none; }
+.snapshots { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr)); gap: var(--wd-space-3); }
+.snapshots li { display: flex; flex-direction: column; gap: var(--wd-space-2); min-inline-size: 0; }
+
+/* The sample library's cards' photos. */
+.photo { inline-size: 100%; aspect-ratio: 4 / 3; border-radius: var(--wd-radius-sm); object-fit: cover; background: var(--wd-color-surface-muted); }

@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
+  PayloadTooLargeException,
   Patch,
   Post,
   Put,
@@ -37,10 +38,12 @@ import { UpdateCompanyProfileDto } from "./dto/update-company-profile.dto";
 import { UpdateLegalEntityDto } from "./dto/update-legal-entity.dto";
 import { UpdateMemberDto } from "./dto/update-member.dto";
 import { UpdateRoleDto } from "./dto/update-role.dto";
+import { SetRoleAccessDto } from "./dto/set-role-access.dto";
 import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
+import { UpdateHomeLayoutDto } from "./dto/update-home-layout.dto";
 import { CompleteOnboardingDto, UpdateOnboardingDto } from "./dto/update-onboarding.dto";
 import { VersionDto } from "./dto/version.dto";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
@@ -69,6 +72,7 @@ import {
 } from "./dto/workspace-response.dto";
 import { WorkspacesService } from "./workspaces.service";
 import { InitiateCompanyLogoUploadDto } from "./dto/company-logo.dto";
+import { InitiateLoginBackgroundUploadDto, LOGIN_BACKGROUND_MAX_BYTES } from "./dto/login-background.dto";
 import type { Request } from "express";
 
 @ApiTags("workspaces")
@@ -130,6 +134,31 @@ export class WorkspacesController {
     @Body() input: UpdateWorkspaceAppearanceDto,
   ) {
     return this.workspaces.updateAppearance(actor, workspaceId, input);
+  }
+
+  @Get(":workspaceId/home-layout")
+  homeLayout(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeLayout(actor, workspaceId);
+  }
+
+  @Get(":workspaceId/home-overview")
+  homeOverview(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeOverview(actor, workspaceId);
+  }
+
+  @Get(":workspaceId/home/metrics")
+  homeMetrics(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeMetrics(actor, workspaceId);
+  }
+
+  @Get(":workspaceId/home/summary")
+  homeSummary(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.workspaces.homeSummary(actor, workspaceId);
+  }
+
+  @Put(":workspaceId/home-layout")
+  updateHomeLayout(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: UpdateHomeLayoutDto) {
+    return this.workspaces.updateHomeLayout(actor, workspaceId, input);
   }
 
   @Patch(":workspaceId/company-profile")
@@ -199,6 +228,64 @@ export class WorkspacesController {
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
   ) {
     return this.workspaces.removeCompanyLogo(actor, workspaceId);
+  }
+
+  @Post(":workspaceId/company-profile/login-background-uploads")
+  @ApiOperation({ summary: "Create a short-lived sign-in background upload" })
+  @ApiCreatedResponse()
+  initiateLoginBackgroundUpload(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Body() input: InitiateLoginBackgroundUploadDto,
+  ) {
+    return this.workspaces.initiateLoginBackgroundUpload(actor, workspaceId, input);
+  }
+
+  @Post(":workspaceId/company-profile/login-background-uploads/:assetId/complete")
+  @ApiOperation({ summary: "Verify and activate an uploaded sign-in background" })
+  @ApiCreatedResponse()
+  completeLoginBackgroundUpload(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("assetId", ParseUUIDPipe) assetId: string,
+  ) {
+    return this.workspaces.completeLoginBackgroundUpload(actor, workspaceId, assetId);
+  }
+
+  @Post(":workspaceId/company-profile/login-background-uploads/:assetId/content")
+  @ApiOperation({ summary: "Upload sign-in background content when local application storage is enabled" })
+  @ApiCreatedResponse()
+  async uploadLoginBackgroundContent(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("assetId", ParseUUIDPipe) assetId: string,
+    @Req() request: Request,
+  ) {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.byteLength;
+      if (size > LOGIN_BACKGROUND_MAX_BYTES) throw new PayloadTooLargeException("Sign-in background must be 10 MB or smaller");
+      chunks.push(buffer);
+    }
+    return this.workspaces.uploadLoginBackgroundContent(
+      actor,
+      workspaceId,
+      assetId,
+      String(request.headers["content-type"] ?? "").split(";")[0],
+      Buffer.concat(chunks),
+    );
+  }
+
+  @Delete(":workspaceId/company-profile/login-background")
+  @ApiOperation({ summary: "Remove the active sign-in background" })
+  @ApiOkResponse()
+  removeLoginBackground(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.workspaces.removeLoginBackground(actor, workspaceId);
   }
 
   @Get(":workspaceId/onboarding")
@@ -480,6 +567,30 @@ export class WorkspacesController {
     return this.workspaces.updateRole(actor, workspaceId, roleId, input);
   }
 
+  @Put(":workspaceId/roles/:roleId/access")
+  @ApiOperation({ summary: "Set a custom role's access by module: a level per module and advanced permissions" })
+  @ApiOkResponse({ type: RoleResponseDto })
+  setRoleAccess(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("roleId", ParseUUIDPipe) roleId: string,
+    @Body() input: SetRoleAccessDto,
+  ) {
+    return this.workspaces.setRoleAccess(actor, workspaceId, roleId, input);
+  }
+
+  @Post(":workspaceId/roles/:roleId/reset-to-template")
+  @ApiOperation({ summary: "Give a role built from a template its template's permissions back" })
+  @ApiOkResponse({ type: RoleResponseDto })
+  resetRoleToTemplate(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+    @Param("roleId", ParseUUIDPipe) roleId: string,
+    @Body() input: VersionDto,
+  ) {
+    return this.workspaces.resetRoleToTemplate(actor, workspaceId, roleId, input.version);
+  }
+
   @Delete(":workspaceId/roles/:roleId")
   @ApiOperation({ summary: "Delete an unused custom workspace role" })
   @ApiOkResponse({ type: DeletedRoleResponseDto })
@@ -523,6 +634,15 @@ export class WorkspacesController {
     @Body() input: InviteMemberDto,
   ) {
     return this.workspaces.inviteMember(actor, workspaceId, input);
+  }
+
+  @Get(":workspaceId/seats")
+  @ApiOperation({ summary: "The workspace's seats: limit, in use, reserved by invitations and free" })
+  seats(
+    @CurrentActor() actor: RequestActor,
+    @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
+  ) {
+    return this.workspaces.seats(actor, workspaceId);
   }
 
   @Get(":workspaceId/invitations")

@@ -1,44 +1,59 @@
+import { fromMinor, percentOf, toMinor } from "@/lib/money-exact";
 import type { Quote, QuoteLine } from "./types";
+import { tKey, translatorFor, type Translate } from "@/lib/i18n/keys";
 export const statusLabel: Record<string, string> = {
-  draft: "Draft",
-  internal_review: "Internal review",
-  internal_approved: "Ready to issue",
-  issued: "Awaiting client",
-  accepted: "Accepted",
-  changes_requested: "Changes requested",
-  declined: "Declined",
-  superseded: "Replaced",
-  withdrawn: "Withdrawn",
-  open: "Open",
-  under_review: "Under review",
-  awaiting_decision: "Awaiting decision",
-  resolved: "Resolved",
-  pending: "Upcoming",
-  proof_submitted: "Proof submitted",
-  verified: "Verified",
-  executed: "Signed agreement verified",
-  submitted: "Submitted",
-  approved: "Approved",
-  returned: "Returned",
-  rejected: "Rejected",
-  proposed: "Proposed",
-  client_review: "Client review",
+  draft: tKey("Draft"),
+  internal_review: tKey("Internal review"),
+  internal_approved: tKey("Ready to issue"),
+  issued: tKey("Awaiting client"),
+  accepted: tKey("Accepted"),
+  changes_requested: tKey("Changes requested"),
+  declined: tKey("Declined"),
+  superseded: tKey("Replaced"),
+  withdrawn: tKey("Withdrawn"),
+  expired: tKey("Expired"),
+  open: tKey("Open"),
+  under_review: tKey("Under review"),
+  awaiting_decision: tKey("Awaiting decision"),
+  resolved: tKey("Resolved"),
+  pending: tKey("Upcoming"),
+  proof_submitted: tKey("Proof submitted"),
+  verified: tKey("Verified"),
+  executed: tKey("Signed agreement verified"),
+  submitted: tKey("Submitted"),
+  pending_finance: tKey("Awaiting Finance"),
+  pending_approval: tKey("Awaiting Operations"),
+  approved: tKey("Approved"),
+  returned: tKey("Returned"),
+  rejected: tKey("Rejected"),
+  proposed: tKey("Proposed"),
+  client_review: tKey("Client review"),
 };
-export function money(value: number, currency = "AED") {
-  return new Intl.NumberFormat("en", {
+/** Money in the quote's currency, formatted for `locale` (the workspace region; pass `useDesignSystem().locale`). */
+export function money(value: number, currency: string, locale?: string) {
+  return new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }
+/** Currencies a quotation can be priced in: the workspace's own (pass `useDesignSystem().currency`) first, then every ISO 4217 currency. */
+export function quoteCurrencyChoices(workspaceCurrency: string) {
+  const all = (Intl as { supportedValuesOf?: (key: "currency") => string[] }).supportedValuesOf?.("currency") ?? ["EUR", "GBP", "USD"];
+  return Array.from(new Set([workspaceCurrency, ...all].filter(Boolean)));
+}
 export const roundMoney = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-export function paymentMilestoneAmounts(total: number, terms: { percent: number }[]) {
+/**
+ * Each milestone's amount, exact in the currency's minor units like the server's split: when the shares make
+ * 100%, the last one takes what's left so they add up to the total.
+ */
+export function paymentMilestoneAmounts(total: number, terms: { percent: number }[], currency?: string | null) {
   const complete = Math.abs(terms.reduce((s, t) => s + t.percent, 0) - 100) < .001;
   let allocated = 0;
   return terms.map((term, i) => {
-    const amount = complete && i === terms.length - 1 ? roundMoney(total - allocated) : roundMoney(total * term.percent / 100);
-    allocated = roundMoney(allocated + amount);
+    const amount = complete && i === terms.length - 1 ? fromMinor(toMinor(total, currency) - allocated, currency) : percentOf(total, term.percent, currency);
+    allocated += toMinor(amount, currency);
     return amount;
   });
 }
@@ -53,14 +68,22 @@ export function quoteTotals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
     ),
     net = round(subtotal - q.discount),
     tax = round((net * q.taxRate) / 100);
+  // A charged line without a cost makes any margin false (a 100% margin from missing costs): there is none until every cost is in.
+  const costMissing = quoteCostMissing(includedLines);
   return {
     subtotal,
     cost,
     net,
     tax,
     total: round(net + tax),
-    margin: net ? ((net - cost) / net) * 100 : 0,
+    costMissing,
+    margin: costMissing || !net ? null : ((net - cost) / net) * 100,
   };
+}
+
+/** Whether a charged line has no cost (none entered, or zero while it is sold for something). */
+export function quoteCostMissing(lines: Array<Pick<QuoteLine, "quantity" | "rate" | "unitCost">>) {
+  return lines.some((line) => line.quantity * line.rate > 0 && !((line.unitCost ?? 0) > 0));
 }
 export function quoteSelectionTotals(
   q: Pick<Quote, "lines" | "discount" | "taxRate" | "total">,
@@ -130,7 +153,7 @@ export async function jsonRequest<T>(
   const data = await r.json().catch(() => null);
   if (!r.ok)
     throw new Error(
-      data?.message ?? "Could not complete this action. Please try again.",
+      data?.message ?? tKey("Could not complete this action. Please try again."),
     );
   return data;
 }
@@ -140,18 +163,19 @@ export function commercialPath(workspaceId: string, path: string) {
 export function changedLines(
   current: Pick<Quote, "lines">,
   previous?: Pick<Quote, "lines">,
+  t: Translate = translatorFor({}),
 ) {
   if (!previous) return [];
   const changes: string[] = [];
   for (const l of current.lines) {
     const old = previous.lines.find((o) => o.id === l.id);
-    if (!old) changes.push(`Added: ${l.title}`);
+    if (!old) changes.push(t("Added: {title}", { title: l.title }));
     else if (JSON.stringify(l) !== JSON.stringify(old))
-      changes.push(`Updated: ${l.title}`);
+      changes.push(t("Updated: {title}", { title: l.title }));
   }
   for (const l of previous.lines)
     if (!current.lines.some((n) => n.id === l.id))
-      changes.push(`Removed: ${l.title}`);
+      changes.push(t("Removed: {title}", { title: l.title }));
   return changes;
 }
 

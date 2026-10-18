@@ -34,6 +34,7 @@ describe("variation families and deductions", () => {
     expect(sameOffer(a, b)).toBe(false);
     expect(sameOffer(a, { ...b, familyId: "a" })).toBe(true);
     expect(sameOffer(base, { ...base, id: "v2" })).toBe(true);
+    expect(sameOffer({ ...base, round: "design" }, { ...base, round: "main" })).toBe(false);
   });
   it("requires accepted scope references and prevents over-deducting quantity", () => {
     const d = { quotes: [base] } as CommercialData;

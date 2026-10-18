@@ -1,3 +1,8 @@
+import { priceQuote, PricingError } from "../quotation/quote-pricing";
+import { Dec } from "../catalog-core/decimal";
+import { currencyDecimals } from "../common/currency";
+import { canonicalHash } from "../crm/shared/crm-types";
+import {parseQuotationRichText} from "./quotation-rich-text";
 import { quotationLineVariant, quotationMaterialText } from "./quotation-presentation";
 import { materialsRate } from "./quotation-pricing";
 import { BadRequestException, ConflictException } from "@nestjs/common";
@@ -34,8 +39,8 @@ export const emptyCommercial = (): CommercialData => ({
 export const defaultBrand = (name: string): PortalBrand => ({
   name,
   logo: "",
-  primaryColor: "#76538f",
-  accentColor: "#e99a72",
+  primaryColor: "#292d32",
+  accentColor: "#292d32",
   welcomeTitle: "Your space, coming together.",
   welcomeText:
     "Review your designs, quotations and next steps. Everything in one place.",
@@ -84,30 +89,60 @@ export function phone(input: unknown): string {
     );
   return p;
 }
-export const round = (n: number) =>
-  Math.round((n + Number.EPSILON) * 100) / 100;
-export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate">) {
+/** Two-place money for inputs without a currency (rates typed on a line), exactly: decimal, half away from zero. */
+export const round = (n: number) => Dec.of(n).round(2).toNumber();
+/** An amount as exact money in the currency's minor units (two places without one). */
+export const moneyOf = (n: number, currencyCode?: string) => Dec.of(n).round(currencyCode ? currencyDecimals(currencyCode) : 2);
+export function totals(q: Pick<Quote, "lines" | "discount" | "taxRate"> & Partial<Pick<Quote, "pricing" | "discounts" | "currency">>) {
+  // Quotes edited in the builder carry their pricing policy: price them with the shared engine.
+  if (q.pricing) {
+    let priced;
+    try {
+      priced = priceQuote(q.lines.map((line) => ({
+        id: line.id, quantity: String(line.quantity), rate: String(line.rate), unitCost: line.unitCost === undefined || line.unitCost === null ? null : String(line.unitCost),
+        optional: Boolean(line.optional), areaKey: line.areaId ?? "general", tradeKey: line.workPackageId ?? "none",
+        discountKind: line.discountKind ?? null, discountValue: line.discountValue === undefined || line.discountValue === null ? null : String(line.discountValue),
+        taxRate: line.lineTaxRate === undefined || line.lineTaxRate === null ? String(q.taxRate) : String(line.lineTaxRate),
+        credit: line.changeOp === "omit",
+      })), (q.discounts ?? []).map((discount) => ({ ...discount, value: String(discount.value) })), q.pricing);
+    } catch (error) {
+      if (error instanceof PricingError) throw new BadRequestException(error.message);
+      throw error;
+    }
+    return {
+      subtotal: Number(priced.subtotal), cost: Number(priced.cost ?? 0), discount: Number(priced.discounts.total),
+      net: Number(priced.net), tax: Number(priced.tax), total: Number(priced.total), margin: Number(priced.margin ?? 0),
+      costMissing: priced.cost === null || quoteCostMissing(q.lines.filter((line) => !line.optional && line.changeOp !== "omit")),
+    };
+  }
+  // Older quotes without a pricing policy: the same arithmetic, exact, in the currency's minor units.
+  const places = q.currency ? currencyDecimals(q.currency) : 2;
+  const money = (value: Dec) => value.round(places);
   const includedLines = q.lines.filter((line) => !line.optional);
-  const subtotal = round(
-    includedLines.reduce((s, l) => s + round(l.quantity * l.rate), 0),
-  );
-  const cost = round(
-    includedLines.reduce((s, l) => s + round(l.quantity * (l.unitCost ?? 0)), 0),
-  );
-  const discount = round(q.discount);
-  if (discount > subtotal)
+  const subtotal = money(includedLines.reduce((sum, line) => sum.add(money(Dec.of(line.quantity).mul(line.rate))), Dec.ZERO));
+  const cost = money(includedLines.reduce((sum, line) => sum.add(money(Dec.of(line.quantity).mul(line.unitCost ?? 0))), Dec.ZERO));
+  const discount = money(Dec.of(q.discount));
+  if (discount.cmp(subtotal) > 0)
     throw new BadRequestException("Discount cannot exceed the subtotal.");
-  const net = round(subtotal - discount);
-  const tax = round((net * q.taxRate) / 100);
+  const net = subtotal.sub(discount);
+  const tax = money(net.mul(q.taxRate).div(100));
   return {
-    subtotal,
-    cost,
-    discount,
-    net,
-    tax,
-    total: round(net + tax),
-    margin: net ? round(((net - cost) / net) * 100) : 0,
+    subtotal: subtotal.toNumber(),
+    cost: cost.toNumber(),
+    discount: discount.toNumber(),
+    net: net.toNumber(),
+    tax: tax.toNumber(),
+    total: net.add(tax).toNumber(),
+    margin: net.isZero() ? 0 : net.sub(cost).div(net).mul(100).round(2).toNumber(),
+    costMissing: quoteCostMissing(includedLines),
   };
+}
+/**
+ * Whether a charged line has no cost (none entered, or zero while it sells for something): the margin is then unknown,
+ * never a false 100%.
+ */
+export function quoteCostMissing(lines: Array<Pick<QuoteLine, "quantity" | "rate" | "unitCost">>) {
+  return lines.some((line) => Dec.of(line.quantity).mul(line.rate).cmp(0) > 0 && !(line.unitCost !== null && line.unitCost !== undefined && Dec.of(line.unitCost).cmp(0) > 0));
 }
 export function parseLines(input: unknown): QuoteLine[] {
   if (!Array.isArray(input) || input.length > 300)
@@ -265,10 +300,10 @@ export function actionable(q: Quote, now = new Date()) {
 export function quoteExpired(q: Pick<Quote, "validUntil">, now = new Date()) {
   return Date.parse(q.validUntil + "T23:59:59.999Z") < now.getTime();
 }
-export function freezeHash(q: Quote): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
+/** What a client sees and agrees to; changing any of it needs a new revision. */
+function snapshotFields(q: Quote) {
+  return {
+        round: q.round,
         direction: q.direction,
         familyId: q.familyId,
         definitionBaseline: q.definitionBaseline,
@@ -287,17 +322,34 @@ export function freezeHash(q: Quote): string {
         validUntil: q.validUntil,
         total: q.total,
         brand: q.brand,
+        // Quotes issued before letterheads (PLM-112) keep their hash.
+        ...(q.letterhead === undefined ? {} : { letterhead: q.letterhead }),
         paymentTerms: q.paymentTerms,
         paymentTemplate: q.paymentTemplate,
-      }),
-    )
-    .digest("hex");
+      };
 }
-export function assertQuoteSnapshot(q: Quote) {
+
+/**
+ * Canonical snapshot hash: keys sorted at every level, so a quote reloaded from rows (where key
+ * order can differ) still matches what the client approved.
+ */
+export function freezeHash(q: Quote): string {
+  return canonicalHash(snapshotFields(q));
+}
+
+/** Hashes issued before canonical hashing used insertion order; they remain valid. */
+function legacyFreezeHash(q: Quote): string {
+  return createHash("sha256").update(JSON.stringify(snapshotFields(q))).digest("hex");
+}
+
+export function matchesQuoteSnapshot(q: Quote) {
+  return Boolean(q.hash) && (q.hash === freezeHash(q) || q.hash === legacyFreezeHash(q));
+}
+export function assertQuoteSnapshot(q: Quote): string {
   if (
     !q.hash ||
-    q.hash !== freezeHash(q) ||
-    round(totals(q).total) !== round(q.total)
+    !matchesQuoteSnapshot(q) ||
+    moneyOf(totals(q).total, q.currency).cmp(moneyOf(q.total, q.currency)) !== 0
   )
     throw new ConflictException(
       "This quotation no longer matches its issued snapshot. Ask the project team to issue a new revision.",
@@ -333,15 +385,15 @@ export function quoteDecisionEvidence(
       line.optional && accepted.has(line.id) ? { ...line, optional: false } : line,
     ),
   });
-  const baseTotal = round(q.total);
-  const acceptedTotal = round(selectedTotals.total);
+  const baseTotal = moneyOf(q.total, q.currency);
+  const acceptedTotal = moneyOf(selectedTotals.total, q.currency);
   return {
     decision,
     quoteHash,
     selectedOptionLineIds: selected,
-    baseTotal,
-    optionsTotal: decision === "accept" ? round(acceptedTotal - baseTotal) : 0,
-    ...(decision === "accept" ? { acceptedTotal } : {}),
+    baseTotal: baseTotal.toNumber(),
+    optionsTotal: decision === "accept" ? acceptedTotal.sub(baseTotal).toNumber() : 0,
+    ...(decision === "accept" ? { acceptedTotal: acceptedTotal.toNumber() } : {}),
     decidedAt,
     decidedBy,
     ...(note ? { note } : {}),
@@ -435,6 +487,7 @@ export function newRequest(
   detail: string,
   quoteId?: string,
   structured?: ChangeRequest["decisionRequest"],
+  raisedBy?: ChangeRequest["raisedBy"],
 ): ChangeRequest {
   const request: ChangeRequest = {
     id: randomUUID(),
@@ -449,6 +502,7 @@ export function newRequest(
     comments: [],
     createdAt: new Date().toISOString(),
     ...(structured ? { decisionRequest: structured } : {}),
+    ...(raisedBy?.name ? { raisedBy } : {}),
   };
   data.requests.push(request);
   return request;
@@ -546,6 +600,13 @@ export function parsePaymentTerms(
   return rows;
 }
 
+/** The firm's logo on a proposal: an embedded picture, or the tenant's own logo address (never an outside link). */
+function companyLogo(value: unknown): string {
+  const logo = text(value ?? "", 500000);
+  if (!logo || /^\/api\/auth\/tenant-logo\/[a-z0-9-]+\?v=[0-9a-f-]+$/i.test(logo) || /^data:image\/(png|jpeg|webp);base64,[a-z\d+/=]+$/i.test(logo)) return logo;
+  throw new BadRequestException("Use the firm's own logo on the proposal.");
+}
+
 export function parseCover(input: unknown) {
   const c = object(input);
   const image = (key: string) => {
@@ -627,6 +688,7 @@ export function parseQuotePresentation(input: unknown): QuotePresentation {
             ...common,
             type: "text" as const,
             text: text(element.text ?? "", 4000),
+            ...(element.richText !== undefined ? { richText: parseQuotationRichText(element.richText) } : {}),
             color: canvasHex(element.color, "#000000"),
             fontSize: number(element.fontSize ?? 24, 96, 8),
             align: (element.align === "center" || element.align === "right"
@@ -648,8 +710,42 @@ export function parseQuotePresentation(input: unknown): QuotePresentation {
   });
   if (new Set(pages.map((page) => page.id)).size !== pages.length)
     throw new BadRequestException("Give every quotation page a unique ID.");
+  let pageOrder: string[] | undefined;
+  if (value.pageOrder !== undefined) {
+    const allowed = new Set(["cover", "scope", "summary", "payments", "terms", "acceptance", ...pages.filter(page => page.kind === "custom").map(page => page.id)]);
+    if (!Array.isArray(value.pageOrder) || !value.pageOrder.length || value.pageOrder.length > 40 ||
+      value.pageOrder.some(id => typeof id !== "string" || !allowed.has(id)) ||
+      new Set(value.pageOrder).size !== value.pageOrder.length || !value.pageOrder.includes("scope"))
+      throw new BadRequestException("Choose unique quotation pages and keep the scope section.");
+    pageOrder = value.pageOrder as string[];
+  }
+  let hiddenPages: string[] | undefined;
+  if (value.hiddenPages !== undefined) {
+    const allowed = new Set(["cover","scope","summary","payments","terms","acceptance",...pages.map(page=>page.id)]);
+    if (!Array.isArray(value.hiddenPages) || value.hiddenPages.length>40 || value.hiddenPages.some(id=>typeof id!=="string" || !allowed.has(id))) throw new BadRequestException("Choose valid pages to hide.");
+    hiddenPages=[...new Set(value.hiddenPages as string[])];
+  }
+  let scopeColumns: QuotePresentation["scopeColumns"];
+  if (value.scopeColumns !== undefined) {
+    const config = object(value.scopeColumns);
+    const allowed = ['index','image','item','description','dimensions','quantity','unit','rate','amount','actions'];
+    if (!Array.isArray(config.hidden) || config.hidden.some(id => !allowed.includes(String(id))) || !Array.isArray(config.custom) || config.custom.length > 20)
+      throw new BadRequestException("Use valid columns and up to 20 custom columns.");
+    const custom = config.custom.map(raw => {
+      const column = object(raw), values = object(column.values);
+      if (Object.keys(values).length > 300) throw new BadRequestException("Use up to 300 custom cells per column.");
+      return { id: text(column.id, 80, true), name: text(column.name, 80, true), values: Object.fromEntries(Object.entries(values).map(([id, content]) => [text(id, 80, true), text(content, 2000)])) };
+    });
+    if (new Set(custom.map(column => column.id)).size !== custom.length) throw new BadRequestException("Use unique column IDs.");
+    scopeColumns = { hidden: [...new Set(config.hidden as string[])], custom };
+  }
   return {
     version: 1,
+    ...(value.template === 'palm-reference-v1' ? {template: 'palm-reference-v1' as const} : {}),
+    ...(value.details !== undefined ? {details: Object.fromEntries(Object.entries(object(value.details)).filter(([key]) => ['companyName','clientName','clientPhone','clientEmail','projectName','location','reference','date','preparedBy','estimator','manager','clientLogo','companyLogo'].includes(key)).map(([key, content]) => [key, key === 'clientLogo' ? image(content) : key === 'companyLogo' ? companyLogo(content) : text(content, 500)]))} : {}),
+    ...(pageOrder ? { pageOrder } : {}),
+    ...(hiddenPages ? { hiddenPages } : {}),
+    ...(scopeColumns ? { scopeColumns } : {}),
     pageBackground: canvasHex(value.pageBackground, "#E4E3DE"),
     textColor: canvasHex(value.textColor, "#000000"),
     accentColor: canvasHex(value.accentColor, "#000000"),

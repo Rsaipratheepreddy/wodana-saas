@@ -1,0 +1,17 @@
+/* The client's "I've paid" reports on a milestone, for finance. */
+.cell { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); }
+.none { color: var(--wd-color-text-tertiary); }
+.body { display: grid; gap: var(--wd-space-4); }
+.hint { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.reports { display: grid; gap: var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.report { display: grid; gap: var(--wd-space-3); padding-block-end: var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.report:last-child { padding-block-end: 0; border-block-end: 0; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
+.spacer { flex: 1; }
+.muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); margin: 0; }
+.facts > div { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.facts > div[data-wide] { grid-column: 1 / -1; }
+.facts dt { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.facts dd { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .facts { grid-template-columns: minmax(0, 1fr); } }

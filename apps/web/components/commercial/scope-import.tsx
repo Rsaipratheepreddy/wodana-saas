@@ -1,7 +1,9 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { translateKnown } from "@/lib/i18n/keys";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { DataGrid, ControlledModalDialog } from "@/design-system";
+import { Button, Checkbox, DataGrid, ControlledModalDialog, Skeleton } from "@/design-system";
 import { caseRequest, type CaseContent } from "@/lib/pre-project/content";
 import type { Quote } from "@/lib/commercial/types";
 import s from "./commercial.module.css";
@@ -22,11 +24,14 @@ export function ScopeImport({
   busy: boolean;
   run: (action: string, b: Record<string, unknown>) => Promise<boolean>;
 }) {
+  const t = useT();
   const [content, setContent] = useState<CaseContent | null>(null),
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(false);
+  const [selected,setSelected] = useState<string[]>([]);
   useEffect(() => {
     if (!open) return;
+    setContent(null);setError('');setSelected([]);setRefresh(false);
     let live = true;
     caseRequest<CaseContent>(workspaceId, caseId, "brief")
       .then((c) => {
@@ -54,75 +59,68 @@ export function ScopeImport({
       size="lg"
       isOpen={open}
       onOpenChange={(v) => !v && onClose()}
-      title="Bring in Requirement gathering scope"
+      title={t("Import requirements")}
+      footer={
+        <div className="wd-dialog-actions">
+          <Button isDisabled={busy} onPress={onClose}>{t("Cancel")}</Button>
+          <Button
+            variant="primary"
+            isDisabled={busy || !selected.length}
+            isLoading={busy}
+            onPress={async () => {
+              if (await run("import_scope", { refreshExisting: refresh, entryIds: selected }))
+                onClose();
+              else
+                setError(
+                  t("Scope could not be imported. Close this dialog to review the error, refresh, and try again."),
+                );
+            }}
+          >
+            {selected.length ? t("Import selected requirements ({count})", { count: selected.length }) : t("Import selected requirements")}
+          </Button>
+        </div>
+      }
     >
       <div className={s.form}>
         {error && (
           <p className={s.error} role="alert">
-            {error}
+            {translateKnown(t, error)}
           </p>
         )}
-        <p className={s.muted}>
-          Included room items, specifications and selected materials carry into
-          the BOQ. Selling rates stay under your control.
-        </p>
-        {!content && !error && <p>Loading Requirement gathering…</p>}
-        <DataGrid ariaLabel="Requirement import" data={included} getRowId={row=>row.id} searchLabel="Search requirement import" exportFileName="requirement-import.csv" selectable={false} columns={[{id:"title",header:"Room / item",size:320,accessorFn:(e)=>`${e.roomName ?? "General"} ${e.title}`,cell:({row:{original:e}})=>{return <>
+        {!content && !error && <Skeleton lines={5} />}
+        {included.length > 0 && <DataGrid compactToolbar rowNumbers={false} ariaLabel={t("Requirement import")} data={included} getRowId={row=>row.id} searchLabel={t("Search requirement import")} exportFileName="requirement-import.csv" selectable={false} columns={[{id:"include",header:t("Include"),size:80,cell:({row:{original:e}})=><Checkbox aria-label={t("Include {title}", { title: e.title })} isDisabled={busy} isSelected={selected.includes(e.id)} onChange={checked=>setSelected(ids=>checked?[...ids,e.id]:ids.filter(id=>id!==e.id))}/>},{id:"title",header:t("Room / item"),size:320,accessorFn:(e)=>`${e.roomName ?? t("General")} ${e.title}`,cell:({row:{original:e}})=>{return <>
                       <strong>{e.title}</strong>
                       <small className={s.detail}>
-                        {e.roomName ?? "General"}
+                        {e.roomName ?? t("General")}
                       </small>
                     </>;}},
-{id:"quantity",header:"Quantity",size:130,accessorFn:(e)=>e.quantity ?? 1,cell:({row:{original:e}})=>{return <>
+{id:"quantity",header:t("Quantity"),size:130,accessorFn:(e)=>e.quantity ?? 1,cell:({row:{original:e}})=>{return <>
                       {e.quantity ?? 1} {e.unit || "nos"}
                     </>;}},
-{id:"status",header:"In this quotation",size:200,accessorFn:(e)=>!quote.lines.some(l=>l.scopeId===e.id)?"New item":quote.lines.some(l=>l.scopeId===e.id&&(l.scopeVersion!==e.version||l.specificationVersion!==e.specification?.version))?"Source updated":"Already included",cell:({row:{original:e}})=>{const prior=quote.lines.find(l=>l.scopeId===e.id);return <>
+{id:"status",header:t("In this quotation"),size:200,accessorFn:(e)=>!quote.lines.some(l=>l.scopeId===e.id)?t("New item"):quote.lines.some(l=>l.scopeId===e.id&&(l.scopeVersion!==e.version||l.specificationVersion!==e.specification?.version))?t("Source updated"):t("Already included"),cell:({row:{original:e}})=>{const prior=quote.lines.find(l=>l.scopeId===e.id);return <>
                       <span className={s.status}>
                         {!prior
-                          ? "New item"
+                          ? t("New item")
                           : prior.scopeVersion !== e.version ||
                               prior.specificationVersion !==
                                 e.specification?.version
-                            ? "Source updated"
-                            : "Already included"}
+                            ? t("Source updated")
+                            : t("Already included")}
                       </span>
-                    </>;}}]}/>
+                    </>;}}]}/>}
         {content && !included.length && (
           <p className={s.notice}>
-            No included requirements yet. Mark the intended items Included in{" "}
-            <Link href={`/workspace/pre-projects/cases/${caseId}/requirements`}>
-              Requirement gathering
-            </Link>
-            , or add rooms from your catalogs.
+            {(() => {
+              // One sentence for translators; {link} marks where the Requirements link goes.
+              const [before, after = ""] = t("No included requirements yet. Mark the intended items Included in {link}.").split("{link}");
+              return <>{before}<Link href={`/workspace/pre-projects/cases/${caseId}/requirements`}>{t("Requirements")}</Link>{after}</>;
+            })()}
           </p>
         )}
-        <label className={s.check}>
-          <input
-            type="checkbox"
-            checked={refresh}
-            onChange={(e) => setRefresh(e.target.checked)}
-          />
-          Update previously imported descriptions, quantities and materials.
-          Keep their selling rates and costs.
-        </label>
-        <p className={s.muted}>
-          Existing quotation items are retained if they were removed from
-          Requirement gathering; review those items before issuing.
-        </p>
-        <button
-          className={s.primary}
-          disabled={busy || !included.length}
-          onClick={async () => {
-            if (await run("import_scope", { refreshExisting: refresh }))
-              onClose();
-            else
-              setError(
-                "Scope could not be imported. Close this dialog to review the error, refresh, and try again.",
-              );
-          }}
-        >
-          Apply included scope
-        </button>
+        {quote.lines.some(line => line.scopeId) && <Checkbox isSelected={refresh} onChange={setRefresh}>
+          {t("Update existing imported items, keeping their rates and costs")}</Checkbox>}
+        {quote.lines.some(line => line.scopeId) && <p className={s.muted}>
+          {t("Existing quotation items are retained if they were removed from Requirements; review those items before issuing.")}</p>}
       </div>
     </ControlledModalDialog>
   );

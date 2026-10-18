@@ -2,28 +2,32 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Button, Callout, ControlledModalDialog } from "@/design-system";
-import { caseRequest } from "@/lib/pre-project/content";
-import type { DefinitionPageData, DefinitionState, ReadinessState } from "@/lib/pre-project/definition";
+import { Badge, Button, DateField, EmptyState, ErrorState, FormDialog, FormSection, InlineNotice, RecordTable, SelectField, TextInput, TextAreaField, useDesignSystem } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { caseRequest, scopeLabels } from "@/lib/pre-project/content";
+import type { DefinitionPageData, DefinitionState } from "@/lib/pre-project/definition";
 import styles from "./definition-page.module.css";
+import { parseDateTime } from "@internationalized/date";
+import { tKey } from "@/lib/i18n/keys";
 
-const statusText: Record<string, string> = {
-  awaiting_confirmation: "Awaiting client confirmation",
-  confirmed: "Client confirmed",
-  changes_requested: "Changes requested",
-  superseded: "Outdated version",
-};
+const HISTORY_LABEL: Record<string, string> = { awaiting_confirmation: tKey("Waiting for the client"), confirmed: tKey("Signed off"), changes_requested: tKey("Asked for changes"), superseded: tKey("Out of date") };
 const localDecisionTime = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60_000 + 999).toISOString().slice(0, 19);
 
 export function DefinitionPage({ initial }: { initial: DefinitionPageData }) {
-  if ("error" in initial) return <Callout tone="warning" title="Scope confirmation unavailable">{initial.error}</Callout>;
-  return <DefinitionContent initial={initial} />;
+  const t = useT();
+  if ("error" in initial) return <div className={styles.page}><ErrorState title={t("Scope sign-off didn't load")} description={initial.error} /></div>;
+  return <ScopeSignOff initial={initial} />;
 }
 
-function DefinitionContent({ initial }: { initial: Extract<DefinitionPageData, { workspaceId: string }> }) {
+/**
+ * Scope sign-off: the requirements in scope, as the client will see them, sent for the client to
+ * confirm before the quote. Each send is a numbered version; the client's answer is recorded on it.
+ */
+function ScopeSignOff({ initial }: { initial: Extract<DefinitionPageData, { workspaceId: string }> }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const { workspaceId, caseId } = initial;
   const [definition, setDefinition] = useState(initial.definition);
-  const [readiness, setReadiness] = useState(initial.readiness);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -38,14 +42,10 @@ function DefinitionContent({ initial }: { initial: Extract<DefinitionPageData, {
   const decisionId = useRef(crypto.randomUUID());
   const current = definition.current;
   const requirements = `/workspace/pre-projects/cases/${caseId}/requirements`;
+  const date = (value: string) => new Intl.DateTimeFormat(locale, { timeZone, day: "numeric", month: "short", year: "numeric" }).format(new Date(value));
 
   async function reload() {
-    const [nextDefinition, nextReadiness] = await Promise.all([
-      caseRequest<DefinitionState>(workspaceId, caseId, "definition-baselines"),
-      caseRequest<ReadinessState>(workspaceId, caseId, "readiness?target=pricing"),
-    ]);
-    setDefinition(nextDefinition);
-    setReadiness(nextReadiness);
+    setDefinition(await caseRequest<DefinitionState>(workspaceId, caseId, "definition-baselines"));
   }
 
   async function publish() {
@@ -54,75 +54,85 @@ function DefinitionContent({ initial }: { initial: Extract<DefinitionPageData, {
       await caseRequest(workspaceId, caseId, "definition-baselines", "POST", { requestId: publishId.current, sourceHash: definition.draft.sourceHash, message: "" });
       await reload();
       publishId.current = crypto.randomUUID();
-      setNotice("Current scope sent for client confirmation.");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Scope could not be published."); }
+      setNotice(t("Sent to the client for sign-off."));
+    } catch (failure) { setError(failure instanceof Error ? failure.message : t("Could not send the scope.")); }
     finally { setBusy(false); }
   }
 
-  async function recordDecision(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!current) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      await caseRequest(workspaceId, caseId, `definition-baselines/${current.id}/decisions`, "POST", {
-        requestId: decisionId.current, decision, decisionBy: decisionBy.trim(), channel,
-        evidence: evidence.trim(), note: note.trim(), decidedAt: new Date(decidedAt).toISOString(),
-      });
-      await reload();
-      decisionId.current = crypto.randomUUID();
-      setDecisionOpen(false);
-      setNotice(decision === "confirmed" ? "Client confirmation recorded." : "Client changes recorded.");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Decision could not be recorded."); }
-    finally { setBusy(false); }
+  async function recordDecision() {
+    if (!current || !definition.canRecordClientDecision) return;
+    if (!decidedAt || !decisionBy.trim() || !evidence.trim() || (decision === "changes_requested" && !note.trim()))
+      throw new Error(t("Enter the client's name, when they answered and how. Say what they want changed."));
+    setError(""); setNotice("");
+    await caseRequest(workspaceId, caseId, `definition-baselines/${current.id}/decisions`, "POST", {
+      requestId: decisionId.current, decision, decisionBy: decisionBy.trim(), channel,
+      evidence: evidence.trim(), note: note.trim(), decidedAt: new Date(decidedAt).toISOString(),
+    });
+    await reload();
+    decisionId.current = crypto.randomUUID();
+    setDecisionOpen(false);
+    setNotice(decision === "confirmed" ? t("Sign-off recorded.") : t("The client's changes are recorded."));
   }
 
   const canPublish = definition.canPublish && definition.caseStatus === "active" && definition.draft.readyToPublish && !current?.current;
   const canRecord = definition.canRecordClientDecision && current?.current && current.status === "awaiting_confirmation";
-  const included = current?.snapshot.definition.items.filter((item) => item.scopeStatus === "included") ?? [];
-  const changes=definition.draft.changes;
+  const status = !current ? { tone: "neutral" as const, label: t("Not sent yet") }
+    : !current.current ? { tone: "warning" as const, label: t("Changed since version {number} was sent", { number: current.number }) }
+      : current.status === "confirmed" ? { tone: "success" as const, label: current.decision ? t("Signed off by {name}", { name: current.decision.decisionBy }) : t("Signed off") }
+        : current.status === "changes_requested" ? { tone: "warning" as const, label: t("The client asked for changes") }
+          : { tone: "info" as const, label: t("Waiting for the client") };
+  const items = definition.draft.items ?? current?.snapshot.definition.items ?? [];
+  const added = new Set(definition.draft.changes?.items.added ?? []);
+  const changed = new Set(definition.draft.changes?.items.changed ?? []);
+  const rows = [...items].sort((a, b) => Number(b.scopeStatus === "included") - Number(a.scopeStatus === "included") || (a.roomName ?? "").localeCompare(b.roomName ?? "") || a.title.localeCompare(b.title));
+  const included = items.filter((item) => item.scopeStatus === "included").length;
   return <div className={styles.page}>
-    {error && !decisionOpen ? <Callout tone="danger" title="Could not update scope">{error}</Callout> : null}
-    {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
-    <div className={styles.summary}>
-      <div><strong>{current?.current ? statusText[current.status] : current ? "Scope changed since publication" : "Not published"}</strong><span>{current ? `Version ${current.number} · ${included.length} included item${included.length === 1 ? "" : "s"}` : "Complete the requirements before requesting client confirmation."}</span></div>
-      <div className={styles.actions}>
-        <Button size="compact" onPress={() => void reload().catch((failure) => setError(failure instanceof Error ? failure.message : "Could not refresh."))} isDisabled={busy}>Refresh</Button>
-        {canPublish ? <Button size="compact" variant="primary" onPress={() => void publish()} isLoading={busy}>Send for confirmation</Button> : null}
-        {canRecord ? <Button size="compact" onPress={() => { setError(""); setDecidedAt(localDecisionTime()); setDecisionOpen(true); }}>Record offline decision</Button> : null}
-      </div>
+    <div className={styles.bar}>
+      <Badge tone={status.tone}>{status.label}</Badge>
+      <span className={styles.meta}>{current ? t("Version {number} · sent {date}", { number: current.number, date: date(current.publishedAt) }) : t("{count} in scope", { count: included })}</span>
+      <span className={styles.spacer} />
+      {canRecord ? <Button size="compact" onPress={() => { setError(""); setDecision("confirmed"); setDecisionBy(""); setChannel("meeting"); setEvidence(""); setNote(""); setDecidedAt(localDecisionTime()); setDecisionOpen(true); }}>{t("Record the client's answer")}</Button> : null}
+      {canPublish ? <Button size="compact" variant="primary" onPress={() => void publish()} isLoading={busy}>{current ? t("Send the updated scope") : t("Send to client for sign-off")}</Button>
+        : !current?.current && !definition.canPublish ? <span className={styles.meta}>{t("Someone who can send quotes sends the scope")}</span>
+          : !current?.current && definition.caseStatus !== "active" ? <span className={styles.meta}>{t("Resume the enquiry to send the scope")}</span> : null}
     </div>
-
-    {definition.draft.issues.length ? <section className={styles.section} aria-label="Scope to finish"><div className={styles.sectionTitle}><h2>Before sending</h2><Link href={requirements}>Open requirements</Link></div><ul className={styles.list}>{definition.draft.issues.map((issue, index) => <li key={`${issue.code}-${issue.scopeItemId ?? index}`}>{issue.detail}</li>)}</ul></section> : null}
-
-    {changes?.total ? <section className={styles.section} aria-label="Changes since published scope"><div className={styles.sectionTitle}><h2>Changes since V{current?.number}</h2><span>{changes.total} update{changes.total===1?'':'s'}</span></div><ul className={styles.list}>
-      {changes.briefChanged?<li>Client brief updated</li>:null}
-      {changes.rooms.added.length?<li>Rooms added · {changes.rooms.added.join(', ')}</li>:null}
-      {changes.rooms.changed.length?<li>Rooms updated · {changes.rooms.changed.join(', ')}</li>:null}
-      {changes.rooms.removed.length?<li>Rooms removed · {changes.rooms.removed.join(', ')}</li>:null}
-      {changes.items.added.length?<li>Scope added · {changes.items.added.join(', ')}</li>:null}
-      {changes.items.changed.length?<li>Scope updated · {changes.items.changed.join(', ')}</li>:null}
-      {changes.items.removed.length?<li>Scope removed · {changes.items.removed.join(', ')}</li>:null}
-    </ul></section>:null}
-
-    {current ? <section className={styles.section} aria-label="Published scope"><div className={styles.sectionTitle}><h2>Published scope · V{current.number}</h2><span>{new Date(current.publishedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span></div>
-      {current.decision ? <p className={styles.meta}>{statusText[current.status]} by {current.decision.decisionBy} · {current.decision.channel}{current.decision.note ? ` · ${current.decision.note}` : ""}</p> : <p className={styles.meta}>Shared for the client’s decision. A portal approver can confirm this exact version with verification.</p>}
-      <details className={styles.details}><summary>Review the published items</summary><ul className={styles.items}>{current.snapshot.definition.items.map((item) => <li key={item.id}><span><strong>{item.title}</strong><small>{item.roomName ?? "Whole project"} · {item.scopeStatus}{item.quantity ? ` · ${item.quantity} ${item.unit}` : ""}</small></span>{item.specification?.refinedRequirement ? <p>{item.specification.refinedRequirement}</p> : null}</li>)}</ul></details>
+    {error && !decisionOpen ? <InlineNotice tone="error" message={error} /> : null}
+    {notice ? <InlineNotice tone="success" message={notice} /> : null}
+    {current?.decision?.note && current.current ? <InlineNotice tone={current.status === "confirmed" ? "success" : "info"} message={current.decision.note} /> : null}
+    {definition.draft.issues.length ? <section className={styles.issues} aria-label={t("Finish before sending")}>
+      <h2>{t("Finish before sending")}</h2>
+      <ul>{definition.draft.issues.map((issue, index) => <li key={`${issue.code}-${issue.scopeItemId ?? index}`}>{issue.detail}</li>)}</ul>
+      <Link href={requirements}>{t("Open requirements")}</Link>
+    </section> : null}
+    {items.length ? <RecordTable ariaLabel={t("Scope")} data={rows} getRowId={(item) => item.id} showToolbar={false} showFooter={false} rowNumbers={false} selectable={false} wrapText
+      columns={[
+        { id: "title", header: t("Requirement"), size: 320, accessorFn: (item) => item.title, meta: { primary: true },
+          cell: ({ row: { original: item } }) => <span className={styles.item}>{item.title}{added.has(item.title) ? <Badge tone="info">{t("New")}</Badge> : changed.has(item.title) ? <Badge tone="info">{t("Changed")}</Badge> : null}</span> },
+        { id: "room", header: t("Area"), size: 180, accessorFn: (item) => item.roomName ?? t("General") },
+        { id: "quantity", header: t("Qty"), size: 110, accessorFn: (item) => item.quantity, cell: ({ row: { original: item } }) => item.quantity === null ? "—" : `${new Intl.NumberFormat(locale).format(item.quantity)} ${item.unit}` },
+        { id: "scope", header: t("Scope"), size: 150, accessorFn: (item) => item.scopeStatus,
+          cell: ({ row: { original: item } }) => <Badge tone={item.scopeStatus === "included" ? "success" : item.scopeStatus === "undecided" ? "warning" : "neutral"}>{t((scopeLabels[item.scopeStatus] ?? item.scopeStatus) as never)}</Badge> },
+      ]} /> : <EmptyState title={t("No requirements yet")} action={<Link className="wd-button" data-size="compact" data-variant="primary" href={requirements}>{t("Open requirements")}</Link>} />}
+    {definition.history.length ? <section className={styles.history} aria-label={t("Sent versions")}>
+      <h2>{t("Sent versions")}</h2>
+      <ol>{definition.history.map((version) => <li key={version.id}>
+        <strong>{t("Version {number}", { number: version.number })}</strong>
+        <span>{date(version.publishedAt)}</span>
+        <span>{t((HISTORY_LABEL[version.status] ?? version.status) as never)}{version.decision ? ` · ${version.decision.decisionBy}` : ""}</span>
+      </li>)}</ol>
     </section> : null}
 
-    <section className={styles.section} aria-label="Quotation readiness"><div className={styles.sectionTitle}><h2>Quotation readiness</h2><span>{readiness.ready ? "Ready" : `${readiness.summary.blockerCount} to resolve`}</span></div>
-      {!readiness.ready ? <ul className={styles.list}>{readiness.blockers.map((blocker, index) => <li key={`${blocker.code}-${blocker.scopeItemId ?? index}`}>{blocker.detail}</li>)}</ul> : <p className={styles.meta}>The current scope passes the pricing checks.</p>}
-    </section>
-
-    <ControlledModalDialog isOpen={decisionOpen} title="Record client decision" isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) setDecisionOpen(false); }} footer={<div className={styles.actions}><Button isDisabled={busy} onPress={() => setDecisionOpen(false)}>Cancel</Button><Button type="submit" form="definition-decision" variant="primary" isLoading={busy}>Save decision</Button></div>}>
-      <form id="definition-decision" className={styles.form} onSubmit={(event) => void recordDecision(event)}>
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        <label>Decision<select value={decision} onChange={(event) => setDecision(event.target.value as typeof decision)}><option value="confirmed">Confirmed</option><option value="changes_requested">Changes requested</option></select></label>
-        <label>Client name<input required maxLength={240} value={decisionBy} onChange={(event) => setDecisionBy(event.target.value)} /></label>
-        <label>Received via<select value={channel} onChange={(event) => setChannel(event.target.value)}>{["meeting", "email", "phone", "whatsapp", "signed_document", "other"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select></label>
-        <label>When received<input required type="datetime-local" step="1" value={decidedAt} onChange={(event) => setDecidedAt(event.target.value)} /></label>
-        <label>Evidence reference<input required maxLength={3000} placeholder="Email subject, meeting record or signed file reference" value={evidence} onChange={(event) => setEvidence(event.target.value)} /></label>
-        <label>Remarks{decision === "changes_requested" ? " *" : ""}<textarea required={decision === "changes_requested"} maxLength={5000} value={note} onChange={(event) => setNote(event.target.value)} /></label>
-      </form>
-    </ControlledModalDialog>
+    {decisionOpen && <FormDialog title={t("Record the client's answer")} isDirty={Boolean(decisionBy || evidence || note)} onClose={() => setDecisionOpen(false)} submitLabel={t("Save")} onSubmit={recordDecision}>
+      <FormSection>
+        <SelectField label={t("Answer")} isRequired selectedKey={decision} onSelectionChange={key => key && setDecision(key as typeof decision)} items={[{id:"confirmed",label:t("Signed off")},{id:"changes_requested",label:t("Wants changes")}]} />
+        <TextInput label={t("Client name")} isRequired maxLength={240} value={decisionBy} onChange={setDecisionBy} />
+        <TextAreaField label={t("Remarks")} isRequired={decision === "changes_requested"} maxLength={5000} value={note} onChange={setNote} />
+      </FormSection>
+      <FormSection title={t("Proof")}>
+        <SelectField label={t("Received by")} isRequired selectedKey={channel} onSelectionChange={key => key && setChannel(String(key))} items={[{id:"meeting",label:t("Meeting")},{id:"email",label:t("Email")},{id:"phone",label:t("Phone")},{id:"whatsapp",label:t("WhatsApp")},{id:"signed_document",label:t("Signed document")},{id:"other",label:t("Other")}]} />
+        <DateField label={t("When")} isRequired granularity="second" value={decidedAt ? parseDateTime(decidedAt) : null} onChange={value => setDecidedAt(value?.toString() ?? "")} />
+        <TextInput label={t("Evidence")} isRequired maxLength={3000} placeholder={t("Email, meeting note or signed file")} value={evidence} onChange={setEvidence} />
+      </FormSection>
+    </FormDialog>}
   </div>;
 }

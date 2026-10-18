@@ -1,0 +1,41 @@
+/* The Deal File (PLM-066 / PLM-102 / PLM-123): KPI tiles, then titled section cards. */
+.muted { margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.risks { color: var(--wd-color-warning); }
+.good { color: var(--wd-color-success); }
+.attention { color: var(--wd-color-warning); }
+.count { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+
+/* Requirements: a small group heading, then one row each (name and count at the start, its state at the end). */
+.group { display: grid; gap: var(--wd-space-1); }
+.group + .group { padding-block-start: var(--wd-space-3); }
+.group h4 { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }
+.sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); column-gap: var(--wd-space-6); margin: 0; padding: 0; list-style: none; }
+.sections li { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-control-md);
+  border-block-end: 1px solid var(--wd-color-structural-divider); font-size: var(--wd-text-sm); }
+.sectionName { display: inline-flex; align-items: baseline; gap: var(--wd-space-1-5); min-inline-size: 0; color: var(--wd-color-text); overflow-wrap: anywhere; }
+.sectionName a { color: var(--wd-color-text); text-decoration: none; }
+.sectionName a:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.sectionName small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+
+/* Closing. */
+.closingText { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.escalated { margin: 0; color: var(--wd-color-warning); font-size: var(--wd-text-xs); }
+
+/* The Deal File's page: the tiles, then the work (next step, requirements, approvals) beside the facts (money,
+   commission, closing, team); one column on a narrow screen, the next step first. */
+.overview { container-type: inline-size; display: grid; gap: var(--wd-phi-3); min-inline-size: 0; padding-block: var(--wd-space-2); }
+.columns { display: grid; gap: var(--wd-phi-3); align-items: start; }
+.column { display: grid; align-content: start; gap: var(--wd-phi-3); min-inline-size: 0; }
+@container (min-width: 56rem) {
+  .columns { grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); }
+}
+.stepForm { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.stepNote { margin: 0; padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-sm); background: var(--wd-color-warning-subtle); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.stepActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.stepActions > [role="status"] { margin-inline-end: auto; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.checklist { display: grid; gap: var(--wd-space-1); }
+/* Who the step waits for: their avatars, then their names. */
+.waiting { display: inline-flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.avatars { display: inline-flex; flex: none; }
+.avatars > * + * { margin-inline-start: calc(var(--wd-space-1-5) * -1); }
+.subhead { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); }

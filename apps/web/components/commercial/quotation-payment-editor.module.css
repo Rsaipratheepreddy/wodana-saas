@@ -1,0 +1,8 @@
+.editor { display: grid; gap: var(--wd-space-4); min-inline-size: 0; font-size: var(--wd-text-xs); }
+.overview { display: flex; flex-wrap: wrap; gap: var(--wd-space-8); padding-block-end: var(--wd-space-2); color: var(--wd-color-text-secondary); }
+.overview span { display: grid; gap: var(--wd-space-1); }
+.overview strong { color: var(--wd-color-text); font-size: var(--wd-text-md); font-variant-numeric: tabular-nums; }
+.actions { display: flex; gap: var(--wd-space-0-5); }
+.footer { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-4); }
+.footer > span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.footer [data-complete="true"] { color: var(--wd-color-action-primary); }

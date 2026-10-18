@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { PoolClient } from "pg";
 import { ActorUser, RequestActor } from "../auth/actor";
 import { IdentityService } from "../auth/identity.service";
+import { viewAsPermissionsFor } from "../auth/view-as/view-as.context";
 import { DatabaseService } from "../database/database.service";
 import { tenantModuleForPermission } from "./tenant-operations.domain";
 
@@ -57,7 +58,8 @@ export class WorkspaceAccessService {
         [workspaceId, actorUser.userId, permitted],
       );
 
-      if (!result.rows[0]?.granted) {
+      const viewing = viewAsPermissionsFor(workspaceId, actorUser.userId);
+      if (!result.rows[0]?.granted || (viewing && !permitted.some((permission) => viewing.has(permission)))) {
         throw new ForbiddenException(`Any permission required: ${permissions.join(", ")}`);
       }
       return work(client, actorUser);
@@ -90,7 +92,9 @@ export class WorkspaceAccessService {
         [workspaceId, actorUser.userId, permitted],
       );
 
-      if (result.rows[0]?.granted !== new Set(permissions).size) {
+      const viewing = viewAsPermissionsFor(workspaceId, actorUser.userId);
+      if (result.rows[0]?.granted !== new Set(permissions).size
+        || (viewing && !permissions.every((permission) => viewing.has(permission)))) {
         throw new ForbiddenException(`Permissions required: ${permissions.join(", ")}`);
       }
       return work(client, actorUser);
@@ -105,6 +109,9 @@ export class WorkspaceAccessService {
   ): Promise<boolean> {
     const permitted = await this.effectivePermissions(client, workspaceId, [permission]);
     if (!permitted.length) return false;
+    // Viewing as someone: what the view allows (their permissions narrowed to the viewer's), or a role preview's.
+    const viewing = viewAsPermissionsFor(workspaceId, userId);
+    if (viewing && !viewing.has(permission)) return false;
     const result = await client.query(
       `SELECT 1
          FROM workspace_memberships membership
@@ -119,6 +126,25 @@ export class WorkspaceAccessService {
       [workspaceId, userId, permission],
     );
     return Boolean(result.rowCount);
+  }
+
+  /** Which of these permissions the member holds now, within the organization's modules (one query). */
+  async grantedPermissions(client: PoolClient, workspaceId: string, userId: string, permissions: string[]): Promise<Set<string>> {
+    const permitted = await this.effectivePermissions(client, workspaceId, permissions);
+    if (!permitted.length) return new Set();
+    const result = await client.query<{ code: string }>(
+      `SELECT DISTINCT permission.code
+         FROM workspace_memberships membership
+         JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = assigned.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id
+        WHERE membership.workspace_id = $1
+          AND membership.user_id = $2
+          AND membership.status = 'active'
+          AND permission.code = ANY($3::text[])`,
+      [workspaceId, userId, permitted],
+    );
+    return new Set(result.rows.map((row) => row.code));
   }
 
   async effectivePermissions(client: PoolClient, workspaceId: string, permissions: string[]) {
@@ -144,7 +170,7 @@ export class WorkspaceAccessService {
        WHERE membership.workspace_id = $1
          AND membership.user_id = $2
          AND membership.status = 'active'
-         AND workspace.status = 'active'`,
+         AND workspace.status IN ('active', 'suspended')`,
       [workspaceId, userId],
     );
     if (!membership.rowCount) {

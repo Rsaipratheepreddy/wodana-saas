@@ -1,0 +1,13 @@
+# Slice 1D — global approval task projection
+
+Journey: sidebar Tasks → Project approvals → My work / Open / All current → filter/search → open the exact RFA in its owning project → review there → return and refresh the global queue. Sales tasks remain reachable in the same Tasks entry point. This is the first global project-work source; operational execution tasks and procurement queues are not yet merged here.
+
+One RFA remains authoritative. Global rows are read-only projections, never copied CRM tasks. Columns: document, project, revision, state, responsible person, due date, action. Pending review belongs to the reviewer; draft/correction work belongs to the creator. Previous revisions are omitted from current work but retained in project history. Approval/withdrawal removes a row from Open; All current retains it. Pagination, server-side search and owner/state views operate across authorized projects, not just the loaded page.
+
+GET /projects/approvals: projects.view/manage permission and the same per-project assignment restriction as the portfolio. Tenant filter on every join. Stable keyset pagination by due date/project/RFA ID, 100 rows per response; cursor is validated. Response includes only queue fields, active responsible-member names and exact internal links—no source document URLs, instructions, attachments or unrelated project data. Existing project commands remain the sole mutation path. Refresh on returning focus/visibility; explicit refresh/retry retains rows on fetch failure. Abort superseded requests and discard stale responses.
+
+Use current DataGrid with the user-requested full borders; source and action links remain keyboard accessible. No state editing or drag-to-approve on this projection. Permission-filtered sidebar preserves CRM-only access and adds Tasks for project-only users. Local fixtures only; no production activation.
+
+Procurement remains the next owning workflow: RFQ scope/version snapshots, supplier offers, controlled award into a draft order, and separate spend authorization. The existing cancelled-offer and mutable-RFQ gaps must be resolved before claiming that slice complete.
+
+Validation: focused global queue/domain suites passed; desktop/mobile browser checks passed for server refresh, exact RFA links, full table boundaries, keyboard actions and RTL overflow. Both TypeScript checks pass. Reviewer eligibility now requires project access as well as review permission. No live database integration or production activation was performed. The broader sidebar/shell suite still reports ten failures against older layout expectations; it is not a clean full-suite run.

@@ -1,0 +1,334 @@
+{
+  "source": "PLM tracker, Roles & Access tab (25 Sept 2026) and PLM-038 / PLM-087",
+  "rule": "Access is granted per team. Each person has their own login and inherits exactly their team's role; changing a team's role updates everyone in it. Only CRM Owner / Admin changes teams or team access (workspace.roles.manage + module.teams.edit); every change is audited.",
+  "teams": [
+    {
+      "code": "SALES",
+      "name": "Account Managers / Sales",
+      "scope": "own",
+      "permissions": [
+        "crm.leads.view",
+        "crm.leads.manage",
+        "crm.activities.view",
+        "crm.activities.manage",
+        "crm.communications.view",
+        "crm.communications.send",
+        "crm.parties.view",
+        "crm.parties.manage",
+        "crm.opportunities.view",
+        "crm.opportunities.manage",
+        "crm.opportunities.sensitive_values",
+        "crm.opportunities.transition",
+        "pre_projects.view",
+        "pre_projects.create",
+        "projects.view",
+        "catalog.view",
+        "crm.reports.view"
+      ]
+    },
+    {
+      "code": "SALES_ADMIN",
+      "name": "Sales Admin",
+      "scope": "all",
+      "permissions": [
+        "crm.leads.view",
+        "crm.leads.manage",
+        "crm.leads.assign",
+        "crm.activities.view",
+        "crm.activities.manage",
+        "crm.communications.view",
+        "crm.communications.send",
+        "crm.parties.view",
+        "crm.parties.manage",
+        "crm.parties.identity",
+        "crm.opportunities.view",
+        "crm.opportunities.manage",
+        "crm.opportunities.transition",
+        "crm.opportunities.sensitive_values",
+        "pre_projects.view",
+        "pre_projects.edit",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "FINANCE",
+      "name": "Finance",
+      "scope": "all",
+      "permissions": [
+        "crm.opportunities.view",
+        "crm.opportunities.sensitive_values",
+        "pre_projects.view",
+        "commercial.finance.verify",
+        "commercial.costs.view",
+        "projects.view",
+        "payables.view",
+        "payables.manage",
+        "receivables.view",
+        "receivables.manage",
+        "accounting.manage",
+        "purchasing.view",
+        "ai.suggestions.use"
+      ]
+    },
+    {
+      "code": "OPS_ADMIN",
+      "name": "CRM Owner / Admin (Ops)",
+      "scope": "all",
+      "permissions": [
+        "*"
+      ]
+    },
+    {
+      "code": "CREATIVE_DIRECTOR",
+      "name": "Creative Director",
+      "scope": "all",
+      "permissions": [
+        "pre_projects.view",
+        "pre_projects.review_designs",
+        "projects.view",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "INTERIOR_DESIGN",
+      "name": "Interior Designers",
+      "scope": "assigned",
+      "permissions": [
+        "pre_projects.view",
+        "pre_projects.edit",
+        "pre_projects.verify_measurements",
+        "pre_projects.record_client_design_decisions",
+        "crm.activities.view",
+        "crm.activities.manage",
+        "projects.view",
+        "projects.report",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "VISUALISER",
+      "name": "Visualisers",
+      "scope": "assigned",
+      "permissions": [
+        "pre_projects.view",
+        "projects.view",
+        "projects.report",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "TECHNICAL",
+      "name": "Technical Team",
+      "scope": "assigned",
+      "permissions": [
+        "pre_projects.view",
+        "projects.view",
+        "projects.report",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "TECHNICAL_LEAD",
+      "name": "Technical Lead",
+      "scope": "all",
+      "permissions": [
+        "pre_projects.view",
+        "projects.view",
+        "projects.report",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "MATERIAL_COORDINATOR",
+      "name": "Material Coordinator",
+      "scope": "assigned",
+      "_permissions": "PLM-157: writes the samples and the material log (pre_projects.manage_materials: the materials of a case's materials and decisions list, their samples and photos, not the design choices or the rest of the case) and the sample library (catalog.samples.manage); reads the projects it supports.",
+      "permissions": [
+        "pre_projects.view",
+        "pre_projects.manage_materials",
+        "catalog.samples.manage",
+        "projects.view",
+        "catalog.view",
+        "vendors.view",
+        "supplier_offers.view",
+        "stock.view"
+      ]
+    },
+    {
+      "code": "PROCUREMENT",
+      "name": "Procurement",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.buy",
+        "vendors.view",
+        "vendors.manage",
+        "supplier_offers.view",
+        "supplier_offers.manage",
+        "catalog.view",
+        "purchasing.view",
+        "purchasing.manage",
+        "stock.view",
+        "stock.receive"
+      ]
+    },
+    {
+      "code": "PROCUREMENT_LEAD",
+      "name": "Procurement Lead",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.buy",
+        "vendors.view",
+        "vendors.manage",
+        "supplier_offers.view",
+        "supplier_offers.manage",
+        "catalog.view",
+        "purchasing.view",
+        "purchasing.manage",
+        "stock.view",
+        "stock.receive",
+        "purchasing.approve",
+        "vendors.approve",
+        "stock.inspect"
+      ]
+    },
+    {
+      "code": "PROJECT_MANAGERS",
+      "name": "Project Managers",
+      "scope": "assigned",
+      "permissions": [
+        "projects.view",
+        "projects.manage",
+        "projects.report",
+        "projects.review",
+        "projects.schedule.view",
+        "projects.schedule.manage",
+        "catalog.view"
+      ]
+    },
+    {
+      "code": "PRODUCTION",
+      "name": "Production / Factory (and Installation)",
+      "scope": "assigned",
+      "permissions": [
+        "projects.view",
+        "projects.report",
+        "projects.schedule.view",
+        "catalog.view",
+        "factory.view",
+        "factory.manage",
+        "factory.report",
+        "stock.view"
+      ]
+    },
+    {
+      "code": "PRODUCTION_LEAD",
+      "name": "Production Lead",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.report",
+        "projects.schedule.view",
+        "catalog.view",
+        "factory.view",
+        "factory.manage",
+        "factory.report",
+        "stock.view",
+        "factory.approve",
+        "stock.manage",
+        "stock.inspect"
+      ]
+    },
+    {
+      "code": "QS",
+      "name": "QS Team",
+      "scope": "all",
+      "permissions": [
+        "pre_projects.view",
+        "crm.opportunities.view",
+        "commercial.costs.view",
+        "commercial.estimate",
+        "catalog.view",
+        "commercial.costs.manage"
+      ]
+    },
+    {
+      "code": "SHOWROOM",
+      "name": "Sales / Showroom Executives",
+      "scope": "own",
+      "permissions": [
+        "crm.leads.view",
+        "crm.leads.manage",
+        "crm.parties.view",
+        "catalog.view",
+        "catalog.manage"
+      ]
+    },
+    {
+      "code": "INVENTORY",
+      "name": "Inventory Clerk",
+      "scope": "all",
+      "permissions": [
+        "catalog.view",
+        "catalog.manage",
+        "projects.view",
+        "stock.view",
+        "stock.manage",
+        "stock.receive",
+        "stock.adjust",
+        "purchasing.view"
+      ]
+    },
+    {
+      "code": "MARKETING",
+      "name": "Marketing",
+      "scope": "all",
+      "permissions": [
+        "catalog.view",
+        "crm.reports.view"
+      ]
+    },
+    {
+      "code": "PROJECT_DIRECTOR",
+      "name": "Project Director / Factory Manager",
+      "scope": "all",
+      "permissions": [
+        "projects.view",
+        "projects.manage",
+        "projects.review",
+        "projects.schedule.view",
+        "factory.view",
+        "factory.approve",
+        "catalog.view",
+        "commercial.deal.approve"
+      ]
+    }
+  ],
+  "designTeam": {
+    "source": "PLM-151, PLM-143, PLM-144, PLM-145, PLM-157 (13 Oct 2026). No fixed lead/junior pairs: each job's design team is allocated once the design fee is paid. Team roles live on the job (Settings > Projects > Roles); Settings > Design > Design team names which role each part uses.",
+    "projectRoles": [
+      { "key": "designer", "label": "Lead Interior Designer", "part": "lead_designer", "setBy": "Account Manager; on Designed by the Creative Director, the Creative Director", "does": "2D design drawings (layouts and elevations for the client)" },
+      { "key": "junior_designer", "label": "Junior Interior Designer", "part": "junior_designer", "setBy": "Account Manager", "does": "2D design drawings (layouts and elevations for the client)" },
+      { "key": "sales_admin", "label": "Sales Admin", "part": "sales_admin", "setBy": "Account Manager" },
+      { "key": "visualiser", "label": "Visualiser", "part": "visualiser", "setBy": "Lead Interior Designer", "does": "3D renders" },
+      { "key": "draftsman", "label": "Draftsman", "part": "draftsman", "setBy": "Technical Lead", "does": "Technical drawings" },
+      { "key": "material_coordinator", "label": "Material Coordinator", "part": "material_coordinator", "setBy": "Account Manager or Lead Interior Designer; without one on the job, the Material Coordinator team collects the samples" }
+    ],
+    "technicalLeadRoleCode": "technical_lead",
+    "creativeDirectorReview": "The Designed by the Creative Director package names creative_director as its reviewer (palm-design-packages.json): the CREATIVE_DIRECTOR team chooses the lead designer and approves every concept and render before the client sees it. Outsourced materials and a Creative Director rate above the package rate are approved through Settings > Approvals (Outsourced material, Design rate above the package rate), whose default step is the design reviewer permission (pre_projects.review_designs), held by CREATIVE_DIRECTOR only.",
+    "clientTitle": "Clients see every designer as Interior designer (never Junior Designer).",
+    "allocatedChangeNeedsReason": true
+  },
+  "gapsToBuild": [
+    "Record scope own / assigned / all per team (PLM-038 'write on own leads only'): Module 4 Sales and Module 8 Projects.",
+    "Self Generated source restricted to Sales, Sales Admin and Directors (PLM-030): Module 4.",
+    "Finance-only edit of final commission amounts and Deal finance fields hidden from Sales: Module 7.",
+    "Proposal page-level locking (pages 1–3 locked, page 4 editable by Account Manager or Sales Admin): document builder.",
+    "Stock-list write for Showroom and Inventory is catalog.manage today; split when the stock list lands (Module 3)."
+  ],
+  "notes": [
+    "28 Sept 2026: QS Team also enters costs (commercial.costs.manage); Procurement raises and receives purchase orders (purchasing.*, stock.receive); Production runs factory work orders (factory.*). These follow the tracker's 'Core Authority' column for the purchasing and factory modules that landed after the tab was written.",
+    "29 Sept 2026: the Procurement Lead approves what Procurement raises (purchasing.approve, vendors.approve) and the Production Lead approves output and checks quality (factory.approve); nobody approves their own order or report. Finance enters supplier bills and records payments (payables.manage, receivables.manage); approving held bills stays with whoever holds payables.approve. The Inventory Clerk keeps stock (stock.*)."
+  ]
+}

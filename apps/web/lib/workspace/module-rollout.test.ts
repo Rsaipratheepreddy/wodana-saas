@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { workspaceModules } from "@/components/workspace/workspace-navigation";
-import { moduleForWorkspacePath, visibleWorkspaceModules } from "./module-rollout";
+import { moduleForWorkspacePath, scopePeopleNavigation, visibleWorkspaceModules } from "./module-rollout";
 
 describe("effective workspace module navigation", () => {
   it("shows only the selected organization's granted modules", () => {
@@ -16,5 +16,24 @@ describe("effective workspace module navigation", () => {
     expect(moduleForWorkspacePath("/workspace/projects/1")).toBe("projects");
     expect(moduleForWorkspacePath("/workspace/hrms")).toBe("hrms");
     expect(moduleForWorkspacePath("/workspace/settings/security")).toBe("workspace");
+  });
+
+  it("shows People only when the signed-in member can read or act on it", () => {
+    const items = (permissions: string[]) => scopePeopleNavigation(workspaceModules, permissions, ["role_viewer"])
+      .find((module) => module.id === "workspace")?.navigation.flatMap((section) => section.items) ?? [];
+    expect(items(["module.roles.read"]).some((item) => item.id === "members")).toBe(false);
+    expect(items(["module.members.read"]).some((item) => item.id === "members")).toBe(true);
+    expect(items(["module.members.write"]).some((item) => item.id === "members")).toBe(true);
+    expect(scopePeopleNavigation(workspaceModules, [], ["owner"])[0].navigation.flatMap((section) => section.items)
+      .some((item) => item.id === "members")).toBe(true);
+  });
+
+  it("shows Attendance & leave settings to whoever manages HR, only where People is available", () => {
+    const has = (modules: typeof workspaceModules, permissions: string[], roles = ["role_viewer"]) => scopePeopleNavigation(modules, permissions, roles)
+      .find((module) => module.id === "workspace")?.navigation.flatMap((section) => section.items).some((item) => item.id === "attendance-settings");
+    expect(has(workspaceModules, ["hrms.self", "hrms.team"])).toBe(false);
+    expect(has(workspaceModules, ["hrms.manage"])).toBe(true);
+    expect(has(workspaceModules, [], ["administrator"])).toBe(true);
+    expect(has(workspaceModules.filter((module) => module.id !== "hrms"), ["hrms.manage"])).toBe(false);
   });
 });

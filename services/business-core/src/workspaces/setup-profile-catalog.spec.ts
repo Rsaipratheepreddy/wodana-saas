@@ -3,42 +3,45 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseProjectWorkflowTemplate } from "../projects/project-workflow";
 
-const sql = readFileSync(
-  resolve(__dirname, "../../drizzle/0099_region_firm_kit_profiles.sql"),
-  "utf8",
-);
+type Profile = { kind: string; code: string; version: number; configuration: Record<string, unknown>; selectable: boolean };
 
-function firmKits() {
-  const inserted = [...sql.matchAll(/\('firm_kit',\s*'([^']+)',\s*2,\s*'(\{[\s\S]*?\})'::jsonb,\s*true\)/g)]
-    .map((match) => ({ code: match[1], version: 2, configuration: JSON.parse(match[2]) as Record<string, unknown> }));
-  const designSections = sql.match(/configuration \|\| '(\{[\s\S]*?applicableJobSections[\s\S]*?\})'::jsonb,[\s\S]*?FROM tenant_setup_profiles[\s\S]*?code = 'design_build' AND version = 2/);
-  if (!designSections) throw new Error("Design & build v3 configuration not found");
-  return [
-    { code: "design_build", version: 3, configuration: JSON.parse(designSections[1]) as Record<string, unknown> },
-    ...inserted,
-  ];
-}
+/** Reads the seeded reference rows exactly as the v2 baseline inserts them. */
+const profiles: Profile[] = [
+  ...readFileSync(resolve(__dirname, "../../drizzle/0000_v2_baseline.sql"), "utf8").matchAll(
+    /^INSERT INTO public\.tenant_setup_profiles VALUES \('([^']+)', '([^']+)', (\d+), '(.*)', '[^']+', (true|false)\);$/gm,
+  ),
+].map((match) => ({
+  kind: match[1],
+  code: match[2],
+  version: Number(match[3]),
+  configuration: JSON.parse(match[4].replace(/''/g, "'")) as Record<string, unknown>,
+  selectable: match[5] === "true",
+}));
+
+const selectable = (kind: string) => profiles.filter((profile) => profile.kind === kind && profile.selectable);
 
 describe("region and firm-kit setup profiles", () => {
   it("publishes independent UAE and India v2 regions without claiming regulatory approval", () => {
-    expect(sql).toContain("WHERE kind = 'region' AND version = 1");
-    expect(sql).toContain('"regulatoryStatus":"requires_validation"');
-    expect(sql).toContain('"calendarPolicy"');
-    expect(sql).toContain('"taxPolicy":{"version":1,"status":"requires_validation","rates":[]}');
-    expect(sql).toContain('"privacyPolicy":{"version":1,"status":"requires_validation","noticeTemplate":null}');
-    expect(sql).toContain('"providerPolicy":{"version":1,"defaults":{},"connectionsRequired":true}');
-    expect(sql).not.toMatch(/taxRate|approvedTax|compliant/i);
+    const regions = selectable("region");
+    expect(regions.map(({ code, version }) => `${code}:${version}`)).toEqual(["AE:2", "IN:2"]);
+    for (const { configuration } of regions) {
+      expect(configuration).toMatchObject({
+        regulatoryStatus: "requires_validation",
+        taxPolicy: { version: 1, status: "requires_validation", rates: [] },
+        privacyPolicy: { version: 1, status: "requires_validation", noticeTemplate: null },
+        providerPolicy: { version: 1, defaults: {}, connectionsRequired: true },
+      });
+      expect(configuration.calendarPolicy).toBeDefined();
+      expect(JSON.stringify(configuration)).not.toMatch(/taxRate|approvedTax|compliant/i);
+    }
   });
 
   it("publishes every firm kit with explicit applicable Job sections", () => {
-    const kits = firmKits();
-    expect(kits.map((kit) => kit.code)).toEqual([
-      "design_build",
-      "interior_studio",
-      "fitout_contractor",
-      "joinery_furniture",
-      "blank",
+    const kits = selectable("firm_kit");
+    expect(kits.map((kit) => kit.code).sort()).toEqual([
+      "blank", "design_build", "fitout_contractor", "interior_studio", "joinery_furniture",
     ]);
+    expect(kits.find((kit) => kit.code === "design_build")?.version).toBe(3);
     for (const kit of kits) {
       expect(kit.configuration.applicableJobSections).toEqual(expect.arrayContaining([
         "overview", "scope", "quote", "handover", "files", "timeline",
@@ -53,7 +56,7 @@ describe("region and firm-kit setup profiles", () => {
   });
 
   it("does not invent design or factory work in the neutral blank kit", () => {
-    const blank = firmKits().find((kit) => kit.code === "blank")!;
+    const blank = selectable("firm_kit").find((kit) => kit.code === "blank")!;
     expect(blank.configuration.applicableJobSections).not.toEqual(expect.arrayContaining(["design"]));
     const workflow = blank.configuration.projectWorkflow as { stages: { key: string; visibleName: string }[] };
     expect(workflow.stages.map((stage) => `${stage.key}:${stage.visibleName}`).join(" ")).not.toMatch(/factory|manufactur|survey/i);

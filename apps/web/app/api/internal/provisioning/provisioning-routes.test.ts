@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/i18n/server", async () => { const { translator } = await import("@/lib/i18n/messages"); return { getServerT: async () => translator("en"), getServerLanguage: async () => "en" }; });
 
 vi.mock("@/lib/internal/proxy", () => ({ internalJsonResponse: vi.fn(async () => Response.json({ ok: true })) }));
 vi.mock("@/lib/workspace/workspace-api", () => ({

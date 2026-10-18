@@ -9,23 +9,73 @@ afterEach(() => {
 });
 
 describe("IntegrationsPage", () => {
-  it("separates available and planned integrations while keeping search useful", async () => {
+  it("starts supported Sales source setup in place and does not offer a fake Meta connect", async () => {
+    const data = structuredClone(integrationsPageFixture);
+    data.connections = [];
+    render(<IntegrationsPage initialData={data} embedded onlyIds={["whatsapp", "meta_lead_ads"]} />);
+    expect(screen.getByRole("article", { name: "WhatsApp Business integration" })).toBeVisible();
+    const meta = screen.getByRole("article", { name: "Meta Lead Ads integration" });
+    expect(within(meta).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Google Workspace integration" })).not.toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole("article", { name: "WhatsApp Business integration" })).getByRole("button", { name: "Connect" }));
+    expect(await screen.findByRole("dialog", { name: "Connect WhatsApp Business" })).toBeInTheDocument();
+    expect(document.cookie).not.toContain("wodana_onboarding_connect");
+  });
+  it("offers Connect only when Wodana has set up the provider's app, and says so plainly otherwise", async () => {
+    const data = structuredClone(integrationsPageFixture);
+    data.platformReadiness = { google_workspace: true, quickbooks: false, zoho_books: true, whatsapp: false };
+    data.connections = [{ ...data.connections[0], id: "40000000-0000-4000-8000-000000000009", provider: "whatsapp", displayName: "Sales number", status: "draft" }];
+    render(<IntegrationsPage initialData={data} />);
+    const quickbooks = screen.getByRole("article", { name: "QuickBooks integration" });
+    expect(within(quickbooks).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(within(quickbooks).getByText("Not available yet. Wodana is setting this up.")).toBeVisible();
+    const whatsapp = screen.getByRole("article", { name: "WhatsApp Business integration" });
+    expect(within(whatsapp).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+    expect(within(whatsapp).getByText("Not available yet. Wodana is setting this up.")).toBeVisible();
+    expect(within(screen.getByRole("article", { name: "Zoho Books integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
+    const accounts = screen.getByRole("row", { name: /Sales number/ });
+    expect(within(accounts).getByRole("button", { name: "Connect" })).toBeDisabled();
+  });
+  it("shows the provider's setup state as unknown, not unavailable, when it couldn't be checked", () => {
+    const data = structuredClone(integrationsPageFixture);
+    data.connections = [];
+    delete data.platformReadiness;
+    render(<IntegrationsPage initialData={data} />);
+    expect(within(screen.getByRole("article", { name: "QuickBooks integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
+    expect(screen.queryByText("Not available yet. Wodana is setting this up.")).not.toBeInTheDocument();
+  });
+  it("finds accounting tools by business purpose", async () => {
+    render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
+    expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Connections"]);
+    expect(within(screen.getByRole("group", { name: "Connection purpose" })).getAllByRole("button").map((tab) => tab.textContent))
+      .toEqual(["All apps", "Talk to clients", "Invoices & payments", "Calendar & files"]);
+    await userEvent.click(screen.getByRole("button", { name: "Invoices & payments" }));
+    expect(screen.getByRole("article", { name: "QuickBooks integration" })).toBeVisible();
+    expect(screen.queryByRole("article", { name: "Google Workspace integration" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "All apps" }));
+    expect(screen.getByRole("article", { name: "Google Workspace integration" })).toBeVisible();
+  });
+  it("shows unavailable status without presenting a zero count as fact", () => {
+    render(<IntegrationsPage initialData={{ ...structuredClone(integrationsPageFixture), canManage: false, connections: [], loadError: "Connection status is unavailable." }} />);
+    expect(screen.getByRole("button", { name: "Reload connections" })).toBeVisible();
+    expect(screen.getAllByText("Status unavailable").length).toBeGreaterThan(0);
+    for (const button of screen.getAllByRole("button", { name: "Connect" })) expect(button).toBeDisabled();
+  });
+  it("shows only available integrations while keeping search useful", async () => {
     const interaction = userEvent.setup();
     render(<IntegrationsPage initialData={structuredClone(integrationsPageFixture)} />);
 
-    expect(screen.getAllByRole("article")).toHaveLength(12);
+    expect(screen.getAllByRole("article")).toHaveLength(5);
     const googleCard = screen.getByRole("article", { name: "Google Workspace integration" });
     expect(googleCard).toBeInTheDocument();
     expect(within(googleCard).getByRole("link", { name: /workspace.google.com/ })).toHaveAttribute("href", "https://workspace.google.com/");
     expect(within(screen.getByRole("article", { name: "Zoho Books integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
     expect(within(screen.getByRole("article", { name: "WhatsApp Business integration" })).getByRole("button", { name: "Connect" })).toBeEnabled();
-    expect(within(googleCard).getByText("Setup: Configured · Evidence: Provider operation confirmed")).toBeVisible();
+    expect(within(googleCard).getByText("Provider operation confirmed")).toBeVisible();
     expect(screen.getByRole("region", { name: "Built into Wodana" })).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Wodana AI review integration" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Planned" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "External lead capture" })).toBeInTheDocument();
-    expect(within(screen.getByRole("article", { name: "Meta Lead Ads integration" })).getByText("Details required")).toBeInTheDocument();
-    expect(within(screen.getByRole("article", { name: "PlyLeads integration" })).getByText("Details required")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Planned" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "External lead capture" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Custom integration" })).not.toBeInTheDocument();
 
     await interaction.type(screen.getByRole("searchbox", { name: "Search integrations" }), "accounting");
@@ -86,7 +136,7 @@ describe("IntegrationsPage", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Connect Google Workspace" });
     expect(within(dialog).getByRole("button", { name: "Save and connect" })).toBeInTheDocument();
-    expect(within(dialog).getByText(/credentials are never stored in this form/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("textbox", { name: /Connection name/ })).toBeInTheDocument();
   });
 
   it("starts authorization from a saved draft", async () => {

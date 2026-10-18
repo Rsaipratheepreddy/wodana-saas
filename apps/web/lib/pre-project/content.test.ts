@@ -1,13 +1,14 @@
 import {describe,it,expect} from 'vitest';
 import {parseScopePaste,formatCaseMoney,entryPayload,blankEntry,updateItemMaterial,chooseItemMaterial,blankSpecification,specificationPayload} from './content';
 import {allowedCasePath} from './api-path';
+import {translatorFor} from '@/lib/i18n/keys';
 const id='e56299c6-3da3-402a-a9ac-3995bb37b9d4';
 describe('pre-project entry boundaries',()=>{
  it('preserves quantity and notes from Excel without matching names automatically',()=>{const rows=parseScopePaste('Wardrobe\t72\tsq.ft\t8 × 9 ft\nDesk\t1\tnos','room');expect(rows).toHaveLength(2);expect(rows[0]).toMatchObject({roomId:'room',quantity:72,unit:'sq.ft',scopeStatus:'undecided',catalogLinks:[],note:'8 × 9 ft'});expect(rows[0].id).not.toBe(rows[1].id);});
  it.each(['Item\t-1','Item\t1,200','Item\tNaN','Item\t0','Item\t1.12345'])('rejects ambiguous or invalid quantities: %s',text=>expect(()=>parseScopePaste(text,null)).toThrow('Row 1'));
  it('limits bulk entry before sending',()=>expect(()=>parseScopePaste(Array(101).fill('Item').join('\n'),null)).toThrow('100'));
  it('sends IDs instead of trusting a client-supplied catalog snapshot',()=>{const entry=blankEntry();entry.catalogLinks=[{role:'work',recordId:id,snapshot:{id,name:'Editable label',kind:'work',code:'X',version:2,catalogId:id}}];const result=entryPayload(entry);expect(result.catalogLinks).toEqual([{role:'work',recordId:id}]);expect(result).not.toHaveProperty('archivedAt');});
- it('formats actual case currencies and preserves zero',()=>{expect(formatCaseMoney('1200','AED')).toContain('AED');expect(formatCaseMoney('0','INR')).toContain('0.00');expect(formatCaseMoney('','AED')).toBe('Not set');expect(formatCaseMoney('500','JPY')).not.toContain('.00');});
+ it('formats actual case currencies and preserves zero',()=>{const t=translatorFor({});expect(formatCaseMoney('1200','AED','en',t)).toContain('AED');expect(formatCaseMoney('0','INR','en',t)).toContain('0.00');expect(formatCaseMoney('','AED','en',t)).toBe('Not set');expect(formatCaseMoney('500','JPY','en',t)).not.toContain('.00');});
  it('allows only scoped, supported API operations',()=>{expect(allowedCasePath([id,'entries','bulk'],'POST')).toBe(true);expect(allowedCasePath([id,'designs',id,'versions'],'POST')).toBe(true);expect(allowedCasePath([id,'assets',id],'GET')).toBe(true);expect(allowedCasePath([id,'designs',id,'delete'],'POST')).toBe(false);expect(allowedCasePath(['..','brief'],'GET')).toBe(false);expect(allowedCasePath([id,'rooms'],'DELETE')).toBe(false);});
 });
 

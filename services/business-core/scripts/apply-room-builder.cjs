@@ -25,7 +25,7 @@ function batches(records){
  const fingerprint=async()=>(await client.query(`SELECT md5(coalesce(string_agg(row_to_json(r)::text,'' ORDER BY id),'')) AS hash FROM workspace_catalog_records r WHERE workspace_id=$1 AND id<>$2 AND catalog_id IS DISTINCT FROM $2::uuid`,[plan.workspaceId,plan.catalogId])).rows[0].hash;
  const before=await fingerprint();
  const exists=(await client.query('SELECT id FROM workspace_catalog_records WHERE workspace_id=$1 AND id=$2',[plan.workspaceId,plan.catalogId])).rowCount;
- if(!exists)await service.createCatalog(actor,plan.workspaceId,{id:plan.catalogId,name:plan.name,description:'Rooms, items, variants and materials from room_builder_catalog (1).xlsx.',starter:false});
+ if(!exists)await service.createCatalog(actor,plan.workspaceId,{id:plan.catalogId,name:plan.name,description:`Rooms, items, variants and materials from ${plan.report.sourceFileName||'room_builder_catalog.xlsx'}.`,starter:false});
  let created=0,reused=0;const versions=new Map((await client.query('SELECT id,version FROM workspace_catalog_records WHERE workspace_id=$1 AND catalog_id=$2',[plan.workspaceId,plan.catalogId])).rows.map(r=>[r.id,r.version]));
  for(const [i,records]of batches(plan.records).entries()){
   const own=new Set(records.map(r=>r.id));const references=[...new Set(records.flatMap(r=>r.links.map(l=>l.targetId)).filter(id=>!own.has(id)))].map(id=>({id,version:versions.get(id)}));
@@ -41,7 +41,7 @@ function batches(records){
  const byId=new Map(catalogRows.map(r=>[r.id,r]));
  const broken=catalogRows.flatMap(r=>r.links).filter(l=>!byId.has(l.targetId)||byId.get(l.targetId).archived).length;
  if(broken)throw Error('Broken catalog links');
- const attributes=[{name:'Default catalog',value:'true'},{name:'Source file',value:'room_builder_catalog (1).xlsx'},{name:'Source SHA256',value:plan.report.sourceSha256},{name:'Source rows',value:'7392'}];
+ const attributes=[{name:'Default catalog',value:'true'},{name:'Source file',value:plan.report.sourceFileName||'room_builder_catalog.xlsx'},{name:'Source SHA256',value:plan.report.sourceSha256},{name:'Source rows',value:String(plan.report.sourceRows)}];
  if(JSON.stringify(catalog.attributes)!==JSON.stringify(attributes)){
   const {archived,starterVersion,updatedAt,...input}=catalog;await service.save(actor,plan.workspaceId,{...input,attributes});
  }

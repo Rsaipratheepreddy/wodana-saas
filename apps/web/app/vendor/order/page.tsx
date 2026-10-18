@@ -1,1 +1,1 @@
-import {VendorOrderForm} from '@/components/projects/vendor-order-form';export const metadata={title:'Vendor order',referrer:'no-referrer',robots:{index:false,follow:false}};export default function Page(){return <VendorOrderForm/>;}
+import {VendorOrderForm} from '@/components/projects/vendor-order-form';import {getServerT} from '@/lib/i18n/server';export async function generateMetadata(){const t=await getServerT();return {title:t('Vendor order'),referrer:'no-referrer' as const,robots:{index:false,follow:false}};}export default function Page(){return <VendorOrderForm/>;}

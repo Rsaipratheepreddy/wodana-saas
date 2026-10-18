@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/i18n/server", async () => { const { translator } = await import("@/lib/i18n/messages"); return { getServerT: async () => translator("en"), getServerLanguage: async () => "en" }; });
 import { NextResponse } from "next/server";
 
 vi.mock("@/lib/workspace/workspace-api", () => ({
@@ -50,6 +51,21 @@ describe("workspace member invitation BFF", () => {
       }),
       "The invitation could not be created.",
     );
+  });
+
+  it("accepts email-only invitations while preserving roles", async () => {
+    const response = await POST(request({ workspaceId, email: " NEW@example.com ", roleCodes: ["member"] }));
+    expect(response.status).toBe(200);
+    const options = vi.mocked(workspaceJsonResponse).mock.calls[0][1];
+    expect(JSON.parse(String(options.body))).toEqual({email:"new@example.com", roleCodes:["member"], teamIds:[]});
+  });
+
+  it("rejects malformed supplied names", async () => {
+    for (const displayName of [null, 42, "", "x"]) {
+      const response = await POST(request({ workspaceId, displayName, email:"new@example.com", roleCodes:["member"] }));
+      expect(response.status).toBe(400);
+    }
+    expect(workspaceJsonResponse).not.toHaveBeenCalled();
   });
 
   it("requires either a valid team or a direct role", async () => {

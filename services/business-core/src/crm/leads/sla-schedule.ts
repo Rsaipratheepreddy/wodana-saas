@@ -376,6 +376,33 @@ export function addSlaMinutes(start: Date, minutes: number, schedule: SlaSchedul
   return new Date(cursor);
 }
 
+/**
+ * The end of the working day `start` falls in, or, when `start` is after hours, a weekend or a holiday, of the next
+ * working day (PLM-155: "reply the same working day"). Elapsed time has no working day: the same moment a day later.
+ */
+export function endOfWorkingDayAt(start: Date, schedule: SlaSchedule): Date {
+  if (!(start instanceof Date) || !Number.isFinite(start.getTime())) fail("The start must be a valid instant");
+  if (schedule.mode === "elapsed") return new Date(start.getTime() + 24 * 60 * 60_000);
+  const interval = nextBusinessInterval(schedule, start.getTime());
+  const day = localDate(interval.start, schedule.timezone);
+  const ends = intervalsForDate(schedule, day).map((item) => item.end);
+  return new Date(Math.max(interval.end, ...ends));
+}
+
+/**
+ * One full working day after `start` (PLM-180): as many working minutes as the working day the clock starts in, so 14:00
+ * on a 09:00–18:00 day ends at 14:00 on the next working day, and an evening or weekend start ends when the next working
+ * day closes. Elapsed time has no working day: 24 hours.
+ */
+export function workingDayAfter(start: Date, schedule: SlaSchedule): Date {
+  if (!(start instanceof Date) || !Number.isFinite(start.getTime())) fail("The start must be a valid instant");
+  if (schedule.mode === "elapsed") return new Date(start.getTime() + 24 * 60 * 60_000);
+  const interval = nextBusinessInterval(schedule, start.getTime());
+  const day = localDate(interval.start, schedule.timezone);
+  const milliseconds = mergeIntervals(intervalsForDate(schedule, day)).reduce((total, window) => total + (window.end - window.start), 0);
+  return addSlaMinutes(start, Math.max(1, Math.round(milliseconds / 60_000)), schedule);
+}
+
 export function remainingSlaMinutes(from: Date, deadline: Date, schedule: SlaSchedule): number {
   if (!(from instanceof Date) || !Number.isFinite(from.getTime())) fail("SLA remaining-time start must be a valid instant");
   if (!(deadline instanceof Date) || !Number.isFinite(deadline.getTime())) fail("SLA deadline must be a valid instant");

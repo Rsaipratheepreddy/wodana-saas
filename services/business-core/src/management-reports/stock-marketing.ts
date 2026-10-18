@@ -1,0 +1,664 @@
+import { Dec } from "../catalog-core/decimal";
+import { readReorderPoints } from "../inventory/stock-levels";
+import { responseRate, SLA_SQL } from "./lead-response";
+import { WON_SQL } from "./owner-overview";
+import { type KpiSpec, type ReportContext, moneyNotes, readFacts } from "./report-context";
+import { type Fact, FACT_COLUMNS, categories, grid, groupBy, inPeriod, mean, monthKeys, percent, sum, topGroups } from "./report-kit";
+import { NO_SALES_FILTERS, OPPORTUNITIES, OPPORTUNITY_ENTITY, P, leadsCte, month } from "./report-scope";
+import { targetFor } from "./report-targets";
+import { FUNNEL_SQL, NEW_LEADS_SQL } from "./sales-pipeline";
+import { salesFiltered } from "./finance";
+
+/**
+ * Dashboard 7 · Stock and marketing (PLM-133). Every definition here is also written in the master plan (§6.27a). The
+ * marketing figures that are part of the sales funnel stay on Sales and marketing too; lead source performance, form /
+ * QR performance and spam by source are this dashboard's.
+ *
+ * Stock is valued at its moving average cost in the workspace's currency (what the stock ledger keeps). Free stock
+ * belongs to the company, not a deal: it counts only while no sales filter is on, and under the entity filter only when
+ * the workspace has one company. Stock a project owns (allocated to it) and stock a deal holds follow their project or
+ * deal through the filter bar like everything else.
+ */
+
+/** Who reads each half: stock figures need a stock (or, for purchases, purchasing) read permission; marketing needs enquiries. */
+export const STOCK_READ = ["stock.view", "stock.manage", "stock.adjust", "stock.receive"];
+export const PURCHASING_READ = ["purchasing.view", "purchasing.manage"];
+export const MARKETING_READ = ["crm.leads.view"];
+
+/** Free stock is in scope: no sales filter, and no company chosen unless the workspace has only one. */
+const COMPANY_STOCK = `(${NO_SALES_FILTERS} AND (p.entity_id IS NULL OR (SELECT count(*) = 1 FROM legal_entities only_entity
+  WHERE only_entity.workspace_id = p.ws AND only_entity.archived_at IS NULL)))`;
+const CATEGORY = (column: string) => `COALESCE(NULLIF(lower(btrim(${column})), ''), 'none')`;
+
+async function companyStock(ctx: ReportContext) {
+  if (salesFiltered(ctx.filters)) return false;
+  if (!ctx.filters.entity) return true;
+  return (await ctx.db.query<{ only: boolean }>(`SELECT count(*) = 1 AS only FROM legal_entities WHERE workspace_id = $1 AND archived_at IS NULL`, [ctx.workspaceId])).rows[0]?.only ?? false;
+}
+
+// ------------------------------------------------------------------ stock value
+
+/**
+ * Stock value at the end of the period: every stock movement up to that day at the cost it moved at (the stock
+ * ledger's moving average), free stock and stock projects own, by item. Read the same way for the period before, so the
+ * comparison is like for like.
+ */
+const VALUE_SQL = `WITH ${P}, ${OPPORTUNITIES},
+held AS (
+  SELECT movement.item_id, sum(movement.quantity) AS on_hand, sum(movement.quantity * COALESCE(movement.unit_cost, 0)) AS value
+    FROM stock_movements movement CROSS JOIN p
+    LEFT JOIN delivery_projects dp ON dp.workspace_id = movement.workspace_id AND dp.id = movement.project_id
+    LEFT JOIN oc ON oc.case_id = dp.case_id
+   WHERE movement.workspace_id = p.ws AND movement.moved_on < (p.to_at AT TIME ZONE p.tz)::date
+     AND ((movement.project_id IS NULL AND ${COMPANY_STOCK}) OR (movement.project_id IS NOT NULL AND oc.opportunity_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}))
+   GROUP BY movement.item_id
+  HAVING sum(movement.quantity) > 0
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT item.id::text AS id, 'stock_item' AS kind, NULL::text AS parent_id, NULLIF(btrim(item.code), '') AS reference, item.name AS title, NULL::text AS client,
+         NULL::text AS owner, NULL::text AS owner_id, NULL::timestamptz AS at, round(held.value, 6)::text AS amount, round(held.on_hand, 4)::text AS measure,
+         NULLIF(btrim(item.category), '') AS detail, jsonb_build_object('period', '1', 'category', ${CATEGORY("item.category")}, 'currency', 'base', 'tax', 'net') AS dims,
+         held.value AS sort
+    FROM held CROSS JOIN p JOIN stock_items item ON item.workspace_id = p.ws AND item.id = held.item_id
+) facts ORDER BY sort DESC, title`;
+
+const stockValue: KpiSpec = {
+  code: "stock_value",
+  requires: STOCK_READ,
+  compare: "neutral",
+  facts: (ctx) => readFacts(ctx, VALUE_SQL),
+  build: (ctx, facts) => {
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return { code: "stock_value", unit: "money", value: amount, count: facts.length, amount, targetable: false };
+  },
+};
+
+/**
+ * Stock used: what left stock for the work in the period — issued to projects and work orders, or sold — at the cost
+ * it left at. Stock issued to a project (or from its own) follows the project through the filter bar; a sale belongs
+ * to the company.
+ */
+const USED_SQL = `WITH ${P}, ${OPPORTUNITIES},
+used AS (
+  SELECT movement.item_id, -sum(movement.quantity) AS quantity, -sum(movement.quantity * COALESCE(movement.unit_cost, 0)) AS value
+    FROM stock_movements movement CROSS JOIN p
+    LEFT JOIN delivery_projects dp ON dp.workspace_id = movement.workspace_id AND dp.id = COALESCE(movement.for_project_id, movement.project_id)
+    LEFT JOIN oc ON oc.case_id = dp.case_id
+   WHERE movement.workspace_id = p.ws AND movement.kind IN ('issue', 'sale')
+     AND (movement.moved_on::timestamp AT TIME ZONE p.tz) >= p.from_at AND (movement.moved_on::timestamp AT TIME ZONE p.tz) < p.to_at
+     AND ((dp.id IS NULL AND ${COMPANY_STOCK}) OR (dp.id IS NOT NULL AND oc.opportunity_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}))
+   GROUP BY movement.item_id
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT item.id::text AS id, 'stock_item' AS kind, NULL::text AS parent_id, NULLIF(btrim(item.code), '') AS reference, item.name AS title, NULL::text AS client,
+         NULL::text AS owner, NULL::text AS owner_id, NULL::timestamptz AS at, round(used.value, 6)::text AS amount, round(used.quantity, 4)::text AS measure,
+         NULLIF(btrim(item.category), '') AS detail, jsonb_build_object('period', '1', 'category', ${CATEGORY("item.category")}, 'currency', 'base', 'tax', 'net') AS dims,
+         used.value AS sort
+    FROM used CROSS JOIN p JOIN stock_items item ON item.workspace_id = p.ws AND item.id = used.item_id
+   WHERE used.quantity > 0
+) facts ORDER BY sort DESC, title`;
+
+const stockUsed: KpiSpec = {
+  code: "stock_used",
+  requires: STOCK_READ,
+  compare: "neutral",
+  facts: (ctx) => readFacts(ctx, USED_SQL),
+  build: (ctx, facts) => {
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return { code: "stock_used", unit: "money", value: amount, count: facts.length, amount, targetable: false };
+  },
+};
+
+// ------------------------------------------------------------------ low stock
+
+/**
+ * Low stock, live: items at or below their reorder point (free stock less what deals hold, per place or across
+ * places) — Short when what is on order won't lift them above it, else Low (the same rule as the stock alerts).
+ */
+const lowStock: KpiSpec = {
+  code: "low_stock",
+  requires: STOCK_READ,
+  facts: async (ctx) => {
+    if (!(await companyStock(ctx))) return [];
+    return (await readReorderPoints(ctx.db, ctx.workspaceId)).filter((point) => point.low).map((point) => ({
+      id: `${point.itemId}:${point.id}`, kind: "stock_item", parentId: null, reference: point.itemCode || null, title: point.itemName, client: null, owner: point.vendorName ?? null,
+      ownerId: null, at: point.lowSince ? new Date(point.lowSince).toISOString() : null, amount: null, measure: Dec.of(point.free).toFixed(4),
+      detail: point.locationName ?? null, dims: { period: "1", level: point.short ? "short" : "low" },
+    } satisfies Fact)).sort((a, b) => (a.dims.level === b.dims.level ? 0 : a.dims.level === "short" ? -1 : 1) || Dec.of(a.measure).cmp(b.measure));
+  },
+  build: (_ctx, facts) => ({
+    code: "low_stock", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+    extra: { short: facts.filter((fact) => fact.dims.level === "short").length },
+    chart: { type: "bars", dimension: "level", unit: "count", items: ["short", "low"].map((level) => {
+      const count = facts.filter((fact) => fact.dims.level === level).length;
+      return { key: level, label: level, value: String(count), count };
+    }) },
+  }),
+};
+
+// ------------------------------------------------------------------ slow-moving
+
+export const SLOW_DAYS = 90;
+export const SLOW_BUCKETS = ["days_90_180", "days_181_365", "over_365"] as const;
+
+/**
+ * Slow-moving, live: free stock of items nothing has gone out of (issued to a project or work order, sold, returned to
+ * the supplier) for more than 90 days — counted from the last time something went out, else from when it first came
+ * in. Value at average cost.
+ */
+const SLOW_SQL = `WITH ${P},
+free AS (
+  SELECT balance.item_id, sum(balance.on_hand) AS on_hand, sum(balance.value) AS value FROM stock_balances balance CROSS JOIN p
+   WHERE balance.workspace_id = p.ws AND balance.project_id IS NULL AND balance.on_hand > 0 GROUP BY balance.item_id
+),
+moved AS (
+  SELECT movement.item_id, max(movement.moved_on) FILTER (WHERE movement.kind IN ('issue', 'sale', 'supplier_return')) AS last_out, min(movement.moved_on) AS first_in
+    FROM stock_movements movement CROSS JOIN p WHERE movement.workspace_id = p.ws GROUP BY movement.item_id
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT item.id::text AS id, 'stock_item' AS kind, NULL::text AS parent_id, NULLIF(btrim(item.code), '') AS reference, item.name AS title, NULL::text AS client,
+         NULL::text AS owner, NULL::text AS owner_id, (COALESCE(moved.last_out, moved.first_in)::timestamp AT TIME ZONE p.tz) AS at, round(free.value, 6)::text AS amount,
+         (p.today - COALESCE(moved.last_out, moved.first_in))::text AS measure, NULLIF(btrim(item.category), '') AS detail,
+         jsonb_build_object('period', '1', 'idle', CASE WHEN p.today - COALESCE(moved.last_out, moved.first_in) <= 180 THEN 'days_90_180'
+             WHEN p.today - COALESCE(moved.last_out, moved.first_in) <= 365 THEN 'days_181_365' ELSE 'over_365' END,
+           'out', CASE WHEN moved.last_out IS NULL THEN 'never' ELSE 'before' END, 'currency', 'base', 'tax', 'net') AS dims
+    FROM free CROSS JOIN p
+    JOIN stock_items item ON item.workspace_id = p.ws AND item.id = free.item_id
+    JOIN moved ON moved.item_id = free.item_id
+   WHERE ${COMPANY_STOCK} AND p.today - COALESCE(moved.last_out, moved.first_in) > ${SLOW_DAYS}
+) facts ORDER BY at NULLS FIRST, title`;
+
+const slowMoving: KpiSpec = {
+  code: "slow_moving",
+  requires: STOCK_READ,
+  facts: (ctx) => readFacts(ctx, SLOW_SQL),
+  build: (ctx, facts) => ({
+    code: "slow_moving", unit: "count", value: String(facts.length), count: facts.length, amount: sum(facts.map((fact) => fact.amount)).toFixed(ctx.places), targetable: false,
+    chart: { type: "bars", dimension: "idle", unit: "money", items: SLOW_BUCKETS.map((idle) => {
+      const bucket = facts.filter((fact) => fact.dims.idle === idle);
+      return { key: idle, label: idle, value: sum(bucket.map((fact) => fact.amount)).toFixed(ctx.places), count: bucket.length };
+    }) },
+  }),
+};
+
+// ------------------------------------------------------------------ reserved vs available
+
+/**
+ * Reserved vs available (PLM-133), live, by place (the firm's stock places — e.g. its Core Collection warehouse and
+ * its showroom; project sites aren't stock places), at average cost: reserved is stock projects own (allocated to
+ * them) and free stock deals hold; available is free stock no deal holds. A hold that names no place is counted at the
+ * place with most of that item free.
+ */
+const RESERVED_SQL = `WITH ${P}, ${OPPORTUNITIES},
+cost AS (
+  SELECT balance.item_id, CASE WHEN sum(balance.on_hand) > 0 THEN sum(balance.value) / sum(balance.on_hand) END AS unit
+    FROM stock_balances balance CROSS JOIN p WHERE balance.workspace_id = p.ws GROUP BY balance.item_id
+),
+places AS (SELECT place.id FROM stock_locations place CROSS JOIN p WHERE place.workspace_id = p.ws AND place.kind <> 'site'),
+free AS (
+  SELECT balance.item_id, balance.location_id, sum(balance.on_hand) AS quantity,
+         row_number() OVER (PARTITION BY balance.item_id ORDER BY sum(balance.on_hand) DESC, balance.location_id) AS rank
+    FROM stock_balances balance CROSS JOIN p
+   WHERE balance.workspace_id = p.ws AND balance.project_id IS NULL AND balance.on_hand > 0 AND balance.location_id IN (SELECT id FROM places)
+   GROUP BY balance.item_id, balance.location_id
+),
+holds AS (
+  SELECT held.item_id, COALESCE(held.location_id, (SELECT free.location_id FROM free WHERE free.item_id = held.item_id AND free.rank = 1)) AS location_id,
+         sum(held.quantity) AS quantity, sum(held.quantity) FILTER (WHERE oc.opportunity_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}) AS scoped
+    FROM stock_reservations held CROSS JOIN p LEFT JOIN oc ON oc.opportunity_id = held.opportunity_id
+   WHERE held.workspace_id = p.ws AND held.status = 'reserved' AND held.project_id IS NULL
+   GROUP BY held.item_id, COALESCE(held.location_id, (SELECT free.location_id FROM free WHERE free.item_id = held.item_id AND free.rank = 1))
+),
+owned AS (
+  SELECT balance.item_id, balance.location_id, sum(balance.on_hand) AS quantity FROM stock_balances balance CROSS JOIN p
+    JOIN delivery_projects dp ON dp.workspace_id = balance.workspace_id AND dp.id = balance.project_id
+    JOIN oc ON oc.case_id = dp.case_id
+   WHERE balance.workspace_id = p.ws AND balance.on_hand > 0 AND balance.location_id IN (SELECT id FROM places) AND ${OPPORTUNITY_ENTITY}
+   GROUP BY balance.item_id, balance.location_id
+),
+split AS (
+  SELECT owned.item_id, owned.location_id, 'reserved' AS series, owned.quantity FROM owned
+  UNION ALL
+  SELECT holds.item_id, holds.location_id, 'reserved', holds.scoped FROM holds WHERE holds.scoped > 0
+  UNION ALL
+  SELECT free.item_id, free.location_id, 'available', greatest(free.quantity - COALESCE(holds.quantity, 0), 0)
+    FROM free CROSS JOIN p LEFT JOIN holds ON holds.item_id = free.item_id AND holds.location_id IS NOT DISTINCT FROM free.location_id
+   WHERE ${COMPANY_STOCK}
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT item.id::text || ':' || COALESCE(split.location_id::text, 'none') || ':' || split.series AS id, 'stock_item' AS kind, NULL::text AS parent_id,
+         NULLIF(btrim(item.code), '') AS reference, item.name AS title, NULL::text AS client, NULL::text AS owner, NULL::text AS owner_id, NULL::timestamptz AS at,
+         round(sum(split.quantity) * COALESCE(max(cost.unit), 0), 6)::text AS amount, round(sum(split.quantity), 4)::text AS measure, place.name AS detail,
+         jsonb_build_object('period', '1', 'series', split.series, 'place', COALESCE(split.location_id::text, 'none'), 'currency', 'base', 'tax', 'net') AS dims
+    FROM split CROSS JOIN p JOIN stock_items item ON item.workspace_id = p.ws AND item.id = split.item_id
+    LEFT JOIN cost ON cost.item_id = split.item_id
+    LEFT JOIN stock_locations place ON place.workspace_id = p.ws AND place.id = split.location_id
+   GROUP BY item.id, item.code, item.name, split.location_id, split.series, place.name
+  HAVING sum(split.quantity) > 0
+) facts ORDER BY title, detail NULLS LAST, id`;
+
+export const STOCK_SERIES = [{ id: "reserved", label: "" }, { id: "available", label: "" }];
+
+const reserved: KpiSpec = {
+  code: "reserved_available",
+  requires: STOCK_READ,
+  facts: (ctx) => readFacts(ctx, RESERVED_SQL),
+  build: (ctx, facts) => {
+    const of = (series: string) => sum(facts.filter((fact) => fact.dims.series === series).map((fact) => fact.amount));
+    const ranked = groupBy(facts, "place", (fact) => fact.detail ?? "", ctx.places).sort((a, b) => b.amount.cmp(a.amount) || a.key.localeCompare(b.key)).slice(0, 8);
+    return {
+      code: "reserved_available", unit: "money", value: of("reserved").toFixed(ctx.places), count: facts.filter((fact) => fact.dims.series === "reserved").length, targetable: false,
+      extra: { available: of("available").toFixed(ctx.places) },
+      chart: { type: "columns", dimension: "place", seriesDimension: "series", categories: ranked.map((group) => ({ key: group.key, label: group.key === "none" ? "" : group.label })),
+        series: STOCK_SERIES, values: grid(facts, "place", ranked.map((group) => group.key), STOCK_SERIES, "series", "amount", ctx.places), unit: "money" },
+    };
+  },
+};
+
+// ------------------------------------------------------------------ purchases
+
+/**
+ * Purchases: purchase orders approved in the period (not cancelled since), before tax, by the month approved over 12
+ * months. An order for projects or deals follows them through the filter bar; one for stock belongs to the company.
+ */
+const PURCHASES_SQL = `WITH ${P}, ${OPPORTUNITIES},
+placed AS (
+  SELECT purchase.id, purchase.number, purchase.approved_at, purchase.total - purchase.tax_total AS net, btrim(purchase.currency) AS cur, vendor.display_name AS vendor,
+         EXISTS (SELECT 1 FROM purchase_order_lines line WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id
+                   AND (line.project_id IS NOT NULL OR line.opportunity_id IS NOT NULL)) AS for_jobs,
+         EXISTS (SELECT 1 FROM purchase_order_lines line
+                   LEFT JOIN delivery_projects dp ON dp.workspace_id = line.workspace_id AND dp.id = line.project_id
+                   JOIN oc ON oc.case_id = dp.case_id OR oc.opportunity_id = line.opportunity_id
+                  WHERE line.workspace_id = purchase.workspace_id AND line.order_id = purchase.id) AS in_scope
+    FROM purchase_orders purchase CROSS JOIN p
+    JOIN workspace_vendors vendor ON vendor.workspace_id = purchase.workspace_id AND vendor.id = purchase.vendor_id
+   WHERE purchase.workspace_id = p.ws AND purchase.approved_at IS NOT NULL AND purchase.status <> 'cancelled'
+     AND (p.entity_id IS NULL OR purchase.legal_entity_id = p.entity_id)
+     AND purchase.approved_at >= p.series_from_at AND purchase.approved_at < p.to_at
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT placed.id::text AS id, 'purchase_order' AS kind, NULL::text AS parent_id, placed.number AS reference, placed.vendor AS title, NULL::text AS client, NULL::text AS owner,
+         NULL::text AS owner_id, placed.approved_at AS at, CASE WHEN placed.cur = p.currency THEN round(placed.net, 6)::text END AS amount, NULL::text AS measure, NULL::text AS detail,
+         jsonb_build_object('period', CASE WHEN placed.approved_at >= p.from_at THEN '1' ELSE '0' END, 'month', ${month("placed.approved_at")},
+           'currency', CASE WHEN placed.cur = p.currency THEN 'base' ELSE 'other' END, 'tax', 'net') AS dims
+    FROM placed CROSS JOIN p
+   WHERE placed.in_scope OR (NOT placed.for_jobs AND ${NO_SALES_FILTERS})
+) facts ORDER BY at DESC`;
+
+const purchases: KpiSpec = {
+  code: "purchases",
+  requires: [...PURCHASING_READ, ...STOCK_READ],
+  compare: "neutral",
+  facts: (ctx) => readFacts(ctx, PURCHASES_SQL),
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const amount = sum(period.map((fact) => fact.amount)).toFixed(ctx.places);
+    const keys = monthKeys(ctx.filters);
+    const series = [{ id: "purchases", label: "" }];
+    return {
+      code: "purchases", unit: "money", value: amount, count: period.length, amount, targetable: false,
+      chart: { type: "columns", dimension: "month", categories: categories(keys), series, values: [keys.map((key) => sum(facts.filter((fact) => fact.dims.month === key).map((fact) => fact.amount)).toFixed(ctx.places))], unit: "money" },
+      notes: moneyNotes(facts),
+    };
+  },
+};
+
+// ------------------------------------------------------------------ best-selling Furniture Only items (PLM-133)
+
+export const BEST_SELLERS = 10;
+
+/**
+ * Best-selling Furniture Only items: deals on a furniture path (A–E) won in the period (their first proposal won, else
+ * the deal's Won date) and not cancelled; the catalogue items on their accepted quotation (not optional), each line's
+ * value before tax (quantity × rate less the line's own discount) and quantity. The ten items with the highest value.
+ */
+const BEST_SQL = `WITH ${P}, ${OPPORTUNITIES},
+sold AS (
+  SELECT oc.opportunity_id, oc.case_id, oc.reference, oc.title, oc.client, oc.owner, oc.am,
+         COALESCE((SELECT min(pr.won_at) FROM crm_opportunity_proposals pr WHERE pr.workspace_id = p.ws AND pr.opportunity_id = oc.opportunity_id AND pr.won_at IS NOT NULL),
+                  CASE WHEN oc.status = 'won' THEN oc.closed_at END) AS won_at
+    FROM oc CROSS JOIN p JOIN crm_opportunities deal ON deal.workspace_id = p.ws AND deal.id = oc.opportunity_id
+   WHERE deal.furniture_path IS NOT NULL AND oc.cancelled_at IS NULL AND oc.case_id IS NOT NULL AND ${OPPORTUNITY_ENTITY}
+)
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT sold.opportunity_id::text || ':' || line.quote_id || ':' || line.id AS id, 'opportunity' AS kind, sold.case_id::text AS parent_id, sold.reference,
+         COALESCE(NULLIF(btrim(item.name), ''), line.title) AS title, sold.client, sold.owner, sold.am::text AS owner_id, sold.won_at AS at,
+         CASE WHEN btrim(quote.currency) = p.currency THEN round(greatest(CASE line.discount_kind WHEN 'percent' THEN line.quantity * line.rate * (1 - line.discount_value / 100)
+                                                                         WHEN 'amount' THEN line.quantity * line.rate - line.discount_value
+                                                                         ELSE line.quantity * line.rate END, 0), 6)::text END AS amount,
+         round(line.quantity, 4)::text AS measure, NULL::text AS detail,
+         jsonb_build_object('period', '1', 'item', line.catalog_item_id::text, 'currency', CASE WHEN btrim(quote.currency) = p.currency THEN 'base' ELSE 'other' END, 'tax', 'net') AS dims
+    FROM sold CROSS JOIN p
+    JOIN commercial_quotes quote ON quote.workspace_id = p.ws AND quote.case_id = sold.case_id AND quote.kind = 'quotation' AND quote.status = 'accepted'
+         AND COALESCE(quote.round, 'main') = 'main'
+    JOIN commercial_quote_lines line ON line.workspace_id = p.ws AND line.case_id = quote.case_id AND line.quote_id = quote.id
+         AND line.catalog_item_id IS NOT NULL AND line.kind = 'item' AND NOT COALESCE(line.optional, false)
+    LEFT JOIN catalog_items item ON item.workspace_id = p.ws AND item.id = line.catalog_item_id
+   WHERE sold.won_at >= p.from_at AND sold.won_at < p.to_at
+) facts ORDER BY at DESC, title`;
+
+const bestSellers: KpiSpec = {
+  code: "best_sellers",
+  requires: STOCK_READ,
+  compare: "higher",
+  facts: async (ctx) => { const facts = await readFacts(ctx, BEST_SQL); topGroups(facts, "item", "itemGroup", BEST_SELLERS, "amount"); return facts; },
+  build: (ctx, facts) => {
+    const { top } = topGroups(facts, "item", "itemGroup", BEST_SELLERS, "amount");
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return {
+      code: "best_sellers", unit: "money", value: amount, count: facts.length, amount, targetable: false,
+      chart: { type: "bars", dimension: "item", unit: "money", items: top.map((key) => {
+        const group = facts.filter((fact) => fact.dims.item === key);
+        return { key, label: group[0]?.title ?? "", value: sum(group.map((fact) => fact.amount)).toFixed(ctx.places), count: group.length,
+          extra: { quantity: sum(group.map((fact) => fact.measure)).toString() } };
+      }) },
+      notes: moneyNotes(facts),
+    };
+  },
+};
+
+// ------------------------------------------------------------------ marketing
+
+/** Groups facts by a dimension into the five biggest (their own series, stable for the chart and its drill-down) and "other". */
+export function topFive(facts: Fact[], dimension: string, into: string) {
+  const counts = new Map<string, number>();
+  for (const fact of facts) counts.set(fact.dims[dimension], (counts.get(fact.dims[dimension]) ?? 0) + 1);
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([key]) => key);
+  for (const fact of facts) fact.dims[into] = top.includes(fact.dims[dimension]) ? fact.dims[dimension] : "other";
+  return { top, hasOther: facts.some((fact) => fact.dims[into] === "other") };
+}
+
+const withChannel = (facts: Fact[]) => { for (const fact of facts) fact.dims.sourceChannel = `${fact.dims.source}/${fact.dims.channel}`; topFive(facts, "sourceChannel", "channelGroup"); return facts; };
+
+/**
+ * Enquiries by source and channel: enquiries created in the period (as New leads: spam and duplicates left out),
+ * 12-month columns stacked by source and channel — the five biggest pairs over those months, the rest "Other".
+ */
+const bySource: KpiSpec = {
+  code: "enquiries_by_source",
+  requires: MARKETING_READ,
+  compare: "higher",
+  facts: async (ctx) => withChannel(await readFacts(ctx, NEW_LEADS_SQL)),
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const { top, hasOther } = topFive(facts, "sourceChannel", "channelGroup");
+    const keys = monthKeys(ctx.filters);
+    const series = [...top.map((id) => ({ id, label: id })), ...(hasOther ? [{ id: "other", label: "" }] : [])];
+    return {
+      code: "enquiries_by_source", unit: "count", value: String(period.length), count: period.length, targetable: false,
+      chart: { type: "columns", dimension: "month", seriesDimension: "channelGroup", categories: categories(keys), series, values: grid(facts, "month", keys, series, "channelGroup", "count", ctx.places), unit: "count" },
+    };
+  },
+};
+
+/**
+ * PLM-138 · Spam by source and channel: enquiries created in the period that are spam (marked so, or raised by a contact
+ * already flagged as spam, on any channel), counted by where they came from (the source and channel they arrived on,
+ * before any returning-client relabelling), the biggest first. Left out of every other figure.
+ */
+export const SPAM_SQL = `WITH ${P}, ${leadsCte(true, true)}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT lc.lead_id::text AS id, 'lead' AS kind, NULL::text AS parent_id, lc.reference, lc.title, lc.client, lc.owner, lc.am::text AS owner_id,
+         lc.created_at AS at, NULL::text AS amount, NULL::text AS measure,
+         COALESCE(lc.original_source, lc.source) || ' / ' || COALESCE(lc.original_channel, lc.channel) AS detail,
+         jsonb_build_object('period', CASE WHEN lc.created_at >= p.from_at AND lc.created_at < p.to_at THEN '1' ELSE '0' END, 'month', ${month("lc.created_at")},
+           'source', COALESCE(lc.original_source, lc.source), 'channel', COALESCE(lc.original_channel, lc.channel)) AS dims
+    FROM lc CROSS JOIN p WHERE lc.created_at >= p.from_at AND lc.created_at < p.to_at
+) facts ORDER BY at DESC`;
+
+const spamBySource: KpiSpec = {
+  code: "spam_by_source",
+  requires: MARKETING_READ,
+  compare: "lower",
+  facts: async (ctx) => { const facts = await readFacts(ctx, SPAM_SQL); for (const fact of facts) fact.dims.sourceChannel = `${fact.dims.source}/${fact.dims.channel}`; return facts; },
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const counts = new Map<string, number>();
+    for (const fact of period) counts.set(fact.dims.sourceChannel, (counts.get(fact.dims.sourceChannel) ?? 0) + 1);
+    const items = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key, count]) => {
+      const [source, channel] = key.split("/");
+      return { key, label: `${ctx.labels.sources.get(source) ?? source} · ${channel}`, value: String(count), count };
+    });
+    return {
+      code: "spam_by_source", unit: "count", value: String(period.length), count: period.length, targetable: false,
+      chart: { type: "bars", dimension: "sourceChannel", unit: "count", items },
+    };
+  },
+};
+
+/** Enquiries by type: the same enquiries, 12-month columns stacked by enquiry type (the five biggest, the rest "Other"). */
+const byType: KpiSpec = {
+  code: "enquiries_by_type",
+  requires: MARKETING_READ,
+  facts: async (ctx) => { const facts = await readFacts(ctx, NEW_LEADS_SQL); topFive(facts, "type", "typeGroup"); return facts; },
+  build: (ctx, facts) => {
+    const period = facts.filter(inPeriod);
+    const { top, hasOther } = topFive(facts, "type", "typeGroup");
+    const keys = monthKeys(ctx.filters);
+    const series = [...top.map((id) => ({ id, label: ctx.labels.enquiryTypes.get(id) ?? "" })), ...(hasOther ? [{ id: "other", label: "" }] : [])];
+    return {
+      code: "enquiries_by_type", unit: "count", value: String(period.length), count: period.length, targetable: false,
+      chart: { type: "columns", dimension: "month", seriesDimension: "typeGroup", categories: categories(keys), series, values: grid(facts, "month", keys, series, "typeGroup", "count", ctx.places), unit: "count" },
+    };
+  },
+};
+
+/** The step rates of a group of enquiries: qualified, quote (Proposal) and won, each as a share of the enquiries. */
+export function sourceRates(facts: Fact[]) {
+  const share = (step: string) => (facts.length ? percent(facts.filter((fact) => fact.dims[step] === "1").length, facts.length) : null);
+  return { qualified: share("qualified"), proposal: share("proposal"), won: share("won") };
+}
+
+/**
+ * Conversion by source: enquiries created in the period, by source, and how far each got (as the Conversion funnel
+ * reads it): qualified, quote (reached Proposal) and won — each as a share of the source's enquiries. The figure is
+ * enquiry → won over all sources.
+ */
+const conversion: KpiSpec = {
+  code: "conversion_by_source",
+  requires: MARKETING_READ,
+  compare: "higher",
+  facts: (ctx) => readFacts(ctx, FUNNEL_SQL),
+  build: (ctx, facts) => {
+    const groups = groupBy(facts, "source", (fact) => ctx.labels.sources.get(fact.dims.source) ?? fact.dims.source, ctx.places).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    return {
+      code: "conversion_by_source", unit: "percent", value: sourceRates(facts).won, count: facts.length, targetable: false,
+      chart: { type: "bars", dimension: "source", unit: "percent", items: groups.map((group) => {
+        const rates = sourceRates(group.facts);
+        return { key: group.key, label: ctx.labels.sources.get(group.key) ?? "", value: rates.won ?? "0", count: group.count, extra: { qualified: rates.qualified, proposal: rates.proposal } };
+      }) },
+    };
+  },
+};
+
+/** The source of the enquiry behind each opportunity ("none" for one opened without an enquiry). */
+async function opportunitySources(ctx: ReportContext, ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  return new Map((await ctx.db.query<{ id: string; source: string | null }>(
+    `SELECT o.id::text, e.source FROM crm_opportunities o
+       LEFT JOIN crm_leads l ON l.workspace_id = o.workspace_id AND l.id = o.lead_id
+       LEFT JOIN crm_enquiries e ON e.workspace_id = o.workspace_id AND e.id = l.enquiry_id
+      WHERE o.workspace_id = $1 AND o.id = ANY($2::uuid[])`, [ctx.workspaceId, ids])).rows.map((row) => [row.id, row.source ?? "none"]));
+}
+
+/**
+ * Won value by source: the period's Sales Won (as on the Owner overview: proposals with their payment proof, net of
+ * tax, cancelled deals left out) by the source of the enquiry the deal came from, beside the source's enquiries in the
+ * period.
+ */
+const wonBySource: KpiSpec = {
+  code: "won_by_source",
+  requires: MARKETING_READ,
+  compare: "higher",
+  facts: async (ctx) => {
+    const facts = (await readFacts(ctx, WON_SQL)).filter(inPeriod);
+    const sources = await opportunitySources(ctx, [...new Set(facts.map((fact) => fact.id))]);
+    for (const fact of facts) fact.dims.source = sources.get(fact.id) ?? "none";
+    return facts;
+  },
+  build: async (ctx, facts) => {
+    const leads = (await readFacts(ctx, NEW_LEADS_SQL)).filter(inPeriod);
+    const groups = groupBy(facts, "source", () => "", ctx.places).sort((a, b) => b.amount.cmp(a.amount) || b.count - a.count);
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return {
+      code: "won_by_source", unit: "money", value: amount, count: facts.length, amount, targetable: false,
+      chart: { type: "bars", dimension: "source", unit: "money", items: groups.map((group) => ({
+        key: group.key, label: ctx.labels.sources.get(group.key) ?? "", value: group.amountText, count: group.count,
+        extra: { leads: leads.filter((fact) => fact.dims.source === group.key).length },
+      })) },
+      notes: moneyNotes(facts),
+    };
+  },
+};
+
+// ------------------------------------------------------------------ lead source performance (PLM-133)
+
+export const LEAD_SOURCE_PAIRS = 10;
+
+/** The source and channel of the enquiry behind each opportunity (none for one opened without an enquiry). */
+async function opportunitySourceChannels(ctx: ReportContext, ids: string[]) {
+  if (!ids.length) return new Map<string, string>();
+  return new Map((await ctx.db.query<{ id: string; source: string | null; channel: string | null }>(
+    `SELECT o.id::text, e.source, e.channel FROM crm_opportunities o
+       LEFT JOIN crm_leads l ON l.workspace_id = o.workspace_id AND l.id = o.lead_id
+       LEFT JOIN crm_enquiries e ON e.workspace_id = o.workspace_id AND e.id = l.enquiry_id
+      WHERE o.workspace_id = $1 AND o.id = ANY($2::uuid[])`, [ctx.workspaceId, ids])).rows
+    .map((row) => [row.id, row.source ? `${row.source}/${row.channel ?? ""}` : "none"]));
+}
+
+/** The period's Sales Won (as on the Owner overview) that came from an enquiry, with its source and channel. */
+async function wonFromEnquiries(ctx: ReportContext) {
+  const facts = (await readFacts(ctx, WON_SQL)).filter(inPeriod);
+  const pairs = await opportunitySourceChannels(ctx, [...new Set(facts.map((fact) => fact.id))]);
+  for (const fact of facts) fact.dims.sourceChannel = pairs.get(fact.id) ?? "none";
+  return facts.filter((fact) => fact.dims.sourceChannel !== "none");
+}
+
+/**
+ * Won value from enquiries (PLM-133): the period's Sales Won (proposals with their payment proof, net of tax, cancelled
+ * deals left out) whose deal came from an enquiry — what the lead sources brought in. Target: monthly.
+ */
+const leadSourceWon: KpiSpec = {
+  code: "lead_source_won",
+  requires: MARKETING_READ,
+  compare: "higher",
+  facts: wonFromEnquiries,
+  build: (ctx, facts) => {
+    const amount = sum(facts.map((fact) => fact.amount)).toFixed(ctx.places);
+    return { code: "lead_source_won", unit: "money", value: amount, count: facts.length, amount, targetable: true,
+      ...targetFor(ctx.targets, "lead_source_won_value", ctx.filters, amount), notes: moneyNotes(facts) };
+  },
+};
+
+/**
+ * Lead source performance (PLM-133): per source and channel, the enquiries created in the period (as New leads: spam
+ * and duplicates left out) against the Won value from enquiries of that source and channel in the period. The ten pairs
+ * that brought most (Won value, then enquiries), the rest together. A bar opens both its enquiries and its won deals.
+ */
+const leadSources: KpiSpec = {
+  code: "lead_sources",
+  requires: MARKETING_READ,
+  facts: async (ctx) => {
+    const leads = (await readFacts(ctx, NEW_LEADS_SQL)).filter(inPeriod);
+    for (const fact of leads) fact.dims.sourceChannel = `${fact.dims.source}/${fact.dims.channel}`;
+    const facts = [...await wonFromEnquiries(ctx), ...leads];
+    groupPairs(facts);
+    return facts;
+  },
+  build: (ctx, facts) => {
+    const keys = groupPairs(facts);
+    const won = facts.filter((fact) => fact.kind === "opportunity");
+    return {
+      code: "lead_sources", unit: "money", value: sum(won.map((fact) => fact.amount)).toFixed(ctx.places), count: facts.length - won.length, targetable: false,
+      chart: { type: "bars", dimension: "pairGroup", unit: "money", items: keys.map((key) => {
+        const group = facts.filter((fact) => fact.dims.pairGroup === key);
+        const groupWon = group.filter((fact) => fact.kind === "opportunity");
+        return { key, label: "", value: sum(groupWon.map((fact) => fact.amount)).toFixed(ctx.places), count: group.length - groupWon.length,
+          extra: { leads: group.length - groupWon.length, won: groupWon.length } };
+      }) },
+      notes: moneyNotes(won),
+    };
+  },
+};
+
+/** The ten source/channel pairs with most Won value (then enquiries), the rest "other": the bars, biggest first. */
+export function groupPairs(facts: Fact[], keep = LEAD_SOURCE_PAIRS) {
+  const totals = new Map<string, { won: Dec; leads: number }>();
+  for (const fact of facts) {
+    const total = totals.get(fact.dims.sourceChannel) ?? { won: Dec.ZERO, leads: 0 };
+    if (fact.kind === "lead") total.leads += 1;
+    else if (fact.amount) total.won = total.won.add(fact.amount);
+    totals.set(fact.dims.sourceChannel, total);
+  }
+  const ranked = [...totals.entries()].sort((a, b) => b[1].won.cmp(a[1].won) || b[1].leads - a[1].leads || a[0].localeCompare(b[0])).map(([key]) => key);
+  const top = ranked.slice(0, keep);
+  for (const fact of facts) fact.dims.pairGroup = top.includes(fact.dims.sourceChannel) ? fact.dims.sourceChannel : "other";
+  return [...top, ...(ranked.length > keep ? ["other"] : [])];
+}
+
+// ------------------------------------------------------------------ form and QR performance (PLM-133)
+
+export const FORM_LINKS = 10;
+
+/**
+ * Form / QR performance (PLM-133, PLM-036): enquiries created in the period (spam and duplicates left out) that came in
+ * through one of the firm's enquiry forms, by the form and the placement its link or QR code carried (none: the plain
+ * form link). The ten links that brought most, the rest together.
+ */
+const FORMS_SQL = `WITH ${P}, ${leadsCte(true)}
+SELECT ${FACT_COLUMNS} FROM (
+  SELECT lc.lead_id::text AS id, 'lead' AS kind, NULL::text AS parent_id, lc.reference, lc.title, lc.client, lc.owner, lc.am::text AS owner_id, lc.created_at AS at,
+         NULL::text AS amount, NULL::text AS measure,
+         concat_ws(' · ', COALESCE(NULLIF(btrim(form.published->>'title'), ''), NULLIF(btrim(intake.original_payload->>'formTitle'), '')), NULLIF(link.placement, '')) AS detail,
+         jsonb_build_object('period', '1', 'form', intake.original_payload->>'formId', 'placement', link.placement,
+           'link', (intake.original_payload->>'formId') || '|' || link.placement) AS dims
+    FROM lc CROSS JOIN p
+    JOIN crm_leads lead ON lead.workspace_id = p.ws AND lead.id = lc.lead_id
+    JOIN crm_enquiries enquiry ON enquiry.workspace_id = p.ws AND enquiry.id = lead.enquiry_id
+    JOIN crm_intake_events intake ON intake.workspace_id = p.ws AND intake.id = enquiry.intake_event_id
+    LEFT JOIN crm_lead_forms form ON form.workspace_id = p.ws AND form.id::text = intake.original_payload->>'formId'
+    CROSS JOIN LATERAL (SELECT COALESCE(NULLIF(btrim(intake.original_payload->'link'->>'placement'), ''), NULLIF(btrim(enquiry.details->>'campaign'), ''), '') AS placement) link
+   WHERE lc.status <> 'duplicate' AND lc.created_at >= p.from_at AND lc.created_at < p.to_at
+     AND COALESCE(intake.original_payload->>'formId', '') <> ''
+) facts ORDER BY at DESC`;
+
+const formLinks: KpiSpec = {
+  code: "form_links",
+  requires: MARKETING_READ,
+  facts: async (ctx) => { const facts = await readFacts(ctx, FORMS_SQL); topGroups(facts, "link", "linkGroup", FORM_LINKS); return facts; },
+  build: (_ctx, facts) => {
+    const { top, hasOther } = topGroups(facts, "link", "linkGroup", FORM_LINKS);
+    return {
+      code: "form_links", unit: "count", value: String(facts.length), count: facts.length, targetable: false,
+      chart: { type: "bars", dimension: "linkGroup", unit: "count", items: [...top, ...(hasOther ? ["other"] : [])].map((key) => {
+        const group = facts.filter((fact) => fact.dims.linkGroup === key);
+        return { key, label: key === "other" ? "" : group[0]?.detail ?? "", value: String(group.length), count: group.length };
+      }) },
+    };
+  },
+};
+
+/**
+ * Lead response by source: the first-response clocks started in the period (the Lead response dashboard's), the
+ * average working hours to the first response by the enquiry's source (lower is better), with the response rate.
+ */
+const responseBySource: KpiSpec = {
+  code: "response_by_source",
+  requires: MARKETING_READ,
+  compare: "lower",
+  facts: async (ctx) => (await readFacts(ctx, SLA_SQL)).filter((fact) => inPeriod(fact) && fact.measure !== null),
+  build: async (ctx, facts) => {
+    const clocks = (await readFacts(ctx, SLA_SQL)).filter(inPeriod);
+    const groups = groupBy(facts, "source", () => "", 2).map((group) => ({ ...group, average: mean(group.facts.map((fact) => fact.measure!), 2) ?? "0" }))
+      .sort((a, b) => Dec.of(a.average).cmp(b.average));
+    return {
+      code: "response_by_source", unit: "hours", value: mean(facts.map((fact) => fact.measure!), 2), count: facts.length, targetable: false,
+      extra: { rate: responseRate(clocks) },
+      chart: { type: "bars", dimension: "source", unit: "hours", items: groups.map((group) => ({ key: group.key, label: ctx.labels.sources.get(group.key) ?? "", value: group.average, count: group.count })) },
+    };
+  },
+};
+
+/** Dashboard 7 · Stock and marketing: its own figures first, then what the rest of the stock area reads. */
+export const STOCK: KpiSpec[] = [lowStock, reserved, bestSellers, leadSourceWon, leadSources, formLinks, spamBySource, stockValue, purchases, stockUsed, slowMoving];
+export const MARKETING: KpiSpec[] = [bySource, byType, conversion, wonBySource, responseBySource, spamBySource];

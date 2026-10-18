@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "rlsExceptions": [
+    "auth_mfa_challenges",
+    "client_portal_settings",
+    "commercial_reconciliation_jobs",
+    "customer_account_organizations",
+    "mfa_security_events",
+    "project_vendor_access",
+    "tenant_login_branding",
+    "tenant_provisioning_drafts",
+    "tenant_provisioning_requests"
+  ],
+  "rule": "Any new workspace table without RLS fails this verification."
+}

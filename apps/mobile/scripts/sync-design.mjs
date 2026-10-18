@@ -1,5 +1,6 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { syncBrand } from '../../../packages/brand/sync.mjs';
 
 const app = new URL('../', import.meta.url);
 const web = new URL('../../web/', import.meta.url);
@@ -21,14 +22,24 @@ function blendHex(foreground, background, percent) {
 function resolve(name, values, seen = new Set()) {
   if (seen.has(name) || !values[name]) throw new Error(`Unresolved design token: ${name}`);
   seen.add(name);
-  return values[name].replace(/var\((--wd-[\w-]+)(?:,\s*([^()]+))?\)/g,
-    (_, reference, fallback) => values[reference] ? resolve(reference, values, new Set(seen)) : fallback?.trim() ?? (() => { throw new Error(`Unresolved design token: ${reference}`); })())
+  // Inner references first, repeated until none is left, so a fallback that is itself a
+  // var() (var(--tenant, var(--wd-neutral-100))) resolves too.
+  let value = values[name];
+  for (let previous = ''; previous !== value;) {
+    previous = value;
+    value = value.replace(/var\((--wd-[\w-]+)(?:,\s*([^()]+))?\)/g,
+      (_, reference, fallback) => values[reference] ? resolve(reference, values, new Set(seen)) : fallback?.trim() ?? (() => { throw new Error(`Unresolved design token: ${reference}`); })());
+  }
+  return value
     .replace(/rgb\((\d+) (\d+) (\d+) \/ (\d+)%\)/g,
       (_, r, g, b, a) => `rgba(${r}, ${g}, ${b}, ${Number(a) / 100})`)
     // Native colors cannot evaluate CSS color-mix. Use the static brand fallback;
     // tenant-selected primary colors are applied separately at runtime.
     .replace(/color-mix\(in oklch,\s*(#[0-9a-f]{6})\s+(\d+)%,\s*(#[0-9a-f]{6})\)/gi,
-      (_, foreground, percent, background) => blendHex(foreground, background, percent));
+      (_, foreground, percent, background) => blendHex(foreground, background, percent))
+    // A colour mixed with transparent is the same colour at that opacity.
+    .replace(/color-mix\(in (?:srgb|oklch),\s*#([0-9a-f]{6})\s+(\d+)%,\s*transparent\)/gi,
+      (_, hex, percent) => `rgba(${[0, 2, 4].map(index => Number.parseInt(hex.slice(index, index + 2), 16)).join(', ')}, ${Number(percent) / 100})`);
 }
 
 export async function generateTokens() {
@@ -52,7 +63,7 @@ export async function generateTokens() {
     }));
   const tokens = {
     colors: { light: theme('light'), dark: theme('dark'), 'high-contrast': theme('high-contrast') },
-    brand: Object.fromEntries(['lilac', 'rose', 'peach', 'ink'].map((key) => [key, root[`--wd-brand-${key}`]])),
+    brand: Object.fromEntries(['lilac', 'rose', 'peach', 'ink'].map((key) => [key, resolve(`--wd-brand-${key}`, root)])),
     spacing: scale('--wd-space-'),
     radius: scale('--wd-radius-', ['round']),
     fontSize: scale('--wd-text-'),
@@ -65,10 +76,9 @@ export async function syncDesign() {
   await mkdir(new URL('src/design-system/', app), { recursive: true });
   await mkdir(new URL('assets/brand/', app), { recursive: true });
   await writeFile(new URL('src/design-system/tokens.generated.ts', app), await generateTokens());
-  for (const file of ['wodana-logo-v4.png', 'woddy-mark-v4.png']) {
-    await copyFile(new URL(`public/brand/wodana/${file}`, web), new URL(`assets/brand/${file}`, app));
-  }
-  console.log('Synced web colors, type scale, spacing, radii, motion, and original brand assets.');
+  // The logo, role avatars and Woddy come from packages/brand (the same copy the web serves).
+  await syncBrand();
+  console.log('Synced web colors, type scale, spacing, radii, motion, and the brand assets.');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await syncDesign();

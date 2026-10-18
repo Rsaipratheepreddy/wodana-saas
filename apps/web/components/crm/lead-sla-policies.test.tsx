@@ -7,7 +7,7 @@ import { LeadResponseSla } from "./lead-sla-policies";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("LeadResponseSla", () => {
-  it("uses the SLA policy and health endpoints, and preserves a saved business schedule when editing", async () => {
+  it("uses the SLA policy and health endpoints, and saves business hours as the workspace's working week", async () => {
     const user = userEvent.setup();
     const data = structuredClone(leadsPageFixture);
     const policy = data.slaPolicies[0];
@@ -23,7 +23,7 @@ describe("LeadResponseSla", () => {
     const fetchMock = vi.fn(async (url: string, init: RequestInit) => ({
       ok: true,
       json: async () => {
-        if (url.includes("reports/sla")) return { summary: { withinTarget: 8, breached: 1, averageResponseMinutes: 48 }, rows: [] };
+        if (url.includes("reports/sla")) return { summary: { withinTarget: 8, breached: 1, averageResponseMinutes: 125 }, rows: [] };
         if (init.method === "PATCH") return { ...policy, name: "Urgent first response" };
         return data.slaPolicies;
       },
@@ -33,7 +33,7 @@ describe("LeadResponseSla", () => {
     render(<LeadResponseSla initialData={data} />);
 
     expect(await screen.findByRole("region", { name: "Response SLA policies" })).toHaveTextContent("Business hours");
-    expect(screen.getByLabelText("Response SLA health")).toHaveTextContent("48 min");
+    expect(screen.getByLabelText("Response SLA health")).toHaveTextContent("2 h 5 min");
     await user.click(screen.getByRole("button", { name: "Edit" }));
     const dialog = await screen.findByRole("dialog", { name: "Edit response SLA" });
     const name = within(dialog).getByRole("textbox", { name: "Policy name" });
@@ -47,8 +47,10 @@ describe("LeadResponseSla", () => {
       version: policy.version,
       name: "Urgent first response",
       calculationMode: "business",
-      schedule: policy.schedule,
+      // The workspace week (the region's Monday to Friday here, the default working day), not the policy's own Sunday hours.
+      schedule: { mode: "business", timezone: "UTC", weeklyHours: { monday: [{ start: "09:00", end: "18:00" }], friday: [{ start: "09:00", end: "18:00" }] } },
     });
+    expect(JSON.parse(String(request.body)).schedule.weeklyHours.sunday).toBeUndefined();
   });
 
   it("shows the Palm weekday office calendar without confusing it with the elapsed takeover clock", async () => {
@@ -73,6 +75,8 @@ describe("LeadResponseSla", () => {
       json: async () => url.includes("reports/sla") ? { summary: {}, rows: [] } : data.slaPolicies,
     })));
     render(<LeadResponseSla initialData={data} />);
-    expect(await screen.findByText("Mon–Fri · 08:00–18:00 · Asia/Dubai")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Mon–Fri · 08:00–18:00 · Asia/Dubai")).toBeInTheDocument());
+    // Its hours differ from the workspace's week (09:00–18:00 in UTC here), which the inbox's away hours follow.
+    expect(screen.getByText("Not the workspace week")).toBeInTheDocument();
   });
 });

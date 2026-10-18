@@ -11,11 +11,12 @@ vi.mock("@/components/workspace/workspace-focus", () => ({
 vi.mock("@/components/pre-project/pre-project-context", () => ({
   usePreProject: () => ({ setSelected: vi.fn() }),
 }));
-vi.mock("./quotation-studio", () => ({
-  QuotationStudio: ({ quote }: { quote: Quote }) => (
+vi.mock("./quotation-editor", () => ({
+  QuotationEditor: ({ quote }: { quote: Quote }) => (
     <div>Builder for {quote.title}</div>
   ),
 }));
+vi.mock("./quotation-builder-preview",()=>({QuotationBuilderPreview:()=> <div>Read-only client document</div>}));
 const quote = (id: string, number: number): Quote => ({
   id,
   number,
@@ -64,6 +65,48 @@ const record = {
 } as PreProjectCase;
 describe("Quotation entry flow", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("shows project quotation cards and retains the existing editor links and table view", async () => {
+    render(<CommercialPage initial={state} record={record} section="quotations" search="" quotationPresentation="cards" embedded/>);
+    expect(screen.getByRole("article")).toHaveTextContent("Proposal 2");
+    expect(screen.getByRole("link", { name: "Open quotation" })).toHaveAttribute("href", "/workspace/pre-projects/cases/case1/quotations?quote=q2");
+    expect(screen.queryByText("Proposal 1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Quotation table" }));
+    expect(screen.getByRole("table")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Quotation cards" }));
+    expect(screen.getByRole("article")).toBeVisible();
+  });
+  it("keeps empty quotation cards honest and does not offer creation to viewers", () => {
+    render(<CommercialPage initial={{...state,canEdit:false,data:{...state.data,quotes:[]}}} record={record} section="quotations" search="" quotationPresentation="cards" embedded/>);
+    expect(screen.getByText("No quotations yet")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create quotation" })).not.toBeInTheDocument();
+  });
+  it("requires a Palm service path before creating the first quotation", () => {
+    render(<CommercialPage initial={{ ...state, servicePathEnabled: true, data: { ...state.data, quotes: [] } }} record={record} section="quotations" search="" quotationPresentation="cards" embedded/>);
+    expect(screen.getByRole("region", { name: "Enquiry service path" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create quotation" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Design / moodboards only" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Ready-made furniture" })).toBeEnabled();
+  });
+  it("keeps the second round inside the same project", () => {
+    const design = quote("design", 1);
+    design.status = "accepted";
+    design.round = "design";
+    const palm = {
+      ...state,
+      servicePathEnabled: true,
+      data: {
+        ...state.data,
+        quotes: [design],
+        servicePath: { selectedAt: "now", selectedBy: "sales", scope: { design: true, mainQuotation: true, materialSelection: true, procurement: true, manufacturing: true, siteWorks: true, installation: true } },
+        dealFile: { id: "deal", quoteId: "design", reference: "DF-1" },
+      },
+    } as CommercialState;
+    render(<CommercialPage initial={palm} record={record} section="quotations" search="" quotationPresentation="cards" embedded projectId="project1"/>);
+    expect(screen.getByRole("button", { name: "Prepare main quotation" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "View version" })).toHaveAttribute(
+      "href", "/workspace/projects/project1?tab=planning&planningTab=quotations&quote=design",
+    );
+  });
   it("opens with a table and links each quotation to its own builder", () => {
     render(
       <CommercialPage
@@ -74,9 +117,9 @@ describe("Quotation entry flow", () => {
       />,
     );
     expect(screen.getByRole("table")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Proposal 1" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Proposal 2" })).toHaveAttribute(
       "href",
-      "/workspace/pre-projects/cases/case1/quotations?quote=q1",
+      "/workspace/pre-projects/cases/case1/quotations?quote=q2",
     );
     expect(screen.queryByText(/Builder for/)).not.toBeInTheDocument();
   });
@@ -97,7 +140,7 @@ describe("Quotation entry flow", () => {
     const accepted = structuredClone(state);
     accepted.data.quotes[1].status = "accepted";
     render(<CommercialPage initial={accepted} record={record} section="quotations" quotationId="q2" search="" />);
-    expect(await screen.findByRole("link", { name: "Start change case" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "Request a change" })).toHaveAttribute(
       "href", "/workspace/pre-projects/cases/case1/variations",
     );
     expect(screen.queryByRole("button", { name: "Create variation" })).toBeNull();
@@ -118,25 +161,17 @@ describe("Quotation entry flow", () => {
     ).toBeVisible();
     expect(screen.queryByText(/Builder for/)).not.toBeInTheDocument();
   });
-  it("shows the three live pre-execution stages without duplicating page navigation", () => {
-    render(
-      <CommercialPage
-        initial={state}
-        record={record}
-        section="variations"
-        search=""
-      />,
-    );
-    const flow = screen.getByRole("navigation", {
-      name: "Pre-execution readiness timeline",
-    });
-    expect(flow).toBeVisible();
-    expect(flow).toHaveTextContent("Agreement & payments");
-    expect(flow).toHaveTextContent("Change control");
-    expect(flow).toHaveTextContent("Approvals & release");
-    expect(
-      screen.getByRole("link", { name: /Change control/ }),
-    ).toHaveAttribute("aria-current", "step");
+  it("keeps change requests focused without a duplicate readiness navigation", () => {
+    render(<CommercialPage initial={state} record={record} section="variations" search=""/>);
+    expect(screen.queryByRole("navigation",{name:"Planning readiness timeline"})).not.toBeInTheDocument();
+  });
+  it("opens the request thread a notification links to", () => {
+    const paint = { id: "r1", number: 1, title: "Paint", detail: "Which white did you mean?", status: "open" as const, owner: "", dueDate: "", resolution: "", createdAt: "2026-09-27T00:00:00Z",
+      comments: [{ id: "c1", author: "Maya", at: "2026-09-27T00:00:00Z", text: "The warmer one.", visibility: "client" as const }] };
+    render(<CommercialPage initial={{ ...state, data: { ...state.data, requests: [paint] } }} record={record} section="variations" search="" openRequestId="r1"/>);
+    const dialog = screen.getByRole("dialog", { name: "Paint" });
+    expect(dialog).toHaveTextContent("Which white did you mean?");
+    expect(dialog).toHaveTextContent("The warmer one.");
   });
   it("keeps a successful quotation creation when its follow-up read fails", async () => {
     const empty = structuredClone(state);
@@ -152,4 +187,47 @@ describe("Quotation entry flow", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+});
+
+it("reviews an approved quotation without editing and requires a client approver before issue",()=>{
+ const approved=structuredClone(state);approved.data.quotes[1].status="internal_approved";
+ render(<CommercialPage reviewOnly initial={approved} record={record} section="quotations" quotationId="q2" search=""/>);
+ expect(screen.getByText("Read-only client document")).toBeVisible();
+ expect(screen.queryByRole("button",{name:"Save changes"})).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"Send to client"}));
+ expect(screen.getByRole("button",{name:"Issue V2"})).toBeDisabled();
+ expect(screen.getByText(/Publishing to the portal does not send/)).toBeVisible();
+});
+
+it("asks for the QS estimate only on a deal quotation the firm's QS rules send to the QS", () => {
+  const scope = { design: false, mainQuotation: true, materialSelection: false, procurement: true, manufacturing: true, siteWorks: false, installation: false };
+  const inReview = (qsEstimateQuoteIds: string[]) => {
+    const next = structuredClone(state);
+    next.data.quotes[1].status = "internal_review";
+    next.data.servicePath = { selectedAt: "now", selectedBy: "sales", scope };
+    return { ...next, canEstimate: true, qsEstimateQuoteIds };
+  };
+  // Standard catalogue items only: approved as priced, no QS cost estimate to enter.
+  const { unmount } = render(<CommercialPage reviewOnly initial={inReview([])} record={record} section="quotations" quotationId="q2" search=""/>);
+  expect(screen.getByRole("button", { name: "Approve pricing" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Approve QS estimate" })).not.toBeInTheDocument();
+  unmount();
+  // Lines the rules name: the QS approves the estimate.
+  render(<CommercialPage reviewOnly initial={inReview(["q2"])} record={record} section="quotations" quotationId="q2" search=""/>);
+  expect(screen.getByRole("button", { name: "Approve QS estimate" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Approve pricing" })).not.toBeInTheDocument();
+});
+
+it('opens the payment schedule directly from its route and preserves accepted milestone amounts', async () => {
+  const payments = structuredClone(state);
+  payments.data.quotes[1].status = 'accepted';
+  payments.data.payments = [{id:'advance',sourceQuoteId:'q2',title:'Advance',amount:40,dueDate:'2026-10-01',requiredForRelease:true,status:'pending',reference:'',proof:''}];
+  render(<CommercialPage initial={payments} record={record} section="payment-plan" search=""/>);
+  expect(screen.getByRole('table',{name:'Payment milestones'})).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'Set due date'}));
+  expect(await screen.findByRole('dialog',{name:'Payment milestone'})).toBeVisible();
+  expect(screen.getByRole('textbox',{name:'Milestone'})).toBeDisabled();
+  expect(screen.getByRole('checkbox',{name:'Execution release'})).toBeDisabled();
+  expect(screen.getByRole('button',{name:'Open calendar Due date'})).toBeEnabled();
+  expect(screen.getByRole('button',{name:'Save milestone'})).toBeEnabled();
 });

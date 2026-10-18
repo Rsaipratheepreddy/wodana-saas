@@ -1,5 +1,7 @@
+import { Dec } from "../catalog-core/decimal";
+import { depositMeetsMinimum, isPercentDeposit, minimumDepositAmount, type MinimumDeposit } from "../design/design-packages.domain";
 import { paymentIsVerified } from "./accounting-invoice";
-import { acceptedQuoteLines } from "./commercial.domain";
+import { acceptedQuoteLines, acceptedQuoteValue } from "./commercial.domain";
 import {
   agreementMatchesFinanceContext,
   paymentHasFinanceVerifiedReceipt,
@@ -28,10 +30,15 @@ export function isOperationalEvidence(
   );
 }
 
+/** The signed agreement is on record: an uploaded signed document, or a written description of it. */
+export function agreementHasSignedEvidence(agreement: Pick<Agreement, "evidence" | "files"> | null | undefined) {
+  return Boolean(agreement && (agreement.evidence?.trim() || agreement.files?.length));
+}
+
 export function agreementIsOperational(agreement: Agreement | null | undefined) {
   return Boolean(
     agreement?.status === "executed" &&
-      agreement.evidence.trim() &&
+      agreementHasSignedEvidence(agreement) &&
       isOperationalEvidence(agreement),
   );
 }
@@ -58,14 +65,25 @@ export function releasePaymentIsOperational(payment: Payment) {
   return paymentIsVerified(payment) && isOperationalEvidence(payment);
 }
 
+/** Finance verified a receipt for this quotation inside Wodana, so the Deal File needs no outside proof link. */
+export function quoteHasVerifiedReceipt(data: CommercialData, quoteId: string) {
+  return data.payments.some((payment) => payment.sourceQuoteId === quoteId && paymentHasFinanceVerifiedReceipt(data, payment));
+}
+
+/** The Deal File carries proof of payment: a link, or a Finance-verified receipt for its quotation. */
+export function dealPaymentProofReady(data: CommercialData, proofUrl: string | undefined, quoteId: string) {
+  return Boolean(proofUrl) || quoteHasVerifiedReceipt(data, quoteId);
+}
+
 export function financeGatePaymentsReady(
   data: CommercialData,
   gate: "release" | "production",
+  quoteId?: string,
 ) {
   const required = data.payments.filter((payment) =>
-    gate === "release"
+    (!quoteId || payment.sourceQuoteId === quoteId) && (gate === "release"
       ? payment.requiredForRelease
-      : payment.requiredForProduction === true,
+      : payment.requiredForProduction === true),
   );
   // H2 exists for every released contract. H3 applies only when the accepted
   // schedule explicitly names a production-start milestone.
@@ -75,6 +93,29 @@ export function financeGatePaymentsReady(
       releasePaymentIsOperational(payment) &&
       paymentHasFinanceVerifiedReceipt(data, payment),
   );
+}
+
+/**
+ * Design starts only after the case's minimum design deposit (workspace configuration, frozen on the case) is actually
+ * received: a fixed amount, or a share of the design fee (the accepted design quotation's value).
+ */
+export function designDepositReady(data: CommercialData, quote: Quote) {
+  if (quote.round !== "design" || !financeGatePaymentsReady(data, "release", quote.id)) return false;
+  const paid = data.payments
+    .filter(payment => payment.sourceQuoteId === quote.id && payment.requiredForRelease &&
+      payment.currency === quote.currency && releasePaymentIsOperational(payment) &&
+      paymentHasFinanceVerifiedReceipt(data, payment))
+    .reduce((total, payment) => Dec.of(total).add(String(payment.amount)).toString(), "0");
+  return depositMeetsMinimum(paid, data.servicePath?.designMinimumDeposit, quote.currency, acceptedQuoteValue(quote));
+}
+
+/** What the deal approval asks for when the design deposit isn't in: the amount, and the share of the fee when it is one. */
+export function designDepositMessage(minimum: MinimumDeposit | null | undefined, quote: Quote) {
+  if (!minimum) return "Verify the design proposal payment before the deal is approved.";
+  const amount = minimumDepositAmount(minimum, acceptedQuoteValue(quote));
+  if (isPercentDeposit(minimum))
+    return `Verify at least ${Number(minimum.percent)}% of the design fee (${quote.currency} ${amount}) for the design proposal before the deal is approved.`;
+  return `Verify at least ${minimum.currency} ${amount} for the design proposal before the deal is approved.`;
 }
 
 export function variationReleasePaymentsReady(
@@ -189,6 +230,14 @@ export function ownerReviewInputsReady(data: CommercialData, quote: Quote) {
   );
 }
 
+/** A selected material-list stage needs a real client decision, not an empty vacuous pass. */
+export function materialListSignedOff(data: CommercialData, quote: Quote) {
+  if (!data.servicePath?.scope.materialSelection)
+    return true;
+  return quotationApprovalSources(quote).length > 0 &&
+    materialApprovalsComplete(quote, data.materialApprovals);
+}
+
 /** Exact approved selection revisions that cross the commercial release boundary. */
 export function approvedMaterialEvidence(
   quote: Quote,
@@ -224,10 +273,20 @@ export function sameMaterialEvidence(
   return JSON.stringify(normalize(expected)) === JSON.stringify(normalize(current));
 }
 
+/**
+ * Whether a change request holds up release (Q-29): a decision the client still owes, a controlled change case, or
+ * a change to a quote while it is open. A client's plain message from the portal ("when do you start?") is a
+ * conversation, not a change, and never blocks.
+ */
+export function requestBlocksRelease(request: Pick<CommercialData["requests"][number], "status" | "quoteId" | "control" | "decisionRequest">) {
+  if (["resolved", "declined", "withdrawn"].includes(request.status)) return false;
+  return Boolean(request.decisionRequest || request.control || request.quoteId);
+}
+
 export function commercialReleaseInputsReady(data: CommercialData | null | undefined) {
-  const quote = data?.quotes.find(
-    (candidate) => candidate.kind === "quotation" && candidate.status === "accepted",
-  );
+  const quote = data?.servicePath
+    ? data.quotes.find(candidate => candidate.kind === "quotation" && candidate.round === "main" && candidate.status === "accepted")
+    : data?.quotes.find(candidate => candidate.kind === "quotation" && candidate.status === "accepted");
   if (
     !data ||
     !quote ||
@@ -238,14 +297,15 @@ export function commercialReleaseInputsReady(data: CommercialData | null | undef
     data.dealFile.quoteId !== quote.id ||
     data.ownerReview?.status !== "approved" ||
     data.ownerReview.quoteId !== quote.id ||
-    !materialApprovalsComplete(quote, data.materialApprovals)
+    !data.ownerReview.financeReviewedById ||
+    !dealPaymentProofReady(data, data.dealFile.paymentProofUrl, quote.id) ||
+    !Array.isArray(data.dealFile.commissionLines) ||
+    !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;
   return (
-    financeGatePaymentsReady(data, "release") &&
-    data.requests.every((request) =>
-      ["resolved", "declined", "withdrawn"].includes(request.status),
-    )
+    financeGatePaymentsReady(data, "release", data.servicePath ? quote.id : undefined) &&
+    !data.requests.some(requestBlocksRelease)
   );
 }
 

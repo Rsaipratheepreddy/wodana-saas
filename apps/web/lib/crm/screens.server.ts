@@ -3,6 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
+import { calendarRights } from "./calendar-rights";
 import { crmScreenFixture, type CrmRecord, type CrmScreenId, type CrmScreenPageData } from "./screens";
 
 type BackendResult = { forbidden: boolean; payload: unknown };
@@ -48,8 +49,8 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
     if (id === "automations") return {
       ...crmScreenFixture(id),
       items: [
-        { id: "enquiry_ownership", code: "enquiry_ownership", name: "New enquiry ownership", description: "Assign every new enquiry using the CRM queue and create its first response action.", setupHref: "/workspace/crm/leads?section=assignment", availableChannels: ["in_app"], enabled: true, status: "active", version: 1, channels: ["in_app"], weekday: "friday" },
-        { id: "response_escalation", code: "response_escalation", name: "Missed response escalation", description: "Create an urgent action when the configured response target is missed.", setupHref: "/workspace/crm/leads?section=sla", availableChannels: ["in_app"], enabled: true, status: "active", version: 1, channels: ["in_app"], weekday: "friday" },
+        { id: "enquiry_ownership", code: "enquiry_ownership", name: "New enquiry ownership", description: "Adds a first-response task to each new enquiry. Who owns it, and when it moves to the next person, follow Sales settings whether this is on or off.", setupHref: "/workspace/crm/leads?section=assignment", availableChannels: ["in_app"], enabled: true, status: "active", version: 1, channels: ["in_app"], weekday: "friday" },
+        { id: "response_escalation", code: "response_escalation", name: "Missed response escalation", description: "Adds an urgent task when the response target is missed. Moving the enquiry to the next person follows Sales settings whether this is on or off.", setupHref: "/workspace/crm/leads?section=sla", availableChannels: ["in_app"], enabled: true, status: "active", version: 1, channels: ["in_app"], weekday: "friday" },
         { id: "decision_reminders", code: "decision_reminders", name: "Client decision reminders", description: "Remind the request owner when an unanswered client decision reaches its due date.", setupHref: "/workspace/pre-projects/variations", availableChannels: ["in_app"], enabled: false, status: "not_configured", version: 0, channels: ["in_app"], weekday: "friday" },
         { id: "weekly_progress", code: "weekly_progress", name: "Weekly project progress", description: "Send assigned project team members a concise progress summary.", setupHref: "/workspace/projects", availableChannels: ["in_app", "email"], enabled: false, status: "not_configured", version: 0, channels: ["in_app"], weekday: "friday" },
       ],
@@ -60,12 +61,13 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
         { channel: "push", connected: false, delivered: 0, failed: 0, lastDeliveredAt: null, pricing: "Included with Wodana", receiptState: "not_connected" },
       ] },
     };
-    return crmScreenFixture(id);
+    return id === "calendar" || id === "follow-ups" ? { ...crmScreenFixture(id), supporting: { currentUserId: authProfile.id } } : crmScreenFixture(id);
   }
 
   const token = (await cookies()).get(ACCESS_COOKIE)?.value;
   if (!token) redirect("/login");
   const page = base(id, membership.workspaceId);
+  if (id === "calendar" || id === "follow-ups") page.supporting = { currentUserId: authProfile.id, ...calendarRights(membership) };
 
   if (id === "crm-overview") {
     const today = await backend(token, membership.workspaceId, "today");
@@ -84,30 +86,7 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
     return page;
   }
 
-  if (id === "crm-reports") {
-    // Keep the server responses intact. Each report has a different contract
-    // (for example SLA has a summary and owner breakdown), so flattening them
-    // into one generic table loses meaning and produces a misleading UI.
-    const reportNames = ["sources", "lead-flow", "funnel", "pipeline", "sla", "assignment", "forecast"] as const;
-    const responses = await Promise.all(reportNames.map((report) => backend(token, membership.workspaceId, `reports/${report}${report === "lead-flow" ? "?groupBy=mainSource" : ""}`)));
-    if (responses.every((response) => response.forbidden)) return { ...page, canView: false };
-    page.items = responses.flatMap((response, reportIndex) => {
-      if (response.forbidden || !response.payload || typeof response.payload !== "object") return [];
-      const payload = response.payload as { rows?: Array<Record<string, unknown>> };
-      return (payload.rows ?? []).map((row, rowIndex) => ({
-        ...row,
-        id: `${reportNames[reportIndex]}-${rowIndex}`,
-        report: reportNames[reportIndex],
-      }));
-    });
-    page.supporting = {
-      reports: reportNames,
-      results: Object.fromEntries(reportNames.map((report, index) => [report, responses[index]?.forbidden ? null : responses[index]?.payload])),
-    };
-    return page;
-  }
-
-  const endpoints: Record<Exclude<CrmScreenId, "crm-overview" | "crm-reports">, string> = {
+  const endpoints: Record<Exclude<CrmScreenId, "crm-overview">, string> = {
     "follow-ups": "activities?limit=100",
     calendar: "activities?limit=100",
     // Customer work is one relationship graph. Do not split people and companies
@@ -131,7 +110,9 @@ export async function getCrmScreenPageData(id: CrmScreenId): Promise<CrmScreenPa
 
   if (id === "opportunities") {
     const pipelines = await backend(token, membership.workspaceId, "pipelines");
-    page.supporting = { pipelines: pipelines.forbidden ? [] : records(pipelines.payload).items };
+    const workspaceResponse = await fetch(businessApiUrl(`/workspaces/${membership.workspaceId}`), { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+    const workspace = workspaceResponse.ok ? await workspaceResponse.json() : null;
+    page.supporting = { defaultCurrency: workspace?.workspace?.defaultCurrency, pipelines: pipelines.forbidden ? [] : records(pipelines.payload).items };
   }
   if (id === "automations") {
     const payload = primary.payload && typeof primary.payload === "object" ? primary.payload as { providers?: unknown } : {};

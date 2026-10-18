@@ -1,0 +1,71 @@
+"use client";
+
+import { useState } from "react";
+import { parseDate } from "@internationalized/date";
+import { DateField, FormDialog, MoneyField, SelectField, TextInput, useDesignSystem } from "@/design-system";
+import { crmRequest, type RecordData } from "@/lib/crm/client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { zonedDateTime, zonedDateTimeToIso } from "@/lib/crm/zoned-time";
+import { CrmDateTimeField } from "./crm-date-time-field";
+
+type Member = { id: string; label: string };
+const pad = (value: number) => String(value).padStart(2, "0");
+/** An ISO instant as the local "YYYY-MM-DDTHH:mm" the date-time field edits. */
+function localDateTime(value: unknown) {
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) return "";
+  const date = new Date(value);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+export const localDate = (value: unknown) => localDateTime(value).slice(0, 10);
+
+/**
+ * Edit an opportunity: its name, value, owner and the two dates people plan by. The owner list shows
+ * people by name; money and dates follow the workspace's region. A clash reloads and says so.
+ */
+export function OpportunityEditDialog({ workspaceId, opportunity, members, onClose, onSaved }: {
+  workspaceId: string; opportunity: RecordData; members: Member[]; onClose: () => void; onSaved: () => Promise<void>;
+}) {
+  const t = useT();
+  // The follow-up reads and writes the workspace's wall clock (its region's zone), like the calendar.
+  const { timeZone, currency: regionCurrency } = useDesignSystem();
+  // The record's own currency, else the workspace region's (the one the field shows), so amount and currency travel together.
+  const currency = String(opportunity.currencyCode ?? opportunity.currency_code ?? "") || regionCurrency || "";
+  // A value this person can't see is never sent: the save would need the value permission and would clear it.
+  const hasValue = opportunity.amount !== undefined && !opportunity.valueHidden;
+  const [form, setForm] = useState(() => ({
+    title: String(opportunity.title ?? ""), owner: String(opportunity.ownerMembershipId ?? opportunity.owner_membership_id ?? ""),
+    amount: opportunity.amount === null || opportunity.amount === undefined ? "" : String(opportunity.amount),
+    closeDate: localDate(opportunity.expectedCloseAt ?? opportunity.expected_close_at), followUp: zonedDateTime(opportunity.nextActionAt ?? opportunity.next_action_at, timeZone),
+  }));
+  const [start] = useState(() => JSON.stringify(form));
+  const set = <K extends keyof typeof form>(key: K) => (value: (typeof form)[K]) => setForm((current) => ({ ...current, [key]: value }));
+
+  // The value travels as a pair: an amount with its currency, a cleared value as both cleared, and no value as neither.
+  const hadValue = opportunity.amount !== null && opportunity.amount !== undefined && opportunity.amount !== "";
+  const value = !hasValue ? {} : form.amount ? { amount: Number(form.amount), currencyCode: currency || undefined } : hadValue ? { amount: null, currencyCode: null } : {};
+
+  const save = async () => {
+    if (!form.title.trim()) throw new Error(t("Give the opportunity a title."));
+    const [followDate, followTime] = form.followUp.split("T");
+    if (Boolean(followDate) !== Boolean(followTime)) throw new Error(t("Choose both a date and a time for the follow-up, or clear both."));
+    const nextActionAt = followDate && followTime ? zonedDateTimeToIso(form.followUp, timeZone) : null;
+    if (followDate && followTime && !nextActionAt) throw new Error(t("Choose the next follow-up date and time."));
+    await crmRequest(workspaceId, `opportunities/${opportunity.id}`, "PATCH", {
+      version: opportunity.version, title: form.title.trim(), ...(form.owner ? { ownerMembershipId: form.owner } : {}),
+      ...value,
+      // A close date is a day; it is kept at local noon so it reads as the same day in every time zone nearby.
+      expectedCloseAt: form.closeDate ? new Date(`${form.closeDate}T12:00:00`).toISOString() : null,
+      nextActionAt,
+    });
+    await onSaved();
+    onClose();
+  };
+
+  return <FormDialog formId="edit-opportunity" isDirty={JSON.stringify(form) !== start} onClose={onClose} onSubmit={save} submitLabel={t("Save")} title={t("Edit opportunity")}>
+    <TextInput isRequired label={t("Title")} maxLength={240} value={form.title} onChange={set("title")} />
+    {hasValue ? <MoneyField currency={currency || undefined} label={t("Value")} min="0" value={form.amount} onChange={set("amount")} /> : null}
+    <SelectField label={t("Sales owner")} items={members} selectedKey={form.owner || null} onSelectionChange={(key) => set("owner")(String(key ?? ""))} />
+    <DateField label={t("Expected close")} value={form.closeDate ? parseDate(form.closeDate) : null} onChange={(next) => set("closeDate")(next?.toString() ?? "")} />
+    <CrmDateTimeField label={t("Next follow-up")} value={form.followUp} onChange={set("followUp")} />
+  </FormDialog>;
+}

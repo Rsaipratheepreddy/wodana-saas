@@ -31,7 +31,7 @@ describe("workspace primary colour", () => {
 
   it("preserves an already-readable brand fill and gives light and dark modes distinct ramps", () => {
     const style = workspacePrimaryColorStyle(DEFAULT_WORKSPACE_PRIMARY_COLOR)!;
-    expect(style["--wd-workspace-brand-light-600"]).toBe("#46705A");
+    expect(style["--wd-workspace-brand-light-600"]).toBe(DEFAULT_WORKSPACE_PRIMARY_COLOR);
     expect(style["--wd-workspace-brand-dark-600"]).not.toBe(style["--wd-workspace-brand-light-600"]);
     expect(contrast(style["--wd-workspace-brand-dark-700"], "#181818")).toBeGreaterThanOrEqual(4.5);
   });
@@ -49,11 +49,22 @@ describe("workspace primary colour", () => {
       bodyFont: "montserrat",
     })!;
     expect(style["--wd-workspace-brand-light-200"]).toBe("#E4E3DE");
+    expect(style["--wd-workspace-brand-surface-light"]).toBe("#E4E3DE");
     expect(style["--wd-workspace-brand-light-600"]).toBe("#000000");
     expect(style["--wd-workspace-brand-light-on"]).toBe("#FFFFFF");
     expect(style["--wd-workspace-font-heading"]).toContain("Alta");
     expect(style["--wd-workspace-font-body"]).toContain("Montserrat");
     expect(style["--wd-workspace-heading-transform"]).toBe("uppercase");
     expect(style["--wd-workspace-heading-tracking"]).toBe("0.045em");
+  });
+
+  it("always gives a brand surface that carries ink text: a dark tenant surface is lightened, a lone brand colour is tinted", () => {
+    const dark = workspacePrimaryColorStyle({ primaryColor: "#1B2A4A", secondaryColor: "#C8A165" })!;
+    expect(dark["--wd-workspace-brand-surface-light"]).not.toBe("#1B2A4A");
+    expect(contrast(dark["--wd-workspace-brand-surface-light"], "#111111")).toBeGreaterThanOrEqual(4.5);
+    const lone = workspacePrimaryColorStyle("#0F5C4A")!;
+    expect(lone["--wd-workspace-brand-surface-light"]).toBe(lone["--wd-workspace-brand-light-100"]);
+    expect(contrast(lone["--wd-workspace-brand-surface-light"], "#111111")).toBeGreaterThanOrEqual(4.5);
+    expect(lone["--wd-workspace-brand-surface-dark"]).toMatch(/^#[0-9A-F]{6}$/);
   });
 });

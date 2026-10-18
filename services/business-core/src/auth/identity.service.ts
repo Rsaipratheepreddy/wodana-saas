@@ -2,8 +2,17 @@ import { Injectable } from "@nestjs/common";
 import { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { ActorUser, RequestActor } from "./actor";
 import { DatabaseService } from "../database/database.service";
-import { allowedTenantModules } from "./module-access";
+import { allowedTenantModules, MEMBER_PERMISSIONS } from "./module-access";
 import { deriveBillingAccessPolicy, effectiveEntitledModules } from "../workspaces/tenant-operations.domain";
+import { effectiveTenantPermissionCodes } from "../workspaces/tenant-access.domain";
+import { workspaceHours } from "../crm/conversations/inbox/auto-replies";
+
+/** Days off from yesterday to about a year ahead: enough for any date picked today, small enough for every request. */
+export function upcomingHolidays(holidays: string[], now = new Date()) {
+  const from = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const to = new Date(now.getTime() + 400 * 86_400_000).toISOString().slice(0, 10);
+  return holidays.filter((day) => day >= from && day <= to).sort();
+}
 
 export type AuthBootstrapNextAction =
   | "accept_invitation"
@@ -12,24 +21,33 @@ export type AuthBootstrapNextAction =
   | "enter_workspace"
   | "await_invitation";
 
+/**
+ * The first-time setup belongs to the workspace's owner or administrator. Anyone else enters the workspace while it
+ * is still being set up (roles missing: an older caller that doesn't say, which keeps the setup route).
+ */
+export function canSetUpWorkspace(roles: readonly string[] | null | undefined) {
+  return !roles || roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+}
+
 export function deriveWorkspaceOnboardingNextAction(
   status: string | null | undefined,
+  roles?: readonly string[] | null,
 ): Extract<AuthBootstrapNextAction, "start_onboarding" | "resume_onboarding" | "enter_workspace"> {
-  if (status === "completed") return "enter_workspace";
+  if (status === "completed" || !canSetUpWorkspace(roles)) return "enter_workspace";
   if (!status || status === "not_started") return "start_onboarding";
   return "resume_onboarding";
 }
 
 export function deriveAuthBootstrapNextAction(
-  memberships: Array<{ onboarding: { status: string } }>,
+  memberships: Array<{ onboarding: { status: string }; roles?: readonly string[] }>,
   pendingInvitationCount: number,
 ): AuthBootstrapNextAction {
   if (memberships.length === 0) {
     return pendingInvitationCount > 0 ? "accept_invitation" : "await_invitation";
   }
-  const unfinished = memberships.find(({ onboarding }) => onboarding.status !== "completed");
+  const unfinished = memberships.find(({ onboarding, roles }) => onboarding.status !== "completed" && canSetUpWorkspace(roles));
   if (!unfinished) return "enter_workspace";
-  return deriveWorkspaceOnboardingNextAction(unfinished.onboarding.status);
+  return deriveWorkspaceOnboardingNextAction(unfinished.onboarding.status, unfinished.roles);
 }
 
 @Injectable()
@@ -37,6 +55,12 @@ export class IdentityService {
   constructor(private readonly database: DatabaseService) {}
 
   async resolveActor(actor: RequestActor, client?: PoolClient): Promise<ActorUser> {
+    // Viewing as someone reads as them, and leaves no "last sign-in" behind for either person.
+    if (actor.viewAs) return { ...actor, userId: actor.viewAs.effectiveUserId };
+    // An AI app's token names its person directly; it is not a sign-in, so no "last sign-in" is recorded.
+    if (actor.mcp) return { ...actor, userId: actor.mcp.userId };
+    // The operator CLI names its member directly (src/ops); not a sign-in either.
+    if (actor.operator) return { ...actor, userId: actor.operator.userId };
     const query = <Row extends QueryResultRow = QueryResultRow>(
       text: string,
       values: unknown[] = [],
@@ -87,6 +111,9 @@ export class IdentityService {
 
   async getProfile(actor: RequestActor) {
     const actorUser = await this.resolveActor(actor);
+    // Viewing as someone: their name, roles and permissions (narrowed to the viewer's) in that one workspace;
+    // the viewer keeps their own language and time zone.
+    const viewAs = actor.viewAs ?? null;
     const user = await this.database.query<{
       id: string;
       primaryEmail: string;
@@ -94,13 +121,20 @@ export class IdentityService {
       preferredLocale: string;
       preferredTimezone: string;
       status: string;
+      feedbackEnabled: boolean;
     }>(
       `SELECT id, primary_email AS "primaryEmail", display_name AS "displayName",
               preferred_locale AS "preferredLocale",
-              preferred_timezone AS "preferredTimezone", status
+              preferred_timezone AS "preferredTimezone", status, feedback_enabled AS "feedbackEnabled"
        FROM users WHERE id = $1`,
       [actorUser.userId],
     );
+    const viewer = viewAs
+      ? await this.database.query<{ preferredLocale: string; preferredTimezone: string }>(
+        `SELECT preferred_locale AS "preferredLocale", preferred_timezone AS "preferredTimezone" FROM users WHERE id = $1`,
+        [viewAs.viewerUserId],
+      )
+      : null;
     const platformAccess = await this.database.query<{ role: string }>(
       `SELECT role FROM platform_administrators
        WHERE user_id = $1 AND status = 'active'`,
@@ -118,9 +152,13 @@ export class IdentityService {
         workspaceSecondaryColor: string | null;
         workspaceHeadingFont: string | null;
         workspaceBodyFont: string | null;
+        workspaceLocale: string | null;
+        workspaceCurrency: string | null;
+        workspaceTimezone: string | null;
         accountId: string | null;
         accountName: string | null;
         accountRole: string | null;
+        accountStatus: string | null;
         isDefaultOrganization: boolean;
         status: string;
       }>(
@@ -128,7 +166,7 @@ export class IdentityService {
                 workspace.name AS "workspaceName", workspace.slug AS "workspaceSlug",
                 workspace.status AS "workspaceStatus", membership.status,
                 linked.account_id AS "accountId", account.display_name AS "accountName",
-                account_member.role AS "accountRole",
+                account.status AS "accountStatus", account_member.role AS "accountRole",
                 COALESCE(linked.is_default, false) AS "isDefaultOrganization",
                 CASE WHEN branding.logo_asset_id IS NOT NULL
                      THEN '/api/auth/tenant-logo/' || workspace.slug || '?v=' || branding.logo_asset_id::text
@@ -136,7 +174,10 @@ export class IdentityService {
                 branding.primary_color AS "workspacePrimaryColor",
                 branding.secondary_color AS "workspaceSecondaryColor",
                 branding.heading_font AS "workspaceHeadingFont",
-                branding.body_font AS "workspaceBodyFont"
+                branding.body_font AS "workspaceBodyFont",
+                workspace.default_locale AS "workspaceLocale",
+                workspace.default_currency AS "workspaceCurrency",
+                workspace.default_timezone AS "workspaceTimezone"
          FROM workspace_memberships membership
          JOIN workspaces workspace ON workspace.id = membership.workspace_id
          LEFT JOIN tenant_login_branding branding ON branding.workspace_id = workspace.id
@@ -152,8 +193,11 @@ export class IdentityService {
         [actorUser.userId],
       ),
     );
+    // A suspended organization stays readable (changes are refused by the write-block guard). An archived one is shown as
+    // unavailable, except one of a retired account (a retired sandbox, src/ops/ops-sandbox-retire.ts): that one is gone.
+    const readable = (status: string) => status === "active" || status === "suspended";
     const unavailableOrganizations = memberships.rows
-      .filter((membership) => membership.workspaceStatus !== "active")
+      .filter((membership) => !viewAs && !readable(membership.workspaceStatus) && membership.accountStatus !== "archived")
       .map((membership) => ({
         workspaceId: membership.workspaceId,
         workspaceName: membership.workspaceName,
@@ -162,20 +206,26 @@ export class IdentityService {
         accountName: membership.accountName,
       }));
     const withRoles = [];
-    for (const membership of memberships.rows.filter((item) => item.workspaceStatus === "active")) {
+    for (const membership of memberships.rows.filter((item) => readable(item.workspaceStatus)
+      && (!viewAs || item.workspaceId === viewAs.workspaceId))) {
       const tenantAccess = await this.database.tenantTransaction(
         membership.workspaceId,
         actorUser.userId,
         async (client) => {
-          const roles = await client.query<{ code: string }>(
-            `SELECT role.code
-             FROM effective_member_roles assigned
-             JOIN roles role ON role.id = assigned.role_id
-             WHERE assigned.membership_id = $1
-             ORDER BY role.code`,
-            [membership.id],
-          );
-          const permissions = await client.query<{ code: string }>(
+          const roles = viewAs?.kind === "role"
+            ? await client.query<{ code: string }>(`SELECT code FROM roles WHERE workspace_id = $1 AND id = $2`,
+              [membership.workspaceId, viewAs.subjectRoleId])
+            : await client.query<{ code: string }>(
+              `SELECT role.code
+               FROM effective_member_roles assigned
+               JOIN roles role ON role.id = assigned.role_id
+               WHERE assigned.membership_id = $1
+               ORDER BY role.code`,
+              [membership.id],
+            );
+          const permissions = viewAs
+            ? { rows: [...viewAs.permissions].map((code) => ({ code })) }
+            : await client.query<{ code: string }>(
             `SELECT DISTINCT permission.code
              FROM effective_member_roles assigned
              JOIN role_permissions granted ON granted.role_id = assigned.role_id
@@ -216,9 +266,11 @@ export class IdentityService {
              WHERE linked.workspace_id=$1`,
             [membership.workspaceId],
           );
+          // The working week for dates people pick (the next working day): the work calendar, else the region pack.
+          const calendar = await workspaceHours(client, membership.workspaceId);
           return { roles: roles.rows, permissions: permissions.rows, onboarding: onboarding.rows[0],
             entitlements: entitlements.rows[0] ?? null,
-            billingAccess: deriveBillingAccessPolicy(billing.rows[0] ?? {}) };
+            billingAccess: deriveBillingAccessPolicy(billing.rows[0] ?? {}), calendar };
         },
       );
       withRoles.push({
@@ -232,14 +284,28 @@ export class IdentityService {
         workspaceSecondaryColor: membership.workspaceSecondaryColor,
         workspaceHeadingFont: membership.workspaceHeadingFont,
         workspaceBodyFont: membership.workspaceBodyFont,
+        // Every member formats money, dates and times the workspace's way.
+        workspaceLocale: membership.workspaceLocale,
+        workspaceCurrency: membership.workspaceCurrency,
+        workspaceTimezone: membership.workspaceTimezone,
+        workspaceWorkingDays: tenantAccess.calendar.workingDays,
+        workspaceHolidays: upcomingHolidays(tenantAccess.calendar.holidays),
+        workspaceWorkingHours: { start: tenantAccess.calendar.start, end: tenantAccess.calendar.end },
         accountId: membership.accountId,
         accountName: membership.accountName,
         accountRole: membership.accountRole,
         isDefaultOrganization: membership.isDefaultOrganization,
         status: membership.status,
         roles: tenantAccess.roles.map((role) => role.code),
+        allowedPermissions: effectiveTenantPermissionCodes({
+          status: membership.status,
+          grantedPermissions: [...tenantAccess.permissions.map((permission) => permission.code), ...MEMBER_PERMISSIONS],
+          entitlements: tenantAccess.entitlements,
+        }),
         allowedModules: effectiveEntitledModules(
-          allowedTenantModules(tenantAccess.permissions.map((permission) => permission.code)),
+          allowedTenantModules(membership.status === "active"
+            ? [...tenantAccess.permissions.map((permission) => permission.code), ...MEMBER_PERMISSIONS]
+            : tenantAccess.permissions.map((permission) => permission.code)),
           tenantAccess.entitlements,
         ),
         entitlement: tenantAccess.entitlements
@@ -250,7 +316,7 @@ export class IdentityService {
       });
     }
 
-    const pendingInvitations = await this.database.actorTransaction(
+    const pendingInvitations = viewAs ? { rows: [], rowCount: 0 } : await this.database.actorTransaction(
       actorUser.userId,
       (client) => client.query<{
         id: string;
@@ -274,12 +340,23 @@ export class IdentityService {
 
     return {
       ...user.rows[0],
-      platformRole: platformAccess.rows[0]?.role ?? null,
+      ...(viewer?.rows[0] ?? {}),
+      platformRole: viewAs ? null : platformAccess.rows[0]?.role ?? null,
       identity: { provider: actor.provider, subject: actor.subject },
       memberships: withRoles,
       unavailableOrganizations,
       pendingInvitations: pendingInvitations.rows,
       nextAction: deriveAuthBootstrapNextAction(withRoles, pendingInvitations.rowCount ?? 0),
+      viewAs: viewAs ? {
+        sessionId: viewAs.sessionId,
+        kind: viewAs.kind,
+        workspaceId: viewAs.workspaceId,
+        subjectName: viewAs.subjectName,
+        subjectRoleLabel: viewAs.subjectRoleLabel,
+        startedAt: viewAs.startedAt.toISOString(),
+        expiresAt: viewAs.expiresAt.toISOString(),
+        returnPath: viewAs.returnPath,
+      } : null,
     };
   }
 }

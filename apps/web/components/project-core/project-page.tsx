@@ -1,0 +1,171 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSection } from "@/lib/navigation/use-section";
+import { ErrorState, InlineNotice, InspectorSheet, PageSkeleton, Tabs, useMediaQuery } from "@/design-system";
+import { useWorkspaceBreadcrumb } from "@/components/workspace/workspace-breadcrumb";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { projectApi } from "@/lib/project-core/client";
+import type { ProjectSection } from "@/lib/project-core/sections";
+import type { ProjectDetail, ProjectOverview as Overview } from "@/lib/project-core/types";
+import { useLiveInvalidate } from "@/lib/workspace/live-events";
+import { CancelProjectDialog, ReopenProjectDialog } from "./project-close";
+import { DatesDialog, FactorySlotDialog, HoldDialog, InstallationDialog, ResumeDialog } from "./project-dialogs";
+import { ProjectDetails } from "./project-details";
+import { ProjectHeader, useNextAction, type ProjectDialog } from "./project-header";
+import { ProjectOverview } from "./project-overview";
+import { ProjectPlan } from "./project-plan";
+import { ProjectScope } from "./project-scope";
+import { ConfirmCheckDialog, FinishStageDialog } from "./project-stages";
+import { ProjectHandoverTab, ProjectMoneyTab } from "./project-tab-views";
+import { ProjectTeam } from "./project-team";
+import { ProjectUpdates } from "./project-updates";
+import { ProjectSite } from "../site/project-site";
+import { LogisticsBookingDialog } from "../logistics/booking-dialog";
+import { RecordPermitDialog } from "../logistics/permit-dialog";
+import styles from "./project-core.module.css";
+
+const PANEL_KEY = "wodana.project.details";
+/** Wide enough for the details beside the work (the work keeps three quarters or more). */
+const INLINE = "(min-width: 75rem)";
+/** Wide enough to open the details by default. */
+const ROOMY = "(min-width: 90rem)";
+
+/** The details panel: open by default on a wide screen, remembered once someone opens or closes it. */
+function useDetailsPanel() {
+  const inline = useMediaQuery(INLINE);
+  const roomy = useMediaQuery(ROOMY);
+  const [choice, setChoice] = useState<"open" | "closed" | null>(null);
+  useEffect(() => {
+    queueMicrotask(() => { try { const saved = window.localStorage.getItem(PANEL_KEY); if (saved === "open" || saved === "closed") setChoice(saved); } catch { /* per-viewer convenience only */ } });
+  }, []);
+  const open = inline ? (choice ? choice === "open" : roomy) : choice === "open";
+  const toggle = () => {
+    const next = open ? "closed" : "open";
+    setChoice(next);
+    // On a narrow screen the panel is an overlay: opening it there isn't a lasting choice.
+    if (inline) try { window.localStorage.setItem(PANEL_KEY, next); } catch { /* ignore */ }
+  };
+  const close = () => setChoice("closed");
+  return { inline, open, toggle, close };
+}
+
+/**
+ * One project: a one-line header with the next action, the work in tabs (Overview, Scope, Plan, Money, Site,
+ * Handover, Updates) and the details in a side panel. Other people's changes on this project show without a
+ * reload; a clash with someone else's change reloads it and says so.
+ */
+export function ProjectPage({ workspaceId, projectId, section: initialSection }: { workspaceId: string; projectId: string; section: ProjectSection }) {
+  const t = useT();
+  const [section, move] = useSection(initialSection);
+  const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
+  const [detail, setDetail] = useState<ProjectDetail | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [dialog, setDialog] = useState<ProjectDialog | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [overviewError, setOverviewError] = useState("");
+  const panel = useDetailsPanel();
+  // The project's header carries its name, so the breadcrumb is just the way back to Projects.
+  useWorkspaceBreadcrumb(detail ? detail.project.name : undefined, { ownTitle: true });
+
+  const load = useCallback(async () => {
+    try { setDetail(await api.get(projectId)); setError(""); setRefresh((value) => value + 1); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("The project didn't load.")); }
+  }, [api, projectId, t]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+  // The Overview's read (blockers, plan per stage, health from the records, money, people): after every change too.
+  const loadOverview = useCallback(async () => {
+    try { setOverview(await api.overview(projectId)); setOverviewError(""); } catch (cause) { setOverviewError(cause instanceof Error ? cause.message : t("The overview didn't load.")); }
+  }, [api, projectId, t]);
+  useEffect(() => { if (refresh) queueMicrotask(() => void loadOverview()); }, [loadOverview, refresh]);
+  // Someone else's change on this project (a stage, a report, a decision in the portal) shows without a reload.
+  useLiveInvalidate(workspaceId, [`project:${projectId}`], () => { if (!dialog) void load(); });
+
+  /** Runs one change; a clash with someone else's change reloads the project and says so. */
+  /** A project command; from a dialog (`inDialog`) a refusal is thrown so the dialog shows it and keeps the typing. */
+  const run = useCallback(async (action: string, input: Record<string, unknown> = {}, options: { inDialog?: boolean } = {}) => {
+    if (!detail) return false;
+    setNotice("");
+    try { setDetail(await api.command(projectId, detail.project.version, action, input)); setRefresh((value) => value + 1); return true; }
+    catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      if (options.inDialog) throw cause;
+      setNotice(cause instanceof Error ? cause.message : t("Could not save."));
+      return false;
+    }
+  }, [api, detail, load, projectId, t]);
+  /** One in-place edit: the new project comes back, or the reason is thrown to the field (a clash also reloads). */
+  const save = useCallback(async (action: string, input: Record<string, unknown>) => {
+    if (!detail) return;
+    try { setDetail(await api.command(projectId, detail.project.version, action, input)); setRefresh((value) => value + 1); }
+    catch (cause) {
+      if (cause instanceof Error && "status" in cause && cause.status === 409) await load();
+      throw cause;
+    }
+  }, [api, detail, load, projectId]);
+  const next = useNextAction(detail ?? placeholder, run, (value) => setDialog(value));
+
+  if (error && !detail) return <div className={styles.page}><ErrorState description={error} onRetry={() => void load()} /></div>;
+  if (!detail) return <div className={styles.page}><PageSkeleton variant="detail" tabs={7} /></div>;
+  const { project } = detail;
+  const current = detail.stages.find((stage) => stage.status === "current");
+  const pendingCheck = current?.checks.find((check) => !check.passed && check.kind === "confirm");
+  const rights = detail.money ?? { costs: detail.canSeeMoney, margin: detail.canSeeMoney, client: detail.canSeeMoney };
+  const go = (value: ProjectSection) => move(value, `/workspace/projects/${projectId}${value === "overview" ? "" : `/${value}`}`);
+  const details = <ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} />;
+  // On the Overview the record's sidebar holds the details; elsewhere they stay one click away.
+  const onOverview = section === "overview";
+  const health = overview?.health?.health;
+  const areas = detail.areas ?? { planning: true, production: true, supply: true, delivery: true };
+  const shownSection: ProjectSection = section === "plan" && !areas.planning ? "overview" : section;
+
+  return <div className={styles.page} data-details={!onOverview && panel.open && panel.inline ? "open" : undefined}>
+    <ProjectHeader detail={detail} next={onOverview ? null : next} detailsOpen={panel.open && panel.inline} onToggleDetails={panel.toggle} onDialog={setDialog} onRename={(name) => save("rename", { name })} onReload={() => void load()}
+      health={health} record={onOverview} />
+    <div className={styles.layout}>
+      <div className={styles.work}>
+        {notice ? <InlineNotice tone="error" message={notice} /> : null}
+        <Tabs tour="project-tab" selectedKey={shownSection} onSelectionChange={(key) => go(key as ProjectSection)} items={[
+          { id: "overview", label: t("Overview"), panel: <ProjectOverview api={api} detail={detail} overview={overview} error={overviewError} onRetry={() => void loadOverview()} run={run} onTeam={() => setDialog("team")} onInstallation={() => setDialog("installation")}
+            onCrew={(kind) => setDialog(kind === "delivery" ? "delivery_crew" : "installation_crew")} onPermit={() => setDialog("permit")} next={next}
+            details={<ProjectDetails detail={detail} save={save} onReload={() => void load()} onDialog={setDialog} compact />} /> },
+          { id: "scope", label: t("Scope"), panel: <ProjectScope workspaceId={workspaceId} projectId={projectId} version={project.version} run={run} onChanged={() => void load()} /> },
+          // PLM-098: the plan shows when the job's path uses Planning (or it already holds work).
+          ...(areas.planning ? [{ id: "plan", label: t("Plan"), panel: <ProjectPlan workspaceId={workspaceId} projectId={projectId} /> }] : []),
+          { id: "money", label: t("Money"), panel: <ProjectMoneyTab workspaceId={workspaceId} projectId={projectId} rights={rights} /> },
+          { id: "site", label: t("Site"), panel: <ProjectSite workspaceId={workspaceId} projectId={projectId} projectName={[project.reference, project.name].filter(Boolean).join(" · ")} showDeliveries={areas.supply} /> },
+          { id: "handover", label: t("Handover"), panel: <ProjectHandoverTab workspaceId={workspaceId} projectId={projectId} detail={detail} /> },
+          { id: "updates", label: t("Updates"), panel: <ProjectUpdates detail={detail} run={run} workspaceId={workspaceId} projectId={projectId} /> },
+        ]} />
+      </div>
+      {!onOverview && panel.inline && panel.open ? <aside className={styles.details} aria-label={t("Details")}>{details}</aside> : null}
+    </div>
+    {!panel.inline && !onOverview ? <InspectorSheet isOpen={panel.open} title={t("Details")} size="sm" onOpenChange={(open) => { if (!open) panel.close(); }}>{details}</InspectorSheet> : null}
+
+    {dialog === "finish_stage" && current ? <FinishStageDialog detail={detail} stage={current} run={run} onClose={() => setDialog(null)} /> : null}
+    {dialog === "confirm_check" && current && pendingCheck ? <ConfirmCheckDialog stage={current} checkKey={pendingCheck.key} label={t(pendingCheck.label as never)} run={run} onClose={() => setDialog(null)} /> : null}
+    {dialog === "team" ? <ProjectTeam detail={detail} run={run} onClose={() => setDialog(null)} /> : null}
+    {dialog === "hold" ? <HoldDialog onClose={() => setDialog(null)} onSave={async (reason, reviewOn) => { await save("hold", { reason, reviewOn }); setDialog(null); }} /> : null}
+    {dialog === "resume" ? <ResumeDialog hold={detail.hold ?? null} onClose={() => setDialog(null)} onSave={async (shiftDates) => { await save("resume", { shiftDates }); setDialog(null); }} /> : null}
+    {dialog === "dates" ? <DatesDialog startDate={project.startDate} promiseDate={project.promiseDate} onClose={() => setDialog(null)}
+      onSave={async (startDate, promiseDate) => { await save("set_dates", { startDate, promiseDate }); setDialog(null); }} /> : null}
+    {dialog === "factory_slot" ? <FactorySlotDialog slot={detail.factorySlot ?? null} onClose={() => setDialog(null)}
+      onSave={async (date, note) => { await save("book_factory_slot", { date, note }); setDialog(null); }} /> : null}
+    {dialog === "installation" ? <InstallationDialog current={detail.installation ?? null} onClose={() => setDialog(null)}
+      onSave={async (deliveryOn, installationOn, note) => { await save("schedule_installation", { deliveryOn, installationOn, note }); setDialog(null); }} /> : null}
+    {dialog === "delivery_crew" || dialog === "installation_crew" ? <LogisticsBookingDialog workspaceId={workspaceId} fixedProject
+      initial={{ kind: dialog === "delivery_crew" ? "delivery" : "installation", projectId }} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); void load(); }} /> : null}
+    {dialog === "permit" ? <RecordPermitDialog workspaceId={workspaceId} owner={{ projectId }} permitId={detail.installation?.permit?.plannedId} onClose={() => setDialog(null)}
+      onSaved={() => { setDialog(null); void load(); }} /> : null}
+    {dialog === "cancel" ? <CancelProjectDialog api={api} projectId={projectId} onClose={() => setDialog(null)}
+      onSave={async (reason) => { await save("cancel", { reason }); setDialog(null); }} /> : null}
+    {dialog === "reopen" ? <ReopenProjectDialog onClose={() => setDialog(null)} onSave={async (reason) => { await save("reopen", { reason }); setDialog(null); }} /> : null}
+  </div>;
+}
+
+/** Hooks run before the project has loaded; nothing is shown for it. */
+const placeholder = {
+  project: { id: "", status: "archived", caseId: "", promiseDate: null }, stages: [], team: [], roles: [], canManage: false, canClose: false,
+} as unknown as ProjectDetail;

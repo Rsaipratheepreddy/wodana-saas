@@ -1,12 +1,14 @@
 import { invalidRequest, isSameOrigin, UUID, workspaceJsonResponse } from "@/lib/workspace/workspace-api";
+import { getServerT } from "@/lib/i18n/server";
 
 export async function GET(request: Request) {
+  const t = await getServerT();
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspaceId") ?? "";
   const cursor = url.searchParams.get("cursor");
-  if (!UUID.test(workspaceId)) return invalidRequest("A valid workspace is required.");
+  if (!UUID.test(workspaceId)) return invalidRequest(t("A valid workspace is required."));
   if (cursor && (cursor.length > 500 || !/^[A-Za-z0-9_-]+$/.test(cursor))) {
-    return invalidRequest("The leads cursor is invalid.");
+    return invalidRequest(t("The leads cursor is invalid."));
   }
 
   const query = new URLSearchParams({ limit: "100" });
@@ -14,14 +16,15 @@ export async function GET(request: Request) {
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/crm/leads?${query}`,
     { method: "GET" },
-    "Leads could not be loaded.",
+    t("Leads could not be loaded."),
   );
 }
 
 export async function POST(request: Request) {
-  if (!isSameOrigin(request)) return Response.json({ message: "This request must come from your workspace." }, { status: 403 });
+  const t = await getServerT();
+  if (!isSameOrigin(request)) return Response.json({ message: t("This request must come from your workspace.") }, { status: 403 });
   const raw = await request.text();
-  if (raw.length > 30000) return invalidRequest("The enquiry is too large.");
+  if (raw.length > 30000) return invalidRequest(t("The enquiry is too large."));
   const body = await Promise.resolve().then(() => JSON.parse(raw)).catch(() => null) as Record<string, unknown> | null;
   const workspaceId = typeof body?.workspaceId === "string" ? body.workspaceId : "";
   const requestId = typeof body?.requestId === "string" ? body.requestId : "";
@@ -33,21 +36,33 @@ export async function POST(request: Request) {
   const source = typeof body?.source === "string" ? body.source : "";
   const channel = typeof body?.channel === "string" ? body.channel : "";
   const serviceType = typeof body?.serviceType === "string" ? body.serviceType : "";
+  const mobile = typeof body?.mobile === "string" ? body.mobile.trim() : "";
+  const details = body?.details && typeof body.details === "object" && !Array.isArray(body.details) ? body.details as Record<string, unknown> : {};
+  const emirate = typeof details.emirate === "string" ? details.emirate.trim() : "";
 
   if (!UUID.test(workspaceId) || !UUID.test(requestId)) {
-    return invalidRequest("A valid workspace and request identifier are required.");
+    return invalidRequest(t("A valid workspace and request identifier are required."));
   }
   if (!displayName || displayName.length > 240 || title.length > 240) {
-    return invalidRequest("Enter a valid customer name and an optional title up to 240 characters.");
+    return invalidRequest(t("Enter a valid customer name and an optional title up to 240 characters."));
   }
   if (email && (email.length > 500 || !/^\S+@\S+\.\S+$/.test(email))) {
-    return invalidRequest("Enter a valid email address.");
+    return invalidRequest(t("Enter a valid email address."));
   }
   if (phone.length > 80 || summary.length > 10_000) {
-    return invalidRequest("The phone number or enquiry notes are too long.");
+    return invalidRequest(t("The phone number or enquiry notes are too long."));
   }
-  if (!source || !channel || !serviceType) return invalidRequest("Select a source, channel and enquiry type.");
-  const extraContact = Object.fromEntries(["mobile", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
+  if (!source || !channel || !serviceType) return invalidRequest(t("Select a source, channel and enquiry type."));
+  if (!mobile || !emirate) return invalidRequest(t("Enter a mobile number and select a region."));
+  // LF-1: the person's answer to "existing client?", and who referred a referral enquiry.
+  const identity = body?.identity === "existing" || body?.identity === "new" ? body.identity : undefined;
+  const partyId = typeof body?.partyId === "string" && UUID.test(body.partyId) ? body.partyId : undefined;
+  if (identity === "existing" && !partyId) return invalidRequest(t("Choose the existing client again."));
+  const referral = body?.referral && typeof body.referral === "object" && !Array.isArray(body.referral) ? body.referral : undefined;
+  const extraContact = Object.fromEntries(["mobile", "mobileCountryCode", "phoneCountryCode", "company", "jobPosition", "website", "address"].flatMap(key => typeof body?.[key] === "string" ? [[key, body[key]]] : []));
+  // PLM-100: the team tagged at intake (a member per role, or not applicable).
+  const team = Array.isArray(body?.team) ? (body.team as unknown[]).filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && typeof (entry as Record<string, unknown>).role === "string")
+    .slice(0, 10).map(entry => ({ role: String(entry.role).slice(0, 40), ...(typeof entry.membershipId === "string" && UUID.test(entry.membershipId) ? { membershipId: entry.membershipId } : {}), ...(entry.notApplicable === true ? { notApplicable: true } : {}) })) : [];
 
   return workspaceJsonResponse(
     `/workspaces/${workspaceId}/crm/intake-events`,
@@ -66,16 +81,19 @@ export async function POST(request: Request) {
           ...extraContact,
           ...(email ? { email } : {}),
           ...(phone ? { phone } : {}),
-          preferredTimezone: "Asia/Dubai",
         },
         title,
         ...(summary ? { summary } : {}),
         serviceType,
-        details: body?.details ?? {},
+        details,
         assignment: body?.assignment ?? { mode: "unassigned" },
-        originalPayload: { origin: "wodana_leads_ui" },
+        ...(referral ? { referral } : {}),
+        ...(identity ? { identity, ...(identity === "existing" ? { partyId } : {}) } : {}),
+        ...(team.length ? { team } : {}),
+        // A name taken unchanged from a chat is kept as it came (a channel's display name is never refused).
+        originalPayload: { origin: "wodana_leads_ui", ...(body?.nameFromChannel === true ? { nameFromChannel: true } : {}) },
       }),
     },
-    "The lead could not be created.",
+    t("The lead could not be created."),
   );
 }

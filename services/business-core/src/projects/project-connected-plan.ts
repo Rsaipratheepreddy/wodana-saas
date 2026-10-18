@@ -1,3 +1,4 @@
+import { workPackageReadiness } from "./project-package-readiness";
 import type {
   ProjectBooking,
   ProjectConnectedPlan,
@@ -157,6 +158,7 @@ export function projectConnectedPlan(
           detail: `Next action was due ${workPackage.nextActionDate}.`,
         });
       return {
+        readinessIssues: workPackageReadiness(data, workPackage),
         id: workPackage.id,
         title: workPackage.title,
         area: workPackage.area,

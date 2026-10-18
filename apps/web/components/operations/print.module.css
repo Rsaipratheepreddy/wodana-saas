@@ -1,0 +1,21 @@
+/* A printed purchase order or stock move (D-46): one A4 page, light, with the receive code at the top end. */
+.page { display: grid; gap: var(--wd-space-4); min-block-size: 100dvh; padding-block: var(--wd-space-6); padding-inline: var(--wd-phi-3); background: var(--wd-color-canvas); }
+.actions { display: flex; justify-content: flex-end; gap: var(--wd-space-2); }
+.document { display: grid; gap: var(--wd-space-6); inline-size: 100%; max-inline-size: var(--wd-content-wide); margin-inline: auto; padding: var(--wd-space-8); background: var(--wd-color-surface); color: var(--wd-color-text); }
+.head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--wd-space-4); }
+.company { margin: 0; font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+.title { margin: 0; font-size: var(--wd-text-2xl); font-weight: var(--wd-weight-semibold); }
+.number { margin: 0; font-size: var(--wd-text-lg); font-variant-numeric: tabular-nums; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--wd-space-3) var(--wd-space-6); margin: 0; }
+.facts div { display: grid; gap: var(--wd-space-1); }
+.facts dt { font-size: var(--wd-text-xs); color: var(--wd-color-text-tertiary); }
+.facts dd { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; }
+.note { margin: 0; font-size: var(--wd-text-sm); white-space: pre-wrap; }
+.qr { display: grid; justify-items: center; gap: var(--wd-space-1); margin: 0; font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.qrPending { inline-size: 120px; block-size: 120px; background: var(--wd-color-surface-muted); }
+
+@media print {
+  .actions { display: none; }
+  .page { padding: 0; background: none; }
+  .document { padding: 0; }
+}

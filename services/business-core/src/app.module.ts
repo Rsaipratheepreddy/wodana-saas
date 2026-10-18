@@ -1,4 +1,7 @@
 import { CommercialModule } from "./commercial/commercial.module";
+import { ClientPortalModule } from "./client-portal/client-portal.module";
+import { ChangeRequestsModule } from "./change-requests/change-requests.module";
+import { HistoryModule } from "./history/history.module";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { resolve } from "node:path";
@@ -9,6 +12,7 @@ import { HealthModule } from "./health/health.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
 import { ReferenceModule } from "./reference/reference.module";
 import { WorkspacesModule } from "./workspaces/workspaces.module";
+import { ControlPlaneModule } from "./control-plane/control-plane.module";
 import { validateRuntimeConfig } from "./config/runtime-config";
 import { CrmPartiesModule } from "./crm/parties/crm-parties.module";
 import { CrmSharedModule } from "./crm/shared/crm-shared.module";
@@ -16,9 +20,13 @@ import { CrmIntakeModule } from "./crm/intake/crm-intake.module";
 import { CrmLeadsModule } from "./crm/leads/crm-leads.module";
 import { CrmActivitiesModule } from "./crm/activities/crm-activities.module";
 import { CrmConversationsModule } from "./crm/conversations/crm-conversations.module";
+import { CrmSpamModule } from "./crm/spam/crm-spam.module";
 import { CrmOpportunitiesModule } from "./crm/opportunities/crm-opportunities.module";
+import { CrmFlowsModule } from "./crm/flows/crm-flows.module";
+import { FlowStepsModule } from "./crm/flow-steps/flow-steps.module";
 import { CrmTodayModule } from "./crm/today/crm-today.module";
 import { CrmReportingModule } from "./crm/reporting/crm-reporting.module";
+import { ManagementReportsModule } from "./management-reports/management-reports.module";
 import { CrmSettingsModule } from "./crm/settings/crm-settings.module";
 import { CrmAutomationsModule } from "./crm/automations/crm-automations.module";
 import { CrmNotificationsModule } from "./crm/notifications/crm-notifications.module";
@@ -27,9 +35,39 @@ import { PreProjectsModule } from "./pre-projects/pre-projects.module";
 import { HrmsModule } from "./hrms/hrms.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { SourcingModule } from "./sourcing/sourcing.module";
+import { ProductSourcingModule } from "./product-sourcing/product-sourcing.module";
 import { JobsModule } from "./jobs/jobs.module";
 import { WorkspaceSearchModule } from "./search/workspace-search.module";
 import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
+import { AiGatewayModule } from "./ai-gateway/ai-gateway.module";
+import { AiToolsModule } from "./ai-tools/ai-tools.module";
+import { McpModule } from "./mcp/mcp.module";
+import { DesignModule } from "./design/design.module";
+import { QuotationModule } from "./quotation/quotation.module";
+import { ProposalsModule } from "./proposals/proposals.module";
+import { GalleryModule } from "./gallery/gallery.module";
+import { ProjectCoreModule } from "./project-core/project-core.module";
+import { PurchasingModule } from "./purchasing/purchasing.module";
+import { FactoryModule } from "./factory/factory.module";
+import { TeamCalendarsModule } from "./team-calendars/team-calendars.module";
+import { LogisticsModule } from "./logistics/logistics.module";
+import { ClientCallsModule } from "./client-calls/client-calls.module";
+import { MeetingsModule } from "./meetings/meetings.module";
+import { ValueEngineeringModule } from "./value-engineering/value-engineering.module";
+import { SiteModule } from "./site/site.module";
+import { ReceivablesModule } from "./receivables/receivables.module";
+import { AccountingModule } from "./accounting/accounting.module";
+import { BooksModule } from "./books/books.module";
+import { RemindersModule } from "./reminders/reminders.module";
+import { PettyCashModule } from "./petty-cash/petty-cash.module";
+import { FinanceRequestsModule } from "./finance-requests/finance-requests.module";
+import { FulfilmentModule } from "./fulfilment/fulfilment.module";
+import { InventoryModule } from "./inventory/inventory.module";
+import { LinkedImportsModule } from "./linked-imports/linked-imports.module";
+import { ApprovalsModule } from "./approvals/approvals.controller";
+import { NotificationsModule } from "./notifications/notifications.module";
+import { BookingModule } from "./booking/booking.module";
+import { GridSettingsModule } from "./grid-settings/grid-settings.module";
 
 @Module({
   imports: [
@@ -50,12 +88,18 @@ import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
     CrmSharedModule,
     CrmPartiesModule,
     CrmIntakeModule,
+    BookingModule,
+    GridSettingsModule,
     CrmLeadsModule,
     CrmActivitiesModule,
     CrmConversationsModule,
+    CrmSpamModule,
     CrmOpportunitiesModule,
+    CrmFlowsModule,
+    FlowStepsModule,
     CrmTodayModule,
     CrmReportingModule,
+    ManagementReportsModule,
     CrmSettingsModule,
     CrmAutomationsModule,
     CrmNotificationsModule,
@@ -64,14 +108,46 @@ import { AiSuggestionsModule } from "./ai-suggestions/ai-suggestions.module";
     IntegrationsModule,
     ReferenceModule,
     WorkspacesModule,
+    ControlPlaneModule,
     PreProjectsModule,
     CommercialModule,
+    ClientPortalModule,
+    ChangeRequestsModule,
+    HistoryModule,
     CatalogModule,
     SourcingModule,
+    ProductSourcingModule,
     JobsModule,
     WorkspaceSearchModule,
     AiSuggestionsModule,
+    AiGatewayModule,
+    AiToolsModule,
+    McpModule,
+    DesignModule,
+    QuotationModule,
+    ProposalsModule,
+    GalleryModule,
+    ProjectCoreModule,
+    PurchasingModule,
+    InventoryModule,
+    LinkedImportsModule,
+    FactoryModule,
+    TeamCalendarsModule,
+    LogisticsModule,
+    ClientCallsModule,
+    MeetingsModule,
+    ValueEngineeringModule,
+    SiteModule,
+    ReceivablesModule,
+    AccountingModule,
+    BooksModule,
+    RemindersModule,
+    PettyCashModule,
+    FinanceRequestsModule,
+    FulfilmentModule,
+    ApprovalsModule,
     HrmsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
 })

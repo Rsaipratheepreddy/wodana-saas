@@ -107,3 +107,17 @@ describe("CRM activity response evidence", () => {
     })).rejects.toThrow("Interaction direction is only valid");
   });
 });
+
+describe("Follow-up time ranges", () => {
+  it.each(["call", "meeting", "task"])("creates a persisted duration for a %s", async type => {
+    const query = vi.fn(async () => ({ rows: [{ id: "new", type, version: 1 }], rowCount: 1 }));
+    const access = { withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work({ query }, { userId: "user" })) };
+    const service = new CrmActivitiesService(access as never, { record: vi.fn() } as never);
+    vi.spyOn(service as unknown as { assertTargets: () => Promise<void> }, "assertTargets").mockResolvedValue();
+    vi.spyOn(service as unknown as { touchLead: () => Promise<void> }, "touchLead").mockResolvedValue();
+    const save = vi.spyOn(service as unknown as { saveAppointment: (...args: unknown[]) => Promise<unknown> }, "saveAppointment").mockResolvedValue({ startsAt: "2026-09-22T12:30:00.000Z", endsAt: "2026-09-22T13:00:00.000Z" });
+    const result = await service.create({} as never, "workspace", { type, partyId: "party", title: "Evening call", dueAt: "2026-09-22T18:00:00+05:30", durationMinutes: 30 });
+    expect(save).toHaveBeenCalledWith(expect.anything(), "workspace", "new", { startsAt: "2026-09-22T12:30:00.000Z", endsAt: "2026-09-22T13:00:00.000Z", timezone: "UTC" });
+    expect(result.appointment).toBeDefined();
+  });
+});

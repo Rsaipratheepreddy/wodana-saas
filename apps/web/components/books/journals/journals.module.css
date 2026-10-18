@@ -1,0 +1,25 @@
+/* Manual journal editor and opening balance import. */
+.editor { display: grid; gap: var(--wd-space-4); min-inline-size: 0; }
+.head { display: grid; grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); gap: var(--wd-space-3); align-items: start; }
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); font-size: var(--wd-text-sm); }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.code { font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
+.code[data-unknown] { color: var(--wd-color-danger); }
+.number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.spacer { flex: 1; }
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-3); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.totals { display: flex; gap: var(--wd-space-4); margin: 0; font-size: var(--wd-text-sm); }
+.totals > div { display: flex; gap: var(--wd-space-2); align-items: baseline; }
+.totals dt { color: var(--wd-color-text-tertiary); }
+.totals dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
+.balance { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-sm); white-space: nowrap; }
+.balance::before { content: ""; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: var(--wd-color-warning); }
+.balance[data-state="balanced"]::before { background: var(--wd-color-success); }
+.balance[data-state="empty"]::before { content: none; }
+.errors { padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-danger-subtle); color: var(--wd-color-text); font-size: var(--wd-text-sm); }
+.errors ul { display: grid; gap: var(--wd-space-1); margin: 0; padding-inline-start: var(--wd-space-4); }
+
+@media (max-width: 640px) {
+  .head { grid-template-columns: minmax(0, 1fr); }
+}

@@ -111,14 +111,14 @@ export function validateCatalogRecord(input: SaveCatalogRecordDto) {
   if (
     input.kind === "unit" &&
     (input.dimension === "none" ||
-      (input.dimension !== "pack" && input.baseFactor == null))
+      (!["pack", "reference"].includes(input.dimension) && input.baseFactor == null))
   )
     throw new BadRequestException(
       "Choose a dimension and conversion factor for this unit.",
     );
-  if (input.dimension === "pack" && input.baseFactor != null)
+  if (["pack", "reference"].includes(input.dimension) && input.baseFactor != null)
     throw new BadRequestException(
-      "Pack conversions depend on the product. Leave the universal factor empty.",
+      "Pack and reference units do not have a universal conversion factor.",
     );
   if (
     input.specificationStatus === "reference" &&
@@ -489,6 +489,12 @@ export class CatalogService {
           `SELECT id,display_name AS name,base_currency AS "baseCurrency" FROM legal_entities
            WHERE workspace_id=$1 AND status='active' ORDER BY display_name`, [workspaceId],
         )).rows;
+        const catalogCounts = options.overview ? (await client.query<{
+          catalogId: string; kind: string; count: number;
+        }>(`SELECT catalog_id AS "catalogId",kind,count(*)::int AS count
+              FROM workspace_catalog_records
+             WHERE workspace_id=$1 AND catalog_id IS NOT NULL AND NOT archived
+             GROUP BY catalog_id,kind`, [workspaceId])).rows : undefined;
         return {
           workspaceId,
           overview: Boolean(options.overview),
@@ -498,6 +504,7 @@ export class CatalogService {
           canViewCosts,
           priceVisibility: canViewCosts ? "selling_and_cost" : "selling_only",
           items: catalogRecordsForViewer(items, canViewCosts),
+          catalogCounts,
           componentCounts: options.overview ? (await client.query(`SELECT link.target_id AS id, count(*)::int AS count FROM workspace_catalog_links link JOIN workspace_catalog_records record ON record.workspace_id=link.workspace_id AND record.id=link.record_id WHERE link.workspace_id=$1 AND link.relation='work' AND NOT record.archived AND record.kind='construction' AND record.content->'configuration'->>'recordRole'='component' GROUP BY link.target_id`, [workspaceId])).rows : undefined,
           starter: {
             version: STARTER_VERSION,

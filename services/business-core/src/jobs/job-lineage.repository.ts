@@ -21,7 +21,7 @@ export async function loadJobLineageRows(client: PoolClient, workspaceId: string
   );
   const quotes = await client.query<JobLineageRows["quotes"][number]>(
     `SELECT quote.value->>'id' AS id, commercial.workspace_id::text AS "workspaceId", commercial.case_id::text AS "caseId"
-     FROM commercial_cases commercial
+     FROM commercial_cases_view commercial
      CROSS JOIN LATERAL jsonb_array_elements(
        CASE WHEN jsonb_typeof(commercial.content->'quotes')='array'
             THEN commercial.content->'quotes' ELSE '[]'::jsonb END

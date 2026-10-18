@@ -1,0 +1,2 @@
+.body { display: grid; gap: var(--wd-space-4); }
+.facts { display: grid; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }

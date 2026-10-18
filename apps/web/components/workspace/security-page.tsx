@@ -1,26 +1,15 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { Copy, KeyRound, ShieldCheck } from "lucide-react";
-import {
-  Button,
-  Callout,
-  Checkbox,
-  ConfirmationDialog,
-  ControlledModalDialog,
-  DataGrid,
-  DesignSystemProvider,
-  formatDate,
-  OtpInput,
-  TextInput,
-  type DataGridColumn,
-} from "@/design-system";
+import { Badge, Button, Callout, Checkbox, ConfirmationDialog, ControlledModalDialog, DataGrid, DesignSystemProvider, OtpInput, SettingsPage, SettingsRow, SettingsSection, TextInput, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
+import type { Translate } from "@/lib/i18n/keys";
 import type { MfaSecurityStatus, SecurityPageData, SecuritySession } from "@/lib/workspace/security";
+import type { ViewAsActivity } from "@/lib/workspace/view-as";
 import { deviceDetails } from "@/lib/auth/device-details";
 import styles from "./security-page.module.css";
-
-const DUBAI_FORMAT = { locale: "en-GB", timeZone: "Asia/Dubai" };
 
 function responseMessage(response: Response, fallback: string) {
   return response.json()
@@ -28,15 +17,16 @@ function responseMessage(response: Response, fallback: string) {
     .catch(() => fallback);
 }
 
-function sessionLabel(session: SecuritySession) {
+function sessionLabel(session: SecuritySession, t: Translate) {
   const details = deviceDetails(session.userAgent);
-  return `${details.browser} on ${details.device}`;
+  const browser = details.browser ?? t("Browser");
+  return details.device ? t("{browser} on {device}", { browser, device: t(details.device) }) : browser;
 }
 
 type MfaDialog = "setup" | "regenerate" | "disable" | "codes";
 type MfaSetup = { secret: string; otpauthUri: string };
 
-async function mfaRequest(action: string, workspaceId: string, code?: string) {
+async function mfaRequest(t: Translate, action: string, workspaceId: string, code?: string) {
   const response = await fetch(`/api/auth/mfa/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -44,12 +34,15 @@ async function mfaRequest(action: string, workspaceId: string, code?: string) {
   });
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) throw new Error(
-    typeof payload?.message === "string" ? payload.message : "The security request could not be completed.",
+    typeof payload?.message === "string" ? payload.message : t("The security request could not be completed."),
   );
   return payload ?? {};
 }
 
-export function SecurityPage({ initialData }: { initialData: SecurityPageData }) {
+export function SecurityPage({ initialData, viewAsActivity = [] }: { initialData: SecurityPageData; viewAsActivity?: ViewAsActivity[] }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  const dateFormat = { locale, timeZone };
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [sessions, setSessions] = useState(initialData.sessions);
   const [selectedSession, setSelectedSession] = useState<SecuritySession | null>(null);
@@ -64,15 +57,26 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
   const [status, setStatus] = useState("");
   const [failure, setFailure] = useState("");
 
+  const copySecurityText = async (text: string, success: string, fallback: string) => {
+    setFailure("");
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(text);
+      setStatus(success);
+    } catch {
+      setFailure(fallback);
+    }
+  };
+
   useEffect(() => {
     if (!mfaSetup?.otpauthUri) return;
     let mounted = true;
     import("qrcode")
       .then((module) => module.toDataURL(mfaSetup.otpauthUri, { width: 220, margin: 2, errorCorrectionLevel: "M" }))
       .then((value) => { if (mounted) setMfaQrCode(value); })
-      .catch(() => { if (mounted) setFailure("The QR code could not be displayed. Use the setup key instead."); });
+      .catch(() => { if (mounted) setFailure(t("The QR code could not be displayed. Use the setup key instead.")); });
     return () => { mounted = false; };
-  }, [mfaSetup]);
+  }, [mfaSetup, t]);
 
   const closeMfaDialog = () => {
     if (working) return;
@@ -87,11 +91,11 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
   const startMfaSetup = async () => {
     setWorking(true);
     setFailure("");
-    setStatus("Preparing authenticator setup…");
+    setStatus(t("Preparing authenticator setup…"));
     try {
-      const payload = await mfaRequest("setup", initialData.workspaceId);
+      const payload = await mfaRequest(t, "setup", initialData.workspaceId);
       if (typeof payload.secret !== "string" || typeof payload.otpauthUri !== "string") {
-        throw new Error("The authenticator setup response was incomplete. Try again.");
+        throw new Error(t("The authenticator setup response was incomplete. Try again."));
       }
       setMfaSetup({ secret: payload.secret, otpauthUri: payload.otpauthUri });
       setMfaQrCode("");
@@ -99,7 +103,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       setMfaDialog("setup");
       setStatus("");
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Authenticator setup could not be started.");
+      setFailure(error instanceof Error ? error.message : t("Authenticator setup could not be started."));
       setStatus("");
     } finally {
       setWorking(false);
@@ -108,7 +112,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
 
   const showRecoveryCodes = (codes: unknown) => {
     if (!Array.isArray(codes) || !codes.length || !codes.every((code) => typeof code === "string")) {
-      throw new Error("Recovery codes were not returned. Contact support before closing this page.");
+      throw new Error(t("Recovery codes were not returned. Contact support before closing this page."));
     }
     setRecoveryCodes(codes as string[]);
     setRecoveryCodesSaved(false);
@@ -117,13 +121,13 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
 
   const confirmMfaSetup = async () => {
     if (!/^\d{6}$/.test(mfaCode)) {
-      setFailure("Enter the six-digit code from your authenticator app.");
+      setFailure(t("Enter the six-digit code from your authenticator app."));
       return;
     }
     setWorking(true);
     setFailure("");
     try {
-      const payload = await mfaRequest("confirm", initialData.workspaceId, mfaCode);
+      const payload = await mfaRequest(t, "confirm", initialData.workspaceId, mfaCode);
       showRecoveryCodes(payload.recoveryCodes);
       setMfa((current) => ({
         ...current,
@@ -136,9 +140,9 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       setMfaSetup(null);
       setMfaQrCode("");
       setMfaCode("");
-      setStatus("Two-step verification is now on.");
+      setStatus(t("Two-step verification is now on."));
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "Authenticator setup could not be confirmed.");
+      setFailure(error instanceof Error ? error.message : t("Authenticator setup could not be confirmed."));
     } finally {
       setWorking(false);
     }
@@ -146,24 +150,25 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
 
   const runSensitiveMfaAction = async (action: "recovery" | "disable") => {
     if (mfaCode.trim().length < 6) {
-      setFailure("Enter an authenticator or recovery code.");
+      setFailure(t("Enter an authenticator or recovery code."));
       return;
     }
     setWorking(true);
     setFailure("");
     try {
-      await mfaRequest("step-up", initialData.workspaceId, mfaCode.trim());
-      const payload = await mfaRequest(action, initialData.workspaceId);
+      await mfaRequest(t, "step-up", initialData.workspaceId, mfaCode.trim());
+      const payload = await mfaRequest(t, action, initialData.workspaceId);
       if (action === "recovery") {
         showRecoveryCodes(payload.recoveryCodes);
         setMfa((current) => ({
           ...current,
           recoveryCodesRemaining: Array.isArray(payload.recoveryCodes) ? payload.recoveryCodes.length : current.recoveryCodesRemaining,
         }));
-        setStatus("New recovery codes were generated. Your previous codes no longer work.");
+        setStatus(t("New recovery codes were generated. Your previous codes no longer work."));
       } else {
         setMfa((current) => ({ ...current, enabled: false, confirmedAt: null, recoveryCodesRemaining: 0 }));
-        setStatus("Two-step verification was turned off. Other sessions were signed out.");
+        setSessions((current) => current.filter((session) => session.current));
+        setStatus(t("Two-step verification was turned off. Other sessions were signed out."));
         setMfaDialog(null);
         setMfaSetup(null);
         setMfaQrCode("");
@@ -172,7 +177,7 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       }
       setMfaCode("");
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The security request could not be completed.");
+      setFailure(error instanceof Error ? error.message : t("The security request could not be completed."));
     } finally {
       setWorking(false);
     }
@@ -188,75 +193,74 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ workspaceId: initialData.workspaceId }),
       });
-      if (!response.ok) throw new Error(await responseMessage(response, "The session could not be signed out."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("The session could not be signed out.")));
       setSessions((current) => current.filter((session) => session.familyId !== selectedSession.familyId));
-      setStatus(`${sessionLabel(selectedSession)} was signed out.`);
+      setStatus(t("{session} was signed out.", { session: sessionLabel(selectedSession, t) }));
       setSelectedSession(null);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "The session could not be signed out.");
+      setFailure(error instanceof Error ? error.message : t("The session could not be signed out."));
       setSelectedSession(null);
     } finally {
       setWorking(false);
     }
   };
 
-  const mfaDialogTitle = mfaDialog === "setup" ? "Set up two-step verification"
-    : mfaDialog === "regenerate" ? "Get new recovery codes"
-      : mfaDialog === "disable" ? "Turn off two-step verification"
-        : "Save your recovery codes";
+  const mfaDialogTitle = mfaDialog === "setup" ? t("Set up two-step verification")
+    : mfaDialog === "regenerate" ? t("Get new recovery codes")
+      : mfaDialog === "disable" ? t("Turn off two-step verification")
+        : t("Save your recovery codes");
   const sessionColumns: DataGridColumn<SecuritySession>[] = [
-    { id: "device", accessorFn: sessionLabel, header: "Device", size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser}</strong><small>{details.device}</small></span>; } },
-    { accessorKey: "ipAddress", header: "IP address", size: 145, cell: ({ row }) => row.original.ipAddress ?? "—" },
-    { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: "Last active", size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" })}</time> },
-    { id: "action", header: "Status / action", size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <span className={styles.current}>This device</span> : <Button aria-label={`Sign out ${sessionLabel(row.original)}`} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">Sign out</Button> },
+    { id: "device", accessorFn: (session) => sessionLabel(session, t), header: t("Device"), size: 240, meta: { primary: true }, cell: ({ row }) => { const details = deviceDetails(row.original.userAgent); return <span className={styles.device}><strong>{details.browser ?? t("Browser")}</strong>{details.device ? <small>{t(details.device)}</small> : null}</span>; } },
+    { accessorKey: "ipAddress", header: t("IP address"), size: 145, cell: ({ row }) => row.original.ipAddress ?? "—" },
+    { id: "lastActive", accessorFn: (session) => session.lastActiveAt, header: t("Last active"), size: 185, cell: ({ row }) => <time dateTime={row.original.lastActiveAt}>{formatDate(row.original.lastActiveAt, dateFormat, { dateStyle: "medium", timeStyle: "short" })}</time> },
+    { id: "action", header: t("Status / action"), size: 145, enableSorting: false, cell: ({ row }) => row.original.current ? <Badge tone="success">{t("This device")}</Badge> : <Button aria-label={t("Sign out {session}", { session: sessionLabel(row.original, t) })} isDisabled={working} onPress={() => setSelectedSession(row.original)} size="compact" variant="quiet">{t("Sign out")}</Button> },
+  ];
+
+  const activityColumns: DataGridColumn<ViewAsActivity>[] = [
+    { accessorKey: "viewerName", header: t("Who"), size: 220, meta: { primary: true } },
+    { id: "when", accessorFn: (view) => view.startedAt, header: t("When"), size: 185, cell: ({ row }) => <time dateTime={row.original.startedAt}>{formatDate(row.original.startedAt, dateFormat, { dateStyle: "medium", timeStyle: "short" })}</time> },
+    { id: "length", accessorFn: (view) => view.minutes ?? 0, header: t("How long"), size: 130, cell: ({ row }) => row.original.open ? <Badge tone="warning">{t("Now")}</Badge> : t("{count} min", { count: row.original.minutes ?? 1 }) },
   ];
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label="Account security" className={styles.page}>
+    <SettingsPage aria-label={t("Account security")} title={t("Sign-in security")}>
       {status ? <p aria-live="polite" className={styles.liveStatus}>{status}</p> : null}
-      {failure && !mfaDialog ? <Callout title="Security action failed" tone="danger">{failure}</Callout> : null}
-      <section aria-labelledby="mfa-heading" className={styles.mfaCard}>
-        <div className={styles.mfaIcon}><ShieldCheck aria-hidden="true" size={20} /></div>
-        <div className={styles.mfaSummary}>
-          <div className={styles.mfaTitleRow}>
-            <h2 id="mfa-heading">Two-step verification</h2>
-            <span className={mfa.enabled ? styles.enabled : styles.disabled}>{mfa.enabled ? "On" : "Off"}</span>
-          </div>
-          <p>{mfa.enabled
-            ? "Your password and an authenticator-app code are required when you sign in."
-            : "Add an authenticator-app code after your password for stronger sign-in protection."}</p>
-          {mfa.enabled ? <div className={styles.mfaFacts}>
-            <span><strong>{mfa.recoveryCodesRemaining}</strong> recovery codes remaining</span>
-            {mfa.confirmedAt ? <span>Turned on {formatDate(mfa.confirmedAt, DUBAI_FORMAT, { dateStyle: "medium" })}</span> : null}
-            {mfa.required ? <span>Required by account policy</span> : null}
-          </div> : mfa.required && mfa.enrollmentDeadline ? <p className={styles.deadline}>
-            Turn this on by {formatDate(mfa.enrollmentDeadline, DUBAI_FORMAT, { dateStyle: "medium" })}.
-          </p> : null}
-        </div>
-        <div className={styles.mfaActions}>
-          {mfa.enabled ? <>
-            <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("regenerate"); }} size="compact" variant="quiet"><KeyRound size={14} />Recovery codes</Button>
-            {!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">Turn off</Button> : null}
-          </> : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">Set up two-step verification</Button>}
-        </div>
-      </section>
+      {failure && !mfaDialog ? <Callout title={t("Security action failed")} tone="danger">{failure}</Callout> : null}
+      <SettingsSection id="mfa" title={t("Two-step verification")}>
+        <SettingsRow hint={mfa.enabled ? t("A code from your authenticator app is asked after your password.") : mfa.required && mfa.enrollmentDeadline ? t("Turn this on by {date}", { date: formatDate(mfa.enrollmentDeadline, dateFormat, { dateStyle: "medium" }) }) : t("Add an authenticator-app code after your password.")} label={t("Authenticator app")}>
+          <Badge tone={mfa.enabled ? "success" : "warning"}>{mfa.enabled ? t("On") : t("Off")}</Badge>
+          {mfa.enabled ? (!mfa.required ? <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("disable"); }} size="compact" variant="quiet">{t("Turn off")}</Button> : null)
+            : <Button isDisabled={working} isLoading={working} onPress={() => void startMfaSetup()} size="compact" variant="primary">{t("Set up")}</Button>}
+        </SettingsRow>
+        {mfa.enabled ? <SettingsRow hint={t("Each code works once if you lose your authenticator.")} label={t("Recovery codes")}>
+          <span>{t("{count} left", { count: mfa.recoveryCodesRemaining })}</span>
+          <Button isDisabled={working} onPress={() => { setFailure(""); setMfaCode(""); setMfaDialog("regenerate"); }} size="compact" variant="quiet"><KeyRound aria-hidden="true" size={14} />{t("New codes")}</Button>
+        </SettingsRow> : null}
+        {mfa.enabled && mfa.required ? <SettingsRow label={t("Policy")}>{t("Required by account policy")}</SettingsRow> : null}
+      </SettingsSection>
 
-      <header className={styles.sessionsHeader}><h2>Active sessions</h2><p>Browsers and devices currently signed in to your account.</p></header>
-      <DataGrid ariaLabel="Active sessions" appearance="flush" columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle="No active sessions" emptyDescription="Signed-in browsers and devices will appear here." />
-    </section>
+      <SettingsSection id="sessions" title={t("Active sessions")}>
+        <DataGrid ariaLabel={t("Active sessions")} gridLines columns={sessionColumns} data={sessions} getRowId={(session) => session.familyId} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle={t("No active sessions")} emptyDescription={t("Signed-in browsers and devices will appear here.")} />
+      </SettingsSection>
+
+      {/* Every time an owner or administrator viewed the workspace as you. Always on. */}
+      <SettingsSection id="activity" title={t("Activity")}>
+        <DataGrid ariaLabel={t("Viewed as you")} gridLines columns={activityColumns} data={viewAsActivity} getRowId={(view) => view.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} emptyTitle={t("Nobody has viewed as you")} />
+      </SettingsSection>
+    </SettingsPage>
 
     <ControlledModalDialog
-      description={mfaDialog === "setup" ? "Scan the QR code with your authenticator app, then enter its current six-digit code."
-        : mfaDialog === "codes" ? "Each code works once if your authenticator is unavailable."
-          : mfaDialog === "disable" ? "Confirm with a current code. Other signed-in devices will be signed out."
-            : "Confirm with a current code. All previous recovery codes will stop working."}
+      description={mfaDialog === "setup" ? t("Scan the QR code with your authenticator app, then enter its current six-digit code.")
+        : mfaDialog === "codes" ? t("Each code works once if your authenticator is unavailable.")
+          : mfaDialog === "disable" ? t("Confirm with a current code. Other signed-in devices will be signed out.")
+            : t("Confirm with a current code. All previous recovery codes will stop working.")}
       footer={mfaDialog === "codes" ? <>
-        <Button isDisabled={working} onPress={() => void navigator.clipboard?.writeText(recoveryCodes.join("\n")).then(() => setStatus("Recovery codes copied.")).catch(() => setFailure("Select and copy the codes manually."))} variant="quiet"><Copy size={14} />Copy all</Button>
-        <Button isDisabled={!recoveryCodesSaved} onPress={closeMfaDialog} variant="primary">Done</Button>
+        <Button isDisabled={working} onPress={() => void copySecurityText(recoveryCodes.join("\n"), t("Recovery codes copied."), t("Select and copy the codes manually."))} variant="quiet"><Copy size={14} />{t("Copy all")}</Button>
+        <Button isDisabled={!recoveryCodesSaved} onPress={closeMfaDialog} variant="primary">{t("Done")}</Button>
       </> : <>
-        <Button isDisabled={working} onPress={closeMfaDialog}>Cancel</Button>
+        <Button isDisabled={working} onPress={closeMfaDialog}>{t("Cancel")}</Button>
         <Button isDisabled={working} isLoading={working} onPress={() => void (mfaDialog === "setup" ? confirmMfaSetup() : runSensitiveMfaAction(mfaDialog === "disable" ? "disable" : "recovery"))} variant={mfaDialog === "disable" ? "danger" : "primary"}>
-          {mfaDialog === "setup" ? "Turn on verification" : mfaDialog === "disable" ? "Turn off verification" : "Generate codes"}
+          {mfaDialog === "setup" ? t("Turn on verification") : mfaDialog === "disable" ? t("Turn off verification") : t("Generate codes")}
         </Button>
       </>}
       isDismissable={!working && (mfaDialog !== "codes" || recoveryCodesSaved)}
@@ -265,37 +269,37 @@ export function SecurityPage({ initialData }: { initialData: SecurityPageData })
       title={mfaDialogTitle}
     >
       <div className={styles.mfaDialogBody}>
-        {failure ? <Callout title="Could not continue" tone="danger">{failure}</Callout> : null}
+        {failure ? <Callout title={t("Could not continue")} tone="danger">{failure}</Callout> : null}
         {mfaDialog === "setup" && mfaSetup ? <>
-          <div className={styles.qrPanel}>{mfaQrCode ? <Image alt="Authenticator setup QR code" height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">Preparing QR code…</span>}</div>
-          <div className={styles.manualKey}><span>Manual setup key</span><code>{mfaSetup.secret}</code><Button onPress={() => void navigator.clipboard?.writeText(mfaSetup.secret).then(() => setStatus("Setup key copied.")).catch(() => setFailure("Select and copy the key manually."))} size="compact" variant="quiet"><Copy size={13} />Copy</Button></div>
+          <div className={styles.qrPanel}>{mfaQrCode ? <Image alt={t("Authenticator setup QR code")} height={200} src={mfaQrCode} unoptimized width={200} /> : <span role="status">{t("Preparing QR code…")}</span>}</div>
+          <div className={styles.manualKey}><span>{t("Manual setup key")}</span><code>{mfaSetup.secret}</code><Button onPress={() => void copySecurityText(mfaSetup.secret, t("Setup key copied."), t("Select and copy the key manually."))} size="compact" variant="quiet"><Copy size={13} />{t("Copy")}</Button></div>
         </> : null}
         {mfaDialog === "setup" ? <label className={styles.otpField}>
-          <span>Six-digit authenticator code</span>
+          <span>{t("Six-digit authenticator code")}</span>
           <OtpInput onChange={(value) => { setMfaCode(value); setFailure(""); }} value={mfaCode} />
         </label> : null}
         {mfaDialog === "regenerate" || mfaDialog === "disable" ? <TextInput
           autoComplete="one-time-code"
           isRequired
-          label="Authenticator or recovery code"
+          label={t("Authenticator or recovery code")}
           onChange={(value) => { setMfaCode(value); setFailure(""); }}
-          placeholder="Six digits or a recovery code"
+          placeholder={t("Six digits or a recovery code")}
           value={mfaCode}
         /> : null}
         {mfaDialog === "codes" ? <>
-          <ol aria-label="Recovery codes" className={styles.recoveryCodes}>{recoveryCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ol>
-          <Checkbox isSelected={recoveryCodesSaved} onChange={setRecoveryCodesSaved}>I saved these recovery codes</Checkbox>
+          <ol aria-label={t("Recovery codes")} className={styles.recoveryCodes}>{recoveryCodes.map((code) => <li key={code}><code>{code}</code></li>)}</ol>
+          <Checkbox isSelected={recoveryCodesSaved} onChange={setRecoveryCodesSaved}>{t("I saved these recovery codes")}</Checkbox>
         </> : null}
       </div>
     </ControlledModalDialog>
 
     <ConfirmationDialog
-      body={selectedSession ? <>Sign out <strong>{sessionLabel(selectedSession)}</strong>? That browser will need to sign in again.</> : null}
-      confirmLabel={working ? "Signing out…" : "Sign out session"}
+      body={selectedSession ? t("Sign out {session}? That browser will need to sign in again.", { session: sessionLabel(selectedSession, t) }) : null}
+      confirmLabel={working ? t("Signing out…") : t("Sign out session")}
       isOpen={Boolean(selectedSession)}
       onConfirm={() => void revokeSession()}
       onOpenChange={(open) => { if (!open && !working) setSelectedSession(null); }}
-      title="Sign out this session?"
+      title={t("Sign out this session?")}
     />
   </DesignSystemProvider>;
 }

@@ -135,15 +135,14 @@ describe("definition baseline domain", () => {
       definitionIssues(
         snapshot({ reviewStatus: "captured", specification: null }),
       ).map((issue) => issue.code),
-    ).toEqual(["REVIEW_REQUIREMENT", "CREATE_SPECIFICATION"]);
+    ).toEqual([]);
   });
 
-  it("rejects blank agreed wording and unresolved material changes", () => {
+  it("allows original requirement wording but flags unresolved material changes", () => {
     const value = snapshot();
     value.items[0].specification!.refinedRequirement = "";
     value.items[0].specification!.materials = [{ status: "change_requested" }];
     expect(definitionIssues(value).map((issue) => issue.code)).toEqual([
-      "COMPLETE_REFINED_REQUIREMENT",
       "RESOLVE_MATERIAL_CHANGE",
     ]);
   });

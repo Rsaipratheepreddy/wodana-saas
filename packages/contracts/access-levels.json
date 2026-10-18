@@ -1,0 +1,108 @@
+{
+  "$comment": "Roles & permissions by module. Each level adds to the one before it (view, then edit, then manage). A module may skip a level it has nothing for. 'advanced' permissions are never part of a level: they are given one by one. Every permission code belongs to exactly one module. Business Core validates and expands levels with this file; the web shows it.",
+  "levels": ["none", "view", "edit", "manage"],
+  "modules": [
+    {
+      "id": "sales",
+      "view": ["crm.leads.view", "crm.parties.view", "crm.opportunities.view", "crm.activities.view", "crm.reports.view", "crm.notifications.view"],
+      "edit": ["crm.leads.manage", "crm.parties.manage", "crm.opportunities.manage", "crm.opportunities.transition", "crm.opportunities.sensitive_values", "crm.activities.manage"],
+      "manage": ["crm.leads.assign", "crm.parties.identity", "crm.parties.merge", "crm.notifications.manage"],
+      "advanced": ["crm.parties.export", "crm.privacy.erase", "crm.spam.unmark"]
+    },
+    {
+      "id": "inbox",
+      "$comment": "Own chats (see and answer the chats assigned to me) · Team chats (the unassigned queue and my team's chats) · Manage (every chat and the inbox settings).",
+      "view": ["crm.communications.view", "crm.communications.send"],
+      "edit": ["crm.inbox.team", "crm.inbox.close_chats"],
+      "manage": ["crm.inbox.manage", "crm.consent.manage"],
+      "advanced": []
+    },
+    {
+      "id": "flows",
+      "view": ["crm.automations.view"],
+      "edit": ["crm.automations.manage"],
+      "manage": ["crm.automations.publish", "crm.settings.manage"],
+      "advanced": []
+    },
+    {
+      "id": "planning",
+      "view": ["pre_projects.view"],
+      "edit": ["pre_projects.create", "pre_projects.edit", "pre_projects.verify_measurements", "pre_projects.record_client_design_decisions", "pre_projects.record_client_definition_decisions"],
+      "manage": ["pre_projects.manage_lifecycle", "pre_projects.review_designs", "pre_projects.publish_definition"],
+      "$comment": "The material log and samples on cases without editing the rest of the case (PLM-157: the Material Coordinator) is given one by one.",
+      "advanced": ["pre_projects.manage_materials"]
+    },
+    {
+      "id": "quotations",
+      "view": ["commercial.costs.view"],
+      "edit": ["commercial.costs.manage", "commercial.record_decision", "portal.contacts.manage"],
+      "manage": ["commercial.estimate", "commercial.approve", "commercial.release", "commercial.deal.approve", "portal.manage"],
+      "advanced": ["commercial.override_price"]
+    },
+    {
+      "id": "projects",
+      "view": ["projects.view", "projects.schedule.view"],
+      "edit": ["projects.report", "projects.manage", "projects.schedule.manage", "jobs.stage.manage"],
+      "manage": ["projects.review", "projects.costs.view"],
+      "advanced": ["projects.funds_override", "projects.schedule.override", "jobs.repair"]
+    },
+    {
+      "id": "purchasing",
+      "view": ["purchasing.view", "vendors.view", "supplier_offers.view"],
+      "edit": ["purchasing.manage", "vendors.manage", "supplier_offers.manage", "projects.buy"],
+      "manage": ["purchasing.approve", "vendors.approve"],
+      "advanced": []
+    },
+    {
+      "id": "inventory",
+      "view": ["stock.view", "catalog.view"],
+      "edit": ["stock.receive", "stock.manage", "catalog.manage"],
+      "manage": ["stock.adjust", "stock.inspect"],
+      "advanced": ["stock.alerts", "fulfilment.deliver", "catalog.samples.manage"]
+    },
+    {
+      "id": "factory",
+      "view": ["factory.view"],
+      "edit": ["factory.report", "factory.manage", "logistics.manage"],
+      "manage": ["factory.approve"],
+      "advanced": []
+    },
+    {
+      "id": "finance",
+      "view": ["payables.view", "receivables.view"],
+      "edit": ["payables.manage", "receivables.manage", "accounting.manage", "commercial.finance.verify", "finance_requests.manage"],
+      "manage": ["payables.approve", "finance.settings.manage"],
+      "advanced": ["finance_requests.raise"]
+    },
+    {
+      "id": "ledger",
+      "$comment": "The Ledger (engine books): view reads journals, accounts and reports; edit prepares manual journals and works the attention list; manage approves others' journals and sets the Ledger up.",
+      "view": ["books.view"],
+      "edit": ["books.post"],
+      "manage": ["books.approve", "books.manage"],
+      "advanced": []
+    },
+    {
+      "id": "people",
+      "view": ["hrms.self", "module.members.read", "module.teams.read"],
+      "edit": ["hrms.team", "hrms.evidence", "module.members.write", "module.members.edit", "module.teams.write", "module.teams.edit"],
+      "manage": ["hrms.manage", "module.members.delete", "module.teams.delete", "workspace.members.manage"],
+      "advanced": []
+    },
+    {
+      "id": "settings",
+      "view": ["module.organization.read", "module.roles.read", "module.integrations.read", "legal_entities.view", "integrations.view", "audit.view"],
+      "edit": ["module.organization.write", "module.organization.edit", "module.integrations.write", "module.integrations.edit", "legal_entities.manage", "integrations.manage"],
+      "manage": ["module.organization.delete", "module.integrations.delete", "module.roles.write", "module.roles.edit", "module.roles.delete", "workspace.roles.manage", "workspace.settings.manage", "workspace.view_as"],
+      "$comment": "Management dashboards (PLM-134) are given one by one: owners and administrators hold them; managers get them later, per dashboard and team.",
+      "advanced": ["reports.management.view", "reports.management.targets", "reminders.manage", "reminders.team"]
+    },
+    {
+      "id": "woddy",
+      "view": ["ai.suggestions.use"],
+      "edit": [],
+      "manage": [],
+      "advanced": []
+    }
+  ]
+}

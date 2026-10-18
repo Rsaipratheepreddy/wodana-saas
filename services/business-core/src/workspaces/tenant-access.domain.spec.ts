@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainTenantMemberAccess, tenantSeatSummary } from "./tenant-access.domain";
+import { effectiveTenantPermissionCodes, explainTenantMemberAccess, tenantSeatSummary } from "./tenant-access.domain";
 
 describe("tenant access explanation", () => {
   it("combines direct and team roles, then intersects permissions with entitlements", () => {
@@ -27,6 +27,19 @@ describe("tenant access explanation", () => {
     });
     expect(result.effectivePermissions).toEqual([]);
     expect(result.reasons[0]).toContain("suspended");
+  });
+
+  it("exposes only effective grants for the current signed-in member", () => {
+    expect(effectiveTenantPermissionCodes({
+      status: "active",
+      grantedPermissions: ["module.roles.edit", "module.roles.edit", "projects.buy"],
+      entitlements: { status: "active", modules: ["workspace"] },
+    })).toEqual(["module.roles.edit"]);
+    expect(effectiveTenantPermissionCodes({
+      status: "active",
+      grantedPermissions: ["module.roles.edit"],
+      entitlements: { status: "suspended", modules: ["workspace"] },
+    })).toEqual(["module.roles.edit"]);
   });
 
   it("explains authoritative used, reserved, and available seats", () => {

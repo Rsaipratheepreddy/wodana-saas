@@ -1,0 +1,28 @@
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--wd-space-3); }
+.saved { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.trades { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.trades li { display: flex; align-items: center; gap: var(--wd-space-2); padding-block: var(--wd-space-1); border-block-end: 1px solid var(--wd-color-border); }
+.trades li > :global(.wd-field) { flex: 1 1 auto; }
+.trades li[data-archived] input { color: var(--wd-color-text-tertiary); text-decoration: line-through; }
+.addTrade { display: flex; align-items: center; gap: var(--wd-space-2); padding-block-start: var(--wd-space-2); }
+.addTrade :global(.wd-field) { flex: 1 1 auto; }
+.fileInput { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.pictures { display: flex; flex-wrap: wrap; gap: var(--wd-space-3); }
+.picture { display: flex; flex-direction: column; gap: var(--wd-space-2); inline-size: 13rem; }
+.picture img, .pictureEmpty { inline-size: 100%; block-size: 7rem; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); object-fit: cover; }
+.pictureEmpty { display: grid; place-items: center; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.pictureActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); }
+.wide { flex: 1 1 100%; min-inline-size: 0; }
+.wide :global(.wd-field), .wide textarea, .wide input { inline-size: 100%; }
+.wide textarea { min-block-size: 7rem; }
+/* Firm-typed text (emails, handles, addresses) keeps its own direction in either page direction. */
+.wide textarea, .wide input { unicode-bidi: plaintext; text-align: start; }
+
+/* The payment plan's milestones: name, share, when it's due, paid before work starts, remove. */
+.milestones { display: grid; gap: var(--wd-space-3); margin: 0; padding: 0; list-style: none; }
+.milestones > li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr) auto auto; align-items: end; gap: var(--wd-space-2); }
+@media (max-width: 40rem) { .milestones > li { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.numbering { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); align-items: end; gap: var(--wd-space-2); inline-size: 100%; }
+.pageSlot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.kinds { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); }

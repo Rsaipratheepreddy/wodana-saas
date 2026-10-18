@@ -5,6 +5,7 @@ import {
 } from "@nestjs/common";
 import { approvedQuantity, day, num, obj, str } from "./execution.domain";
 import type { ProjectData, Task } from "./execution.types";
+import { acceptedOrderQuantity } from "./project-inventory";
 
 export type ProjectFieldPermissions = {
   manage: boolean;
@@ -20,6 +21,7 @@ export type ProjectFieldProject = {
   revision: number;
   memberId: string;
   members: { id: string; name: string }[];
+  reports: {id:string;date:string;location:string;summary:string;status:string;note:string;published:boolean;photoCount:number}[];
   tasks: {
     id: string;
     title: string;
@@ -143,6 +145,7 @@ export function projectFieldProject(
     revision: data.revision,
     memberId,
     members: meta.members ?? [],
+    reports: data.reports.filter(r=>r.authorId===memberId||permissions.manage||permissions.review).map(r=>({id:r.id,date:r.date,location:r.location,summary:r.summary||r.entries.map(e=>data.tasks.find(t=>t.id===e.taskId)?.title||"Work").join(", "),status:r.status,note:r.note,published:!!r.publishedAt,photoCount:files.filter(f=>f.recordId===r.id).length})).sort((a,b)=>b.date.localeCompare(a.date)),
     tasks: tasks.map((task) => {
       const approved = approvedQuantity(data, task.id);
       return {
@@ -159,8 +162,8 @@ export function projectFieldProject(
         remaining: Math.max(0, Math.round((task.quantity - approved) * 10000) / 10000),
         unit: task.unit,
         canReport:
-          permissions.report &&
-          ["in_progress", "awaiting_inspection"].includes(task.status),
+          (permissions.report || permissions.manage) &&
+          ["planned", "in_progress", "awaiting_inspection", "blocked", "on_hold"].includes(task.status),
         photoCount: files.filter((file) => file.recordId === task.id).length,
       };
     }),
@@ -192,7 +195,7 @@ export function projectFieldProject(
               (!order.taskId || taskIds.has(order.taskId) || permissions.manage),
           )
           .map((order) => {
-            const accepted = order.receipts.reduce((sum, receipt) => sum + receipt.accepted, 0);
+            const accepted = acceptedOrderQuantity(data, order);
             return {
               id: order.id,
               number: order.number,
@@ -320,10 +323,13 @@ export function projectFieldCommand(
     const task = data.tasks.find((candidate) => candidate.id === taskId);
     if (!task || !assigned(task, memberId, permissions))
       throw new ForbiddenException("Report only work assigned to you.");
-    if (!["in_progress", "awaiting_inspection"].includes(task.status))
-      throw new ConflictException("Start the assigned task before reporting output.");
     const quantity = num(body.quantity);
-    if (!quantity) throw new BadRequestException("Enter the completed quantity.");
+    if (quantity > 0 && !["in_progress", "awaiting_inspection"].includes(task.status))
+      throw new ConflictException("Start the assigned task before reporting output.");
+    if (["completed", "cancelled"].includes(task.status))
+      throw new ConflictException("This task is closed to daily updates.");
+    if (quantity === 0 && !str(body.summary, 240) && !str(body.issues, 3000))
+      throw new BadRequestException("Explain why no work was completed.");
     return {
       action: action === "report_task" ? "report_submit" : "report",
       requestId,
@@ -337,9 +343,9 @@ export function projectFieldCommand(
         hours: num(body.hours ?? 0, 24),
         people: num(body.people ?? 0, 10000),
         summary: str(body.summary, 240),
-        weather: "",
-        safety: "",
-        safetyStatus: "none",
+        weather: str(body.weather,500),
+        safety: str(body.safety,3000),
+        safetyStatus: ["none","observation","incident"].includes(String(body.safetyStatus))?body.safetyStatus:"none",
         scheduleImpact: ["none", "watch", "blocked"].includes(
           String(body.scheduleImpact),
         )
@@ -349,9 +355,9 @@ export function projectFieldCommand(
         recoveryPlan: str(body.recoveryPlan, 3000),
         nextUpdateOwnerId: str(body.nextUpdateOwnerId, 80),
         nextUpdateDate: day(body.nextUpdateDate),
-        materials: "",
+        materials: str(body.materials,3000),
         issues: str(body.issues, 3000),
-        tomorrow: "",
+        tomorrow: str(body.tomorrow,3000),
         evidence: str(body.evidence, 3000, action === "report_task"),
       },
     };

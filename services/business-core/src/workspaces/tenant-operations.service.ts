@@ -6,13 +6,11 @@ import { BrandAssetStorageService } from "./brand-asset-storage.service";
 import type {
   CaptureAccountUsageSnapshotDto,
   CreateTenantOperationPlanDto,
-  DecideTenantSupportSessionDto,
   DecideTenantOperationDto,
   RecordAccountBillingDocumentEventDto,
-  RequestTenantSupportSessionDto,
-  TransitionTenantLifecycleDto,
   UpdateAccountCollectionStateDto,
   UpdateAccountContractDto,
+  UpdateAccountSecurityPolicyDto,
   UpdateOrganizationBillingAllocationDto,
   UpdateTenantDataPolicyDto,
   UpdateTenantEntitlementsDto,
@@ -29,12 +27,7 @@ import {
   type BillingDocumentStatus,
   type TenantUsageSnapshot,
 } from "./tenant-operations.domain";
-import {
-  planTenantLifecycleTransition,
-  tenantLifecycleBaseline,
-  tenantLifecycleOptions,
-  type TenantLifecycleState,
-} from "./tenant-lifecycle.domain";
+import { resolveTenantRegistry } from "../control-plane/tenant-registry";
 
 type Registry = { externalTenantId: string; workspaceId: string };
 type ConfigurationCloneSnapshot = {
@@ -52,6 +45,7 @@ const EXPORT_EXCLUDED_TABLES = new Set([
   "webhook_inbox", "workspace_domains", "workspace_invitation_delivery_commands",
 ]);
 const SAFE_IDENTIFIER = /^[a-z][a-z0-9_]*$/;
+const RETIRED_ACCOUNT = "This account is retired: nothing is billed or measured for it. Restore it before changing its billing.";
 
 @Injectable()
 export class TenantOperationsService {
@@ -59,154 +53,6 @@ export class TenantOperationsService {
     private readonly database: DatabaseService,
     @Optional() private readonly storage?: BrandAssetStorageService,
   ) {}
-
-  async lifecycleOverview(externalTenantId: string, operatorUserId: string) {
-    const registry = await this.registry(externalTenantId);
-    return this.database.tenantTransaction(registry.workspaceId, operatorUserId, async (client) => {
-      const context = await this.lifecycleContext(client, registry.workspaceId);
-      const history = await client.query(`SELECT id,version,state,previous_state AS "previousState",
-        grace_ends_at AS "graceEndsAt",reason,notice_required AS "noticeRequired",
-        notice_delivery_state AS "noticeDeliveryState",created_by AS "createdBy",created_at AS "createdAt"
-        FROM tenant_lifecycle_versions WHERE workspace_id=$1 ORDER BY version DESC LIMIT 50`, [registry.workspaceId]);
-      const current = context.latest ?? null;
-      const state = current?.state ?? tenantLifecycleBaseline(context);
-      return {
-        workspaceId: registry.workspaceId,
-        state,
-        version: current?.version ?? 0,
-        source: current ? "versioned" : "legacy_projection",
-        workspaceStatus: context.workspaceStatus,
-        graceEndsAt: current?.graceEndsAt ?? null,
-        graceExpired: state === "grace" && current?.graceEndsAt
-          ? new Date(current.graceEndsAt).getTime() <= Date.now() : false,
-        nextStates: tenantLifecycleOptions(state),
-        readiness: {
-          onboardingStatus: context.onboardingStatus,
-          ownerInvitationStatus: context.ownerInvitationStatus,
-        },
-        noticeDeliveryState: current?.noticeDeliveryState ?? "not_required",
-        history: history.rows,
-        observedAt: new Date().toISOString(),
-      };
-    });
-  }
-
-  async transitionLifecycle(externalTenantId: string, input: TransitionTenantLifecycleDto,
-    idempotencyKey: string, operatorUserId: string, correlationId?: string) {
-    if (!idempotencyKey.trim() || idempotencyKey.length > 160) {
-      throw new ConflictException("Use a stable lifecycle idempotency key of at most 160 characters.");
-    }
-    const registry = await this.registry(externalTenantId);
-    const requestHash = canonicalHash({ to: input.to, graceEndsAt: input.graceEndsAt ?? null,
-      reason: input.reason.trim(), expectedVersion: input.expectedVersion });
-    const correlation = this.correlation(correlationId);
-    return this.database.tenantTransaction(registry.workspaceId, operatorUserId, async (client) => {
-      const context = await this.lifecycleContext(client, registry.workspaceId, true);
-      const replay = await client.query<{ id: string; requestHash: string; state: string; version: number }>(
-        `SELECT id,request_hash AS "requestHash",state,version FROM tenant_lifecycle_versions
-         WHERE workspace_id=$1 AND idempotency_key=$2`, [registry.workspaceId, idempotencyKey],
-      );
-      if (replay.rowCount) {
-        if (replay.rows[0].requestHash !== requestHash) {
-          throw new ConflictException("This lifecycle idempotency key was used for a different decision.");
-        }
-        return { ...replay.rows[0], replayed: true };
-      }
-      const previousState = context.latest?.state ?? tenantLifecycleBaseline(context);
-      const previousVersion = context.latest?.version ?? 0;
-      if (previousVersion !== input.expectedVersion) {
-        throw new ConflictException("Lifecycle changed. Refresh before deciding again.");
-      }
-      let plan: ReturnType<typeof planTenantLifecycleTransition>;
-      try {
-        plan = planTenantLifecycleTransition({ from: previousState, to: input.to,
-          now: new Date(), graceEndsAt: input.graceEndsAt ? new Date(input.graceEndsAt) : null });
-      } catch (error) {
-        throw new ConflictException((error as Error).message);
-      }
-      if (input.to === "active") {
-        if (context.onboardingStatus !== "completed" || context.ownerInvitationStatus !== "accepted") {
-          throw new ConflictException("Complete owner activation and onboarding before activating the organization.");
-        }
-        const access = await client.query<{ status: string; seatLimit: number; reservedSeats: number }>(
-          `SELECT entitlement.status,capacity.seat_limit AS "seatLimit",
-                  capacity.reserved_seats AS "reservedSeats"
-           FROM effective_workspace_entitlements entitlement
-           CROSS JOIN workspace_seat_capacity($1,NULL) capacity WHERE entitlement.workspace_id=$1`,
-          [registry.workspaceId],
-        );
-        if (!access.rowCount || access.rows[0].status !== "active"
-          || Number(access.rows[0].reservedSeats) > Number(access.rows[0].seatLimit)) {
-          throw new ConflictException("Resolve sold-module allocation and seat capacity before activation.");
-        }
-      }
-      if (input.to === "archived") {
-        const retention = await client.query<{ legalHold: boolean; exportBeforeErasure: boolean }>(
-          `SELECT legal_hold AS "legalHold",export_before_erasure AS "exportBeforeErasure"
-           FROM workspace_data_policies WHERE workspace_id=$1`, [registry.workspaceId],
-        );
-        const exported = await client.query<{ id: string }>(
-          `SELECT id FROM tenant_data_exports WHERE workspace_id=$1 AND status='verified'
-           AND downloaded_at IS NOT NULL AND expires_at>now() ORDER BY created_at DESC LIMIT 1`,
-          [registry.workspaceId],
-        );
-        if (!retention.rowCount || !exported.rowCount) {
-          throw new ConflictException("Set a retention policy and download a verified current export before archiving.");
-        }
-        if (retention.rows[0].legalHold) {
-          throw new ConflictException("Resolve the legal hold before archiving this organization.");
-        }
-      }
-      if (context.workspaceStatus !== plan.workspaceStatus) {
-        await client.query(`UPDATE workspaces SET status=$2::workspace_status,version=version+1,updated_at=now()
-          WHERE id=$1`, [registry.workspaceId, plan.workspaceStatus]);
-      }
-      const saved = await client.query<{ id: string; version: number; state: TenantLifecycleState; createdAt: Date }>(
-        `INSERT INTO tenant_lifecycle_versions
-          (workspace_id,version,state,previous_state,grace_ends_at,reason,notice_required,
-           notice_delivery_state,idempotency_key,request_hash,correlation_id,created_by)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-         RETURNING id,version,state,created_at AS "createdAt"`,
-        [registry.workspaceId, previousVersion + 1, input.to, previousState,
-          input.graceEndsAt ?? null, input.reason.trim(), plan.noticeRequired,
-          plan.noticeDeliveryState, idempotencyKey, requestHash, correlation, operatorUserId],
-      );
-      const before = { state: previousState, version: previousVersion, workspaceStatus: context.workspaceStatus };
-      const after = { state: input.to, version: saved.rows[0].version, workspaceStatus: plan.workspaceStatus,
-        graceEndsAt: input.graceEndsAt ?? null, reason: input.reason.trim(),
-        noticeDeliveryState: plan.noticeDeliveryState };
-      await client.query(`INSERT INTO audit_events
-        (workspace_id,actor_user_id,source,action,entity_type,entity_id,before,after,correlation_id)
-        VALUES($1,$2,'internal','tenant.lifecycle_transitioned','workspace',$1,$3::jsonb,$4::jsonb,$5)`,
-      [registry.workspaceId, operatorUserId, JSON.stringify(before), JSON.stringify(after), correlation]);
-      await this.operatorAudit(client, operatorUserId, "tenant.lifecycle_transitioned", externalTenantId,
-        correlation, { workspaceId: registry.workspaceId, before, after });
-      return { ...saved.rows[0], previousState, workspaceStatus: plan.workspaceStatus,
-        noticeDeliveryState: plan.noticeDeliveryState, replayed: false };
-    });
-  }
-
-  private async lifecycleContext(client: PoolClient, workspaceId: string, lock = false) {
-    const workspace = await client.query<{ status: string }>(
-      `SELECT status FROM workspaces WHERE id=$1 ${lock ? "FOR UPDATE" : ""}`, [workspaceId],
-    );
-    if (!workspace.rowCount) throw new NotFoundException("Organization was not found");
-    const onboarding = await client.query<{ status: string }>(
-      `SELECT status FROM workspace_onboarding WHERE workspace_id=$1`, [workspaceId]);
-    const invitation = await client.query<{ status: string }>(
-      `SELECT status FROM workspace_invitations WHERE workspace_id=$1 ORDER BY created_at LIMIT 1`, [workspaceId]);
-    const subscription = await client.query<{ status: string }>(
-      `SELECT status FROM workspace_subscriptions WHERE workspace_id=$1`, [workspaceId]);
-    const latest = await client.query<{ state: TenantLifecycleState; version: number; graceEndsAt: Date | null;
-      noticeDeliveryState: string }>(`SELECT state,version,grace_ends_at AS "graceEndsAt",
-      notice_delivery_state AS "noticeDeliveryState" FROM tenant_lifecycle_versions
-      WHERE workspace_id=$1 ORDER BY version DESC LIMIT 1`, [workspaceId]);
-    return { workspaceStatus: workspace.rows[0].status,
-      onboardingStatus: onboarding.rows[0]?.status ?? null,
-      ownerInvitationStatus: invitation.rows[0]?.status ?? null,
-      subscriptionStatus: subscription.rows[0]?.status ?? null,
-      latest: latest.rows[0] ?? null };
-  }
 
   async overview(externalTenantId: string, operatorUserId: string) {
     const registry = await this.registry(externalTenantId);
@@ -484,7 +330,7 @@ export class TenantOperationsService {
         FROM customer_account_organizations WHERE workspace_id=$1`, [registry.workspaceId]);
       if (!linked.rowCount) throw new ConflictException("The organization is not linked to a customer account.");
       const accountId = linked.rows[0].accountId;
-      await client.query(`SELECT id FROM customer_accounts WHERE id=$1 FOR UPDATE`, [accountId]);
+      await this.billableAccount(client, accountId, true);
       const current = await client.query<{ version: number }>(`SELECT * FROM account_contract_versions
         WHERE account_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE`, [accountId]);
       const currentVersion = Number(current.rows[0]?.version ?? 0);
@@ -566,7 +412,7 @@ export class TenantOperationsService {
         JOIN effective_account_contracts contract ON contract.account_id=linked.account_id
         WHERE linked.workspace_id=$1`, [registry.workspaceId]);
       if (!contract.rowCount) throw new ConflictException("Configure the account contract before allocating an organization.");
-      await client.query(`SELECT id FROM customer_accounts WHERE id=$1 FOR UPDATE`, [contract.rows[0].accountId]);
+      await this.billableAccount(client, contract.rows[0].accountId, true);
       const current = await client.query<{ version: number }>(`SELECT * FROM organization_billing_allocation_versions
         WHERE workspace_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE`, [registry.workspaceId]);
       const currentVersion = Number(current.rows[0]?.version ?? 0);
@@ -647,6 +493,8 @@ export class TenantOperationsService {
           total_amount::text AS "totalAmount",balance_amount::text AS "balanceAmount",version
         FROM account_billing_documents WHERE account_id=$1 AND document_type=$2 AND provider=$3 AND external_reference=$4
         FOR UPDATE`, [accountId, input.documentType, input.provider, input.externalReference]);
+      // A retired account gets no new billing document; an event on one it already has (a refund, a void) is recorded.
+      if (!current.rowCount) await this.billableAccount(client, accountId);
       let planned: ReturnType<typeof validateBillingDocumentEvent>;
       try {
         planned = validateBillingDocumentEvent({ ...input, previousStatus: current.rows[0]?.status ?? null });
@@ -705,7 +553,7 @@ export class TenantOperationsService {
         FROM customer_account_organizations WHERE workspace_id=$1`, [registry.workspaceId]);
       if (!linked.rowCount) throw new ConflictException("The organization is not linked to a customer account.");
       const accountId = linked.rows[0].accountId;
-      await client.query(`SELECT id FROM customer_accounts WHERE id=$1 FOR UPDATE`, [accountId]);
+      await this.billableAccount(client, accountId, true);
       const current = await client.query<{ version: number }>(`SELECT * FROM account_collection_state_versions
         WHERE account_id=$1 ORDER BY version DESC LIMIT 1 FOR UPDATE`, [accountId]);
       const currentVersion = Number(current.rows[0]?.version ?? 0);
@@ -752,6 +600,7 @@ export class TenantOperationsService {
         JOIN workspaces workspace ON workspace.id=linked.workspace_id
         WHERE source.workspace_id=$1 ORDER BY linked.is_default DESC,workspace.name`, [registry.workspaceId]);
       if (!result.rowCount) throw new ConflictException("The organization is not linked to a customer account.");
+      await this.billableAccount(client, result.rows[0].accountId);
       return { accountId: result.rows[0].accountId, organizations: result.rows };
     });
     const organizationUsage = await Promise.all(account.organizations.map(async (organization) => ({
@@ -830,68 +679,47 @@ export class TenantOperationsService {
     });
   }
 
-  async requestSupport(externalTenantId: string, input: RequestTenantSupportSessionDto, operatorUserId: string, correlationId?: string) {
+  /** The sign-in security policy of the account that owns the organization, with its version. */
+  async securityPolicy(externalTenantId: string) {
     const registry = await this.registry(externalTenantId);
-    const correlation = this.correlation(correlationId);
-    return this.database.tenantTransaction(registry.workspaceId, operatorUserId, async (client) => {
-      const open = await client.query(`SELECT id FROM tenant_support_sessions WHERE workspace_id=$1
-        AND status IN ('requested','active') AND expires_at>now() LIMIT 1`, [registry.workspaceId]);
-      if (open.rowCount) throw new ConflictException("This organization already has an open support request.");
-      const created = await client.query(
-        `INSERT INTO tenant_support_sessions(workspace_id,requested_by,access_level,reason,expires_at,correlation_id)
-         VALUES($1,$2,$3,$4,now()+($5*interval '1 minute'),$6)
-         RETURNING id,access_level AS "accessLevel",status,reason,requested_by AS "requestedBy",
-           approved_by AS "approvedBy",requested_at AS "requestedAt",expires_at AS "expiresAt",version`,
-        [registry.workspaceId, operatorUserId, input.accessLevel, input.reason, input.durationMinutes, correlation],
-      );
-      await this.operatorAudit(client, operatorUserId, "tenant.support_requested", externalTenantId, correlation,
-        { workspaceId: registry.workspaceId, supportSessionId: created.rows[0].id, accessLevel: input.accessLevel });
-      return created.rows[0];
+    const account = await this.database.tenantTransaction(registry.workspaceId, registry.workspaceId, (client) => this.accountSecurity(client, registry.workspaceId, false));
+    if (!account) throw new NotFoundException("Account was not found");
+    return account;
+  }
+
+  /**
+   * Whether the account's administrators, or all its people, need an authenticator to sign in: version-checked on the
+   * account and audited in the organization and the operator audit. The same values again change nothing. The policy
+   * covers every organization the account owns. A null operator is the platform itself (the operator CLI).
+   */
+  async updateSecurityPolicy(externalTenantId: string, input: UpdateAccountSecurityPolicyDto, operatorUserId: string | null, correlationId?: string) {
+    const registry = await this.registry(externalTenantId);
+    return this.database.tenantTransaction(registry.workspaceId, operatorUserId ?? registry.workspaceId, async (client) => {
+      const current = await this.accountSecurity(client, registry.workspaceId, true);
+      if (!current) throw new NotFoundException("Account was not found");
+      if (current.version !== input.expectedVersion) throw new ConflictException("The account changed. Refresh and try again.");
+      const next = {
+        ...current.securityPolicy,
+        ...(input.requireMfaForAdmins === undefined ? {} : { requireMfaForAdmins: input.requireMfaForAdmins }),
+        ...(input.requireMfaForAllUsers === undefined ? {} : { requireMfaForAllUsers: input.requireMfaForAllUsers }),
+      };
+      if (canonicalHash(next) === canonicalHash(current.securityPolicy)) return { ...current, changed: false };
+      const saved = await client.query<{ accountId: string; version: number; securityPolicy: Record<string, unknown> }>(
+        `UPDATE customer_accounts SET security_policy = $2::jsonb, version = version + 1 WHERE id = $1
+         RETURNING id AS "accountId", version, security_policy AS "securityPolicy"`, [current.accountId, JSON.stringify(next)]);
+      await this.audit(client, registry, operatorUserId, "tenant.security_policy_updated", "customer_account", current.accountId,
+        { securityPolicy: current.securityPolicy }, { securityPolicy: next, reason: input.reason }, correlationId);
+      return { ...saved.rows[0], organizations: current.organizations, changed: true };
     });
   }
 
-  async decideSupport(externalTenantId: string, sessionId: string, input: DecideTenantSupportSessionDto, operatorUserId: string, correlationId?: string) {
-    const registry = await this.registry(externalTenantId);
-    const correlation = this.correlation(correlationId);
-    return this.database.tenantTransaction(registry.workspaceId, operatorUserId, async (client) => {
-      const found = await client.query(`SELECT * FROM tenant_support_sessions WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [registry.workspaceId, sessionId]);
-      if (!found.rowCount) throw new NotFoundException("Support session was not found");
-      const current = found.rows[0];
-      if (Number(current.version) !== input.expectedVersion) throw new ConflictException("Support request changed. Refresh and try again.");
-      if (["requested", "active"].includes(current.status)
-        && new Date(current.expires_at).getTime() <= Date.now()) {
-        throw new ConflictException("Support access has expired. Request a new time-limited session.");
-      }
-      if (input.decision === "approve") {
-        if (current.status !== "requested") throw new ConflictException("Only a requested support session can be approved.");
-        if (current.requested_by === operatorUserId) throw new ConflictException("A second operator must approve support access.");
-      } else if (input.decision === "reject" && current.status !== "requested") {
-        throw new ConflictException("Only a requested support session can be rejected.");
-      } else if (input.decision === "revoke" && current.status !== "active") {
-        throw new ConflictException("Only active support access can be revoked.");
-      }
-      const status = input.decision === "approve" ? "active" : input.decision === "reject" ? "rejected" : "revoked";
-      const saved = await client.query(
-        `UPDATE tenant_support_sessions SET status=$3::varchar(20),
-           approved_by=CASE WHEN $3::text='active' THEN $4 ELSE approved_by END,
-           approved_at=CASE WHEN $3::text='active' THEN now() ELSE approved_at END,
-           starts_at=CASE WHEN $3::text='active' THEN now() ELSE starts_at END,
-           ended_at=CASE WHEN $3::text IN ('rejected','revoked') THEN now() ELSE ended_at END,
-           version=version+1
-         WHERE workspace_id=$1 AND id=$2
-         RETURNING id,access_level AS "accessLevel",status,reason,requested_by AS "requestedBy",
-           approved_by AS "approvedBy",requested_at AS "requestedAt",approved_at AS "approvedAt",
-           starts_at AS "startsAt",expires_at AS "expiresAt",ended_at AS "endedAt",version`,
-        [registry.workspaceId, sessionId, status, operatorUserId],
-      );
-      await this.operatorAudit(client, operatorUserId, `tenant.support_${status}`, externalTenantId, correlation,
-        { workspaceId: registry.workspaceId, supportSessionId: sessionId, decisionReason: input.reason,
-          before: { status: current.status, version: current.version, accessLevel: current.access_level,
-            expiresAt: current.expires_at },
-          after: { status: saved.rows[0].status, version: saved.rows[0].version,
-            accessLevel: saved.rows[0].accessLevel, expiresAt: saved.rows[0].expiresAt } });
-      return saved.rows[0];
-    });
+  private async accountSecurity(client: PoolClient, workspaceId: string, lock: boolean) {
+    const result = await client.query<{ accountId: string; version: number; securityPolicy: Record<string, unknown>; organizations: number }>(
+      `SELECT account.id AS "accountId", account.version, account.security_policy AS "securityPolicy",
+              (SELECT count(*)::int FROM customer_account_organizations other WHERE other.account_id = account.id) AS organizations
+         FROM customer_account_organizations linked JOIN customer_accounts account ON account.id = linked.account_id
+        WHERE linked.workspace_id = $1 ${lock ? "FOR UPDATE OF account" : ""}`, [workspaceId]);
+    return result.rows[0] ?? null;
   }
 
   async plan(externalTenantId: string, input: CreateTenantOperationPlanDto, idempotencyKey: string, operatorUserId: string, correlationId?: string) {
@@ -1322,11 +1150,18 @@ export class TenantOperationsService {
       knownFileBytes: Number(row.knownFileBytes), knownFileCount: row.knownFileCount };
   }
 
-  private async registry(externalTenantId: string): Promise<Registry> {
-    const found = await this.database.query<Registry>(`SELECT external_tenant_id AS "externalTenantId",workspace_id AS "workspaceId"
-      FROM tenant_provisioning_requests WHERE external_tenant_id=$1`, [externalTenantId]);
-    if (!found.rowCount) throw new NotFoundException("Client was not found");
-    return found.rows[0];
+  private registry(externalTenantId: string): Promise<Registry> {
+    return resolveTenantRegistry(this.database, externalTenantId);
+  }
+
+  /**
+   * A retired account (status archived: a retired sandbox, src/ops/ops-sandbox-retire.ts) is out of Wodana's billing:
+   * no contract, allocation, collection state, new billing document or usage snapshot is recorded for it until it is
+   * restored. With `lock`, the account row is locked as the versioned billing commands lock it.
+   */
+  private async billableAccount(client: PoolClient, accountId: string, lock = false) {
+    const account = await client.query<{ status: string }>(`SELECT status FROM customer_accounts WHERE id=$1${lock ? " FOR UPDATE" : ""}`, [accountId]);
+    if (account.rows[0]?.status === "archived") throw new ConflictException(RETIRED_ACCOUNT);
   }
 
   private async registryByWorkspace(workspaceId: string): Promise<Registry> {
@@ -1347,7 +1182,7 @@ export class TenantOperationsService {
     return value && /^[0-9a-f-]{36}$/i.test(value) ? value : randomUUID();
   }
 
-  private async audit(client: PoolClient, registry: Registry, operatorUserId: string, action: string,
+  private async audit(client: PoolClient, registry: Registry, operatorUserId: string | null, action: string,
     entityType: string, entityId: string, before: unknown, after: unknown, correlationId?: string) {
     const correlation = this.correlation(correlationId);
     await client.query(`INSERT INTO audit_events
@@ -1359,7 +1194,7 @@ export class TenantOperationsService {
       { workspaceId: registry.workspaceId, entityType, entityId });
   }
 
-  private operatorAudit(client: PoolClient, actorUserId: string, action: string, targetId: string, correlationId: string,
+  private operatorAudit(client: PoolClient, actorUserId: string | null, action: string, targetId: string, correlationId: string,
     details: Record<string, unknown>) {
     return client.query(`INSERT INTO platform_operator_audit
       (actor_user_id,action,target_type,target_id,correlation_id,details)

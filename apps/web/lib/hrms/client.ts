@@ -43,6 +43,7 @@ export async function hrmsRequest<T>(
     );
   return data;
 }
+/** A calendar date (YYYY-MM-DD) as it is in a time zone at a moment. */
 export function localDay(timezone: string, date = new Date()): string {
   const p = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -53,18 +54,26 @@ export function localDay(timezone: string, date = new Date()): string {
   const get = (key: string) => p.find((x) => x.type === key)!.value;
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
-export function minutesLabel(minutes: number) {
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+/** The instant a wall-clock time (HH:MM) on a calendar date is in a time zone. */
+export function zonedInstant(date: string, time: string, timezone: string): Date {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const wall = Date.UTC(year, month - 1, day, hour, minute);
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const offset = (at: number) => {
+    const parts = format.formatToParts(new Date(at));
+    const get = (key: string) => Number(parts.find((x) => x.type === key)!.value);
+    return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")) - at;
+  };
+  // Twice, so a guess on the other side of a daylight-saving change settles.
+  const first = wall - offset(wall);
+  return new Date(wall - offset(first));
 }
-export function timeLabel(value: string | null | undefined, timezone: string) {
-  return value
-    ? new Intl.DateTimeFormat(undefined, {
-        timeZone: timezone,
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(new Date(value))
-    : "—";
-}
-export function statusLabel(value: string) {
-  return value.replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
+/** HH:MM of a moment in a time zone (24-hour, for time fields). */
+export function wallTime(value: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hourCycle: "h23", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(value));
+  const get = (key: string) => parts.find((x) => x.type === key)!.value;
+  return `${get("hour")}:${get("minute")}`;
 }

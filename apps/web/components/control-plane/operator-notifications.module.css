@@ -1,0 +1,17 @@
+/* Wodana Control's notices: a bell with a count and a short list in a popover. Tokens and logical properties only. */
+.trigger { position: relative; display: inline-flex; }
+.badge { position: absolute; inset-block-start: calc(var(--wd-space-1) * -1); inset-inline-end: calc(var(--wd-space-1) * -1); display: inline-flex; align-items: center; justify-content: center; min-inline-size: 1.125rem; block-size: 1.125rem; padding-inline: var(--wd-space-1); border-radius: var(--wd-radius-pill); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-semibold); line-height: 1; pointer-events: none; font-variant-numeric: tabular-nums; }
+.panel { display: grid; inline-size: min(22rem, calc(100vw - var(--wd-space-8))); max-block-size: min(28rem, 70vh); outline: none; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-2) var(--wd-space-2) var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.title { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.list { margin: 0; padding: var(--wd-space-1) 0; overflow-y: auto; list-style: none; }
+.item { display: grid; gap: var(--wd-space-0-5); inline-size: 100%; padding: var(--wd-space-2) var(--wd-space-4); border: 0; background: transparent; color: var(--wd-color-text); font: inherit; font-size: var(--wd-text-sm); text-align: start; cursor: pointer; }
+.item:hover { background: var(--wd-color-surface-hover); }
+.item:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.item strong { font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+.item[data-unread] strong { font-weight: var(--wd-weight-semibold); }
+.item[data-unread] .event { color: var(--wd-color-action-primary); }
+.event { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.body { color: var(--wd-color-text-secondary); overflow-wrap: anywhere; }
+.time { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.message { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; padding: var(--wd-space-4); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }

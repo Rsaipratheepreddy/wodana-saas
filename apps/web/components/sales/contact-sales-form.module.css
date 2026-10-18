@@ -1,0 +1,22 @@
+/* Wodana's "Contact sales" form: shared fields in a two-column grid, one pill action. Tokens and logical properties only. */
+.form { display: grid; gap: var(--wd-space-5); min-inline-size: 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-5) var(--wd-space-4); align-items: start; min-inline-size: 0; }
+.wide { grid-column: 1 / -1; min-inline-size: 0; }
+.wide textarea { min-block-size: 7rem; }
+.actions { display: flex; justify-content: flex-start; }
+/* The page's pill action: rounder and roomier than the product button it builds on. */
+.actions > .submit[data-variant] { min-block-size: 3rem; border-radius: var(--wd-radius-pill); padding-inline: var(--wd-space-8); font-size: var(--wd-text-lg); }
+
+/* Off-screen, out of the tab order and hidden from assistive technology. */
+.trap { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.received { display: grid; justify-items: start; gap: var(--wd-space-3); padding-block: var(--wd-space-8); }
+.received p { margin: 0; max-inline-size: 36rem; color: var(--wd-color-text-secondary); font-size: var(--wd-text-lg); line-height: 1.6; }
+.receivedIcon { color: var(--wd-color-action-primary); }
+.receivedTitle { margin: 0; color: var(--wd-color-text); font-size: var(--wd-text-2xl); font-weight: var(--wd-weight-semibold); letter-spacing: -0.02em; }
+
+@media (max-width: 640px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .actions > .submit[data-variant] { inline-size: 100%; }
+  .actions { display: grid; }
+}

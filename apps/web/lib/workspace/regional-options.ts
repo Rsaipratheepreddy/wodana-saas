@@ -34,9 +34,23 @@ export function timeZoneOptions(): RegionalOption[] {
 
 export const localeOptions: RegionalOption[] = [
   ["en-AE", "English (United Arab Emirates)"], ["ar-AE", "Arabic (United Arab Emirates)"],
+  ["ur-PK", "اردو (پاکستان)"], ["te-IN", "తెలుగు (భారతదేశం)"],
+  ["ml-IN", "മലയാളം (ഇന്ത്യ)"], ["ta-IN", "தமிழ் (இந்தியா)"],
   ["en-IN", "English (India)"], ["hi-IN", "Hindi (India)"], ["en-GB", "English (United Kingdom)"],
   ["en-US", "English (United States)"], ["en-AU", "English (Australia)"], ["en-CA", "English (Canada)"],
-  ["ar-SA", "Arabic (Saudi Arabia)"], ["fr-FR", "French (France)"], ["de-DE", "German (Germany)"],
+  ["en-SA", "English (Saudi Arabia)"], ["ar-SA", "Arabic (Saudi Arabia)"],
+  ["en-QA", "English (Qatar)"], ["en-KW", "English (Kuwait)"], ["en-BH", "English (Bahrain)"],
+  ["en-OM", "English (Oman)"], ["en-SG", "English (Singapore)"],
+  ["fr-FR", "French (France)"], ["de-DE", "German (Germany)"],
   ["es-ES", "Spanish (Spain)"], ["it-IT", "Italian (Italy)"], ["nl-NL", "Dutch (Netherlands)"],
   ["pt-BR", "Portuguese (Brazil)"], ["zh-CN", "Chinese (Simplified)"], ["ja-JP", "Japanese"],
 ].map(([id, label]) => ({ id, label }));
+
+/** Regional currencies use a neutral symbol instead of an arbitrary member flag. */
+export function currencyFlagCode(currency: string): string | undefined {
+  const code = currency.toUpperCase();
+  if (code === "EUR") return "eu";
+  if (["ANG", "XCG", "XAF", "XOF", "XCD", "XPF", "XDR", "XSU"].includes(code)) return undefined;
+  const country = code.slice(0, 2);
+  return ISO_COUNTRY_CODES.includes(country) ? country.toLowerCase() : undefined;
+}

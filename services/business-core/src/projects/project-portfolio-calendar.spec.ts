@@ -30,7 +30,7 @@ describe("portfolio calendar events", () => {
       booking("C", { businessUnitId: "production", businessUnitName: "Production", businessUnitColor: "#7C3AED" }),
     ], "2026-09-06", "2026-09-12");
 
-    expect(events[0].title).toBe("DEAL-A — Client A — Design — Design Team — Designer A");
+    expect(events[0].title).toBe("DEAL-A · Client A · Design · Design Team · Designer A");
     expect(events[0].department).toMatchObject({ code: "DESIGN", name: "Design", visibleName: "Design" });
     expect(events.find((event) => event.bookingId === "A")?.overlapIds).toEqual(["B:2026-09-08"]);
     expect(events.find((event) => event.bookingId === "C")?.overlapIds).toEqual([]);

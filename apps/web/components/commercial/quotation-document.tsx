@@ -1,4 +1,7 @@
 "use client";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, translateKnown } from "@/lib/i18n/keys";
+import { EmptyState, useDesignSystem } from "@/design-system";
 import { Fragment } from "react";
 import {
   materialAmount,
@@ -39,12 +42,14 @@ export function QuotationDocument({
   onConfigure?: (room: string, item?: string) => void;
   onEditHeader?: () => void;
 }) {
+  const t = useT();
+  const { locale } = useDesignSystem();
   if (quote.presentation && !onConfigure && !onEditHeader) {
     const printable = {
       ...quote,
       lines: quote.lines.map((line) => ({ ...line, unitCost: "unitCost" in line ? line.unitCost : 0 })),
     } as Quote;
-    return <QuotationCanvasPreview quote={printable} brand={brand ?? quote.brand} customerName={customerName ?? quote.cover?.preparedFor ?? "Client"} />;
+    return <QuotationCanvasPreview quote={printable} brand={brand ?? quote.brand} customerName={customerName ?? quote.cover?.preparedFor ?? t("Client")} />;
   }
   const totals = quoteTotals({
     ...quote,
@@ -68,12 +73,12 @@ export function QuotationDocument({
     ]),
   ];
   return (
-    <article className={s.document} aria-label="Quotation document">
+    <article className={s.document} aria-label={t("Quotation document")}>
       <div className={s.cover}>
         {onEditHeader && (
           <div className={s.coverActions}>
             <button className={s.editHeader} onClick={onEditHeader}>
-              Edit header &amp; logo
+              {t("Edit header & logo")}
             </button>
           </div>
         )}
@@ -86,13 +91,7 @@ export function QuotationDocument({
       </div>
       <div className={s.body}>
         {!rooms.length && (
-          <div className={s.empty}>
-            <span>YOUR SCOPE, ROOM BY ROOM</span>
-            <h2>Your quotation starts here</h2>
-            <p>
-              Add a room from the builder or let AI suggest a starting point.
-            </p>
-          </div>
+          <EmptyState title={t("Your quotation starts here")} description={t("Add a room from the builder, or let AI suggest a starting point.")} />
         )}
         {rooms.map((room, index) => {
           const lines = quote.lines.filter((l) => l.room === room);
@@ -100,18 +99,18 @@ export function QuotationDocument({
             <section
               key={room}
               className={s.room}
-              aria-label={`${room} quotation items`}
+              aria-label={t("{room} quotation items", { room })}
             >
               <header className={s.roomHeading}>
                 <div>
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   <h2>{room}</h2>
                   <small>
-                    {lines.length} {lines.length === 1 ? "item" : "items"}
+                    {t(lines.length === 1 ? "{count} item" : "{count} items", { count: lines.length })}
                   </small>
                 </div>
                 {onConfigure && (
-                  <button onClick={() => onConfigure(room)}>Edit room</button>
+                  <button onClick={() => onConfigure(room)}>{t("Edit room")}</button>
                 )}
               </header>
               {lines.length ? (
@@ -119,33 +118,33 @@ export function QuotationDocument({
                   <table>
                     <colgroup>
                       <col style={{ width: "18%" }} />
-                      <col style={{ width: "18%" }} />
-                      <col style={{ width: "14%" }} />
+                      <col style={{ width: "12%" }} />
+                      <col style={{ width: "12%" }} />
                       <col style={{ width: "24%" }} />
                       <col style={{ width: "8%" }} />
-                      <col style={{ width: "9%" }} />
-                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "13%" }} />
+                      <col style={{ width: "13%" }} />
                     </colgroup>
                     <thead>
                       <tr>
-                        <th>Item</th>
-                        <th>Reference image</th>
-                        <th>Size</th>
-                        <th>Materials &amp; details</th>
-                        <th>Qty / unit</th>
-                        <th>Rate</th>
-                        <th>Amount</th>
+                        <th>{t("Item")}</th>
+                        <th>{t("Reference image")}</th>
+                        <th>{t("Size")}</th>
+                        <th>{t("Materials & details")}</th>
+                        <th>{t("Qty / unit")}</th>
+                        <th>{t("Rate")}</th>
+                        <th>{t("Amount")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lines.map((line) => (
                         <Fragment key={line.id}>
                           <tr>
-                            <td data-label="Item">
+                            <td data-label={t("Item")}>
                               {onConfigure ? (
                                 <button
                                   className={s.itemLink}
-                                  aria-label={`Edit ${quotationItemName(line.title, room)}`}
+                                  aria-label={t("Edit {title}", { title: quotationItemName(line.title, room) })}
                                   onClick={() => onConfigure(room, line.id)}
                                 >
                                   {quotationItemName(line.title, room)}
@@ -155,26 +154,27 @@ export function QuotationDocument({
                                   {quotationItemName(line.title, room)}
                                 </strong>
                               )}
-                              {line.optional ? <small>{selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total"}</small> : null}
+                              {line.optional ? <small>{t(selectedOptionIds.has(line.id) ? "Selected option · included in accepted total" : "Option · not included in total")}</small> : null}
                               {(('variantLabel' in line ? line.variantLabel : undefined) || quotationLineVariant(line as QuoteLine)) && <small className={s.variant}>{('variantLabel' in line ? line.variantLabel : undefined) || quotationLineVariant(line as QuoteLine)}</small>}
                             </td>
-                            <td data-label="Reference image">
-                              {line.photo ? <img className={s.itemPhoto} src={line.photo} alt={`Reference for ${line.title}`} /> : <span className={s.muted}>—</span>}
+                            <td data-label={t("Reference image")}>
+                              {line.photo ? <img className={s.itemPhoto} src={line.photo} alt={t("Reference for {title}", { title: line.title })} /> : <span className={s.muted}>—</span>}
                             </td>
-                            <td data-label="Size">{quotationDimensionsText(line.dimensions) || "—"}</td>
-                            <td className={s.description} data-label="Materials & details">
+                            <td data-label={t("Size")}>{quotationDimensionsText(line.dimensions) || "—"}</td>
+                            <td className={s.description} data-label={t("Materials & details")}>
                               {quotationDescription(line) || "—"}
                             </td>
-                            <td data-label="Quantity">
+                            <td data-label={t("Quantity")}>
                               {line.quantity}{" "}
                               <span className={s.muted}>{line.unit}</span>
                             </td>
-                            <td data-label="Rate">{money(line.rate, quote.currency)}</td>
-                            <td data-label="Amount">
+                            <td data-label={t("Rate")}>{money(line.rate, quote.currency, locale)}</td>
+                            <td data-label={t("Amount")}>
                               <strong>
                                 {money(
                                   line.quantity * line.rate,
                                   quote.currency,
+                                  locale,
                                 )}
                               </strong>
                             </td>
@@ -183,22 +183,19 @@ export function QuotationDocument({
                             <tr className={s.materialBreakdown}>
                               <td colSpan={7}>
                                 <p>
-                                  Materials per 1 {line.unit} ·{" "}
-                                  {line.pricingMode === "materials"
-                                    ? "Item rate calculated from these rows"
-                                    : "Breakdown only; entered item rate applies"}{" "}
-                                  · Not charged again
-                                </p>
+                                  {t(line.pricingMode === "materials"
+                                    ? "Materials per 1 {unit} · Item rate calculated from these rows · Not charged again"
+                                    : "Materials per 1 {unit} · Breakdown only; entered item rate applies · Not charged again", { unit: line.unit })}</p>
                                 <table
-                                  aria-label={`Materials for ${line.title}`}
+                                  aria-label={t("Materials for {title}", { title: line.title })}
                                 >
                                   <thead>
                                     <tr>
-                                      <th>Material / specification</th>
-                                      <th>Type</th>
-                                      <th>Qty / unit</th>
-                                      <th>Rate</th>
-                                      <th>Amount per item unit</th>
+                                      <th>{t("Material / specification")}</th>
+                                      <th>{t("Type")}</th>
+                                      <th>{t("Qty / unit")}</th>
+                                      <th>{t("Rate")}</th>
+                                      <th>{t("Amount per item unit")}</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -211,21 +208,21 @@ export function QuotationDocument({
                                           )}
                                           {row.suppliedByClient && (
                                             <small>
-                                              Client supplied · no charge
-                                            </small>
+                                              {t("Client supplied · no charge")}</small>
                                           )}
                                         </td>
-                                        <td>{row.type}</td>
+                                        <td>{translateKnown(t, row.type)}</td>
                                         <td>
                                           {row.quantity} {row.unit}
                                         </td>
                                         <td>
-                                          {money(row.rate, quote.currency)}
+                                          {money(row.rate, quote.currency, locale)}
                                         </td>
                                         <td>
                                           {money(
                                             materialAmount(row),
                                             quote.currency,
+                                            locale,
                                           )}
                                         </td>
                                       </tr>
@@ -234,12 +231,13 @@ export function QuotationDocument({
                                   <tfoot>
                                     <tr>
                                       <td colSpan={4}>
-                                        Materials per 1 {line.unit}
+                                        {t("Materials per 1 {unit}", { unit: line.unit })}
                                       </td>
                                       <td>
                                         {money(
                                           materialsRate(line.materialRows),
                                           quote.currency,
+                                          locale,
                                         )}
                                       </td>
                                     </tr>
@@ -255,17 +253,16 @@ export function QuotationDocument({
                 </div>
               ) : (
                 <div className={s.emptyRoom}>
-                  No items yet.{" "}
+                  {t("No items yet.")}{" "}
                   {onConfigure && (
                     <button onClick={() => onConfigure(room)}>
-                      Add items →
-                    </button>
+                      {t("Add items →")}</button>
                   )}
                 </div>
               )}
               {!!lines.length && (
                 <div className={s.roomTotal}>
-                  <span>{room} subtotal</span>
+                  <span>{t("{room} subtotal", { room })}</span>
                   <strong>
                     {money(
                       lines.filter((line) => !line.optional || selectedOptionIds.has(line.id)).reduce(
@@ -274,6 +271,7 @@ export function QuotationDocument({
                         0,
                       ),
                       quote.currency,
+                      locale,
                     )}
                   </strong>
                 </div>
@@ -283,47 +281,46 @@ export function QuotationDocument({
         })}
         <div className={s.summary}>
           <div>
-            <span>QUOTATION SUMMARY</span>
+            <span>{t("QUOTATION SUMMARY")}</span>
             <p>
-              {rooms.length} rooms · {quote.lines.length} items
-            </p>
+              {t("{rooms} rooms · {items} items", { rooms: rooms.length, items: quote.lines.length })}</p>
           </div>
           <dl>
             <div>
-              <dt>Subtotal</dt>
-              <dd>{money(totals.subtotal, quote.currency)}</dd>
+              <dt>{t("Subtotal")}</dt>
+              <dd>{money(totals.subtotal, quote.currency, locale)}</dd>
             </div>
             {quote.discount > 0 && (
               <div>
-                <dt>Discount</dt>
-                <dd>−{money(quote.discount, quote.currency)}</dd>
+                <dt>{t("Discount")}</dt>
+                <dd>−{money(quote.discount, quote.currency, locale)}</dd>
               </div>
             )}
             <div>
               <dt>
-                {quote.cover?.taxLabel || "Tax"} ({quote.taxRate}%)
+                {t("{label} ({rate}%)", { label: translateKnown(t, quote.cover?.taxLabel || "Tax"), rate: quote.taxRate })}
               </dt>
-              <dd>{money(totals.tax, quote.currency)}</dd>
+              <dd>{money(totals.tax, quote.currency, locale)}</dd>
             </div>
             <div className={s.grandTotal}>
               <dt>
-                {quote.direction === "deduction" ? "Client credit" : quote.clientDecision?.decision === "accept" ? "Accepted total" : "Total"}
+                {t(quote.direction === "deduction" ? "Client credit" : quote.clientDecision?.decision === "accept" ? "Accepted total" : "Total")}
               </dt>
-              <dd>{money(totals.total, quote.currency)}</dd>
+              <dd>{money(totals.total, quote.currency, locale)}</dd>
             </div>
           </dl>
         </div>
         {!!quote.paymentTerms?.length && (
           <section className={s.terms}>
-            <h3>Payment schedule</h3>
+            <h3>{t("Payment schedule")}</h3>
             <div className={s.tableScroll}>
               <table>
                 <thead>
                   <tr>
-                    <th>Milestone</th>
-                    <th>When due</th>
+                    <th>{t("Milestone")}</th>
+                    <th>{t("When due")}</th>
                     <th>%</th>
-                    <th>Amount</th>
+                    <th>{t("Amount")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -331,8 +328,8 @@ export function QuotationDocument({
                     <tr key={term.id}>
                       <td>
                         {term.title}
-                        {term.requiredForRelease && <small>Before project release</small>}
-                        {term.requiredForProduction && <small>Before manufacturing starts</small>}
+                        {term.requiredForRelease && <small>{t("Before project release")}</small>}
+                        {term.requiredForProduction && <small>{t("Before manufacturing starts")}</small>}
                       </td>
                       <td>{term.trigger}</td>
                       <td>{term.percent}%</td>
@@ -341,8 +338,10 @@ export function QuotationDocument({
                           paymentMilestoneAmounts(
                             quote.clientDecision?.acceptedTotal ?? totals.total,
                             quote.paymentTerms,
+                            quote.currency,
                           )[i],
                           quote.currency,
+                          locale,
                         )}
                       </td>
                     </tr>
@@ -354,21 +353,20 @@ export function QuotationDocument({
         )}
         {quote.cover?.taxRegistration && (
           <p className={s.registration}>
-            {quote.cover.taxLabel || "Tax"} registration:{" "}
-            {quote.cover.taxRegistration}
+            {t("{label} registration: {number}", { label: translateKnown(t, quote.cover.taxLabel || "Tax"), number: quote.cover.taxRegistration })}
           </p>
         )}
         {(
           [
-            ["Included", "inclusions"],
-            ["Not included", "exclusions"],
-            ["Terms & conditions", "terms"],
+            [tKey("Included"), "inclusions"],
+            [tKey("Not included"), "exclusions"],
+            [tKey("Terms & conditions"), "terms"],
           ] as const
         ).map(
           ([label, key]) =>
             quote[key] && (
               <section className={s.terms} key={key}>
-                <h3>{label}</h3>
+                <h3>{t(label)}</h3>
                 <p>{quote[key]}</p>
               </section>
             ),
@@ -376,24 +374,24 @@ export function QuotationDocument({
         {(quote.cover?.signerName ||
           quote.cover?.signature ||
           quote.cover?.clientSignature) && (
-          <section className={s.signatures} aria-label="Signatures">
+          <section className={s.signatures} aria-label={t("Signatures")}>
             {(quote.cover.signerName || quote.cover.signature) && (
               <div>
                 {quote.cover.signature && (
                   <img
                     src={quote.cover.signature}
-                    alt="Authorized signatory signature"
+                    alt={t("Authorized signatory signature")}
                   />
                 )}
                 <strong>{quote.cover.signerName}</strong>
-                <span>{quote.cover.signerTitle || "Authorized signatory"}</span>
+                <span>{quote.cover.signerTitle || t("Authorized signatory")}</span>
               </div>
             )}
             {quote.cover.clientSignature && (
               <div>
                 <span className={s.signatureLine} />
-                <strong>Client signature</strong>
-                <span>Name & date</span>
+                <strong>{t("Client signature")}</strong>
+                <span>{t("Name & date")}</span>
               </div>
             )}
           </section>

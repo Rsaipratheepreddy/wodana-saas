@@ -1,0 +1,90 @@
+import { describe, expect, it, vi } from "vitest";
+import type { RequestActor } from "../../auth/actor";
+import { CrmIntakeService } from "./crm-intake.service";
+
+const workspaceId = "f81e8362-8d08-440a-89dd-06ec7a8b46e7";
+const leadId = "62000000-0000-4000-8000-000000000001";
+const actor: RequestActor = { subject: "local:sales", provider: "local", email: "sales@example.com", displayName: "Sales" };
+
+function service(before: { source: string; channel: string; party_name?: string }, options: { storedMobile?: string; identity?: boolean } = {}) {
+  const query = vi.fn(async (sql: string, params?: unknown[]) => {
+    if (sql.includes("FROM crm_taxonomies")) return { rowCount: 0, rows: [] }; // default lead options
+    if (sql.startsWith("SELECT normalized_value, raw_value FROM crm_contact_points") && options.storedMobile && params?.[2] === "mobile") return { rowCount: 1, rows: [{ normalized_value: options.storedMobile, raw_value: options.storedMobile }] };
+    if (sql.includes("FROM crm_leads lead")) return { rowCount: 1, rows: [{ version: 2, party_id: "p1", enquiry_id: "e1", title: "T", reference: "E-1", summary: "", service_type: "not_sure", details: {}, ...before }] };
+    if (sql.includes("RETURNING version")) return { rowCount: 1, rows: [{ version: 3 }] };
+    return { rowCount: 0, rows: [] };
+  });
+  const record = vi.fn();
+  const access = { withPermission: vi.fn(async (_a, _w, _p, work) => work({ query }, { userId: "u1" })), hasPermission: vi.fn(async () => options.identity ?? false) };
+  const intake = new CrmIntakeService({} as never, access as never, { record } as never, {} as never);
+  return { intake, query, record };
+}
+const base = { version: 2, serviceType: "not_sure", party: { displayName: "Amira", mobile: "+971501234567" }, details: { emirate: "dubai" } };
+const enquiryUpdate = (query: ReturnType<typeof vi.fn>) => query.mock.calls.find(([sql]) => String(sql).startsWith("UPDATE crm_enquiries"))?.[1];
+
+describe("editing an enquiry's source and channel", () => {
+  it("corrects the source and channel together and audits the change", async () => {
+    const { intake, query, record } = service({ source: "company", channel: "call" });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, source: "referral", channel: "external", referral: { name: " Sara  Ali ", contact: "+971 50 111 2222" } } as never);
+    expect(enquiryUpdate(query)?.slice(5)).toEqual(["referral", "external"]);
+    const referral = query.mock.calls.find(([sql]) => String(sql).includes("SET referral_kind"))?.[1];
+    expect(referral?.slice(2)).toEqual(["external", "Sara Ali", "+971 50 111 2222", null, null]);
+    expect(record.mock.calls[0][1]).toMatchObject({ before: { source: "company", channel: "call" }, after: { source: "referral", channel: "external" } });
+  });
+
+  it("requires who referred a referral enquiry", async () => {
+    const { intake } = service({ source: "company", channel: "call" });
+    await expect(intake.updateDetails(actor, workspaceId, leadId, { ...base, source: "referral", channel: "external" } as never)).rejects.toThrow(/Referred by is required/);
+  });
+
+  it("rejects a channel that does not belong to the chosen source", async () => {
+    const { intake } = service({ source: "company", channel: "call" });
+    await expect(intake.updateDetails(actor, workspaceId, leadId, { ...base, source: "referral", channel: "call" } as never))
+      .rejects.toThrow(/channel for this source/);
+  });
+
+  it("keeps an older source untouched when the edit does not change it", async () => {
+    const { intake, query } = service({ source: "instagram", channel: "dm" });
+    await intake.updateDetails(actor, workspaceId, leadId, base as never);
+    expect(enquiryUpdate(query)?.slice(5)).toEqual(["instagram", "dm"]);
+  });
+});
+
+describe("the client's name and phone on an enquiry", () => {
+  const locked = "Only Sales admins can change the client's name or phone";
+  it("refuses Sales a new name or mobile, and keeps their other edits", async () => {
+    const named = { source: "company", channel: "call", party_name: "Amira" };
+    await expect(service(named).intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Amira K." } } as never)).rejects.toThrow(locked);
+    await expect(service(named, { storedMobile: "+971501234567" }).intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, mobile: "+971559999999" } } as never)).rejects.toThrow(locked);
+    const { intake, query } = service(named, { storedMobile: "+971501234567" });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, summary: "Kitchen and two baths" } as never);
+    expect(enquiryUpdate(query)?.[2]).toBe("Kitchen and two baths");
+  });
+
+  it("lets a Sales admin change them", async () => {
+    const { intake, query } = service({ source: "company", channel: "call", party_name: "Amira" }, { identity: true });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Amira K." } } as never);
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith("UPDATE crm_parties SET display_name"))).toBe(true);
+  });
+});
+
+describe("a client's name and mobile typed on an enquiry edit", () => {
+  const missing = async (promise: Promise<unknown>) => {
+    try { await promise; return []; } catch (error) { return (error as { getResponse?: () => { missing?: unknown } }).getResponse?.()?.missing ?? (error as Error).message; }
+  };
+  it("refuses a new name with digits or symbols, on the name field", async () => {
+    const { intake } = service({ source: "company", channel: "call", party_name: "Amira" }, { identity: true });
+    expect(await missing(intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Amira 2" } } as never)))
+      .toEqual([{ key: "displayName", label: "Use letters and spaces only" }]);
+  });
+  it("keeps a name that came from a channel as it is when the edit does not change it", async () => {
+    const { intake, query } = service({ source: "company", channel: "call", party_name: "Ali 🙂" });
+    await intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, displayName: "Ali 🙂" }, summary: "Kitchen" } as never);
+    expect(enquiryUpdate(query)?.[2]).toBe("Kitchen");
+  });
+  it("puts a mobile that does not fit its country on the mobile field", async () => {
+    const { intake } = service({ source: "company", channel: "call", party_name: "Amira" }, { identity: true });
+    expect(await missing(intake.updateDetails(actor, workspaceId, leadId, { ...base, party: { ...base.party, mobile: "987654321", mobileCountryCode: "IN" } } as never)))
+      .toEqual([{ key: "mobile", label: "Enter a valid mobile number for India (10 digits)" }]);
+  });
+});

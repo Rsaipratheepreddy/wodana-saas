@@ -56,6 +56,29 @@ test('browser never receives development password reset tokens', async (t) => {
   const result = await request('/auth/password/forgot', { email: 'member@example.com' });
   assert.deepEqual(await result.json(), { accepted: true });
 });
+test('browser preview resolves organizations and serves their public logo', async (t) => {
+  const calls = [];
+  const proxy = createAuthProxy({ target: 'https://api.example.com/api/v1', fetcher: async (url, init) => {
+    calls.push({ url: String(url), method: init.method });
+    if (String(url).endsWith('/logo')) return new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } });
+    return Response.json({ displayName: 'Palm Living', loginSlug: 'palm-living', logoUrl: '/logo' }, { status: 201 });
+  } });
+  const server = createServer((req, res) => { void proxy(req, res, () => { res.writeHead(404); res.end(); }); });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const lookup = await fetch(`${origin}/api/v1/auth/organization/resolve`, {
+    method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ identifier: 'Palm Living' }),
+  });
+  assert.equal(lookup.status, 201);
+  assert.equal((await lookup.json()).loginSlug, 'palm-living');
+  const logo = await fetch(`${origin}/api/v1/public/tenant-branding/palm-living/logo`);
+  assert.equal(logo.status, 200);
+  assert.equal(logo.headers.get('content-type'), 'image/png');
+  assert.deepEqual([...new Uint8Array(await logo.arrayBuffer())], [1, 2, 3]);
+  assert.equal(calls.length, 2);
+});
 test('expired refresh and unavailable logout clear the browser cookie', async (t) => {
   const request = await setup(t, async (url) => {
     if (url.endsWith('/logout')) throw new Error('offline');
@@ -93,23 +116,16 @@ test('workspace proxy permits tenant-scoped CRM reads', async (t) => {
   assert.equal(calls[0].init.headers.authorization, 'Bearer crm-token');
 });
 
-test('field proxy forwards private markups and rejects unrelated write routes',async(t)=>{
- const id='00000000-0000-4000-8000-000000000001';let calls=0;
- const request=await setup(t,async(url,init)=>{calls++;assert.match(url,/\/assets\/.+\/markup$/);assert.equal(init.headers.authorization,'Bearer field-token');assert.deepEqual(JSON.parse(init.body.toString()),{id:'same-drawing',strokes:[]});return Response.json({id:'saved'});});
- const base=`/workspaces/${id}/pre-projects/${id}`;
- assert.equal((await request(`${base}/assets/${id}/markup`,{id:'same-drawing',strokes:[]},{authorization:'Bearer field-token'})).status,200);
- assert.equal((await request(`${base}/designs`,{},{authorization:'Bearer field-token'})).status,404);
- assert.equal((await request(`${base}/site/${id}/review`,{},{origin:'https://outside.example',authorization:'Bearer field-token'})).status,403);
- assert.equal(calls,1);
-});
-
-test('project field proxy allows only the assigned-action and evidence surface',async(t)=>{
- const id='00000000-0000-4000-8000-000000000001';const record='task_01';let calls=0;
- const request=await setup(t,async(url,init)=>{calls++;assert.match(url,/\/projects\/.+\/field-actions$/);assert.equal(init.headers.authorization,'Bearer field-token');return Response.json({data:{revision:2}});});
- const base=`/workspaces/${id}/projects`;
- const action=await request(`${base}/${id}/field-actions`,{action:'report_task'},{authorization:'Bearer field-token'});
- assert.equal(action.status,200);
- assert.equal((await request(`${base}/${id}/execution`,{action:'task_status'},{authorization:'Bearer field-token'})).status,404);
- assert.equal((await request(`${base}/${id}/files/${record}/not-a-uuid`,{},{authorization:'Bearer field-token'})).status,404);
- assert.equal(calls,1);
+test('workspace proxy forwards the app areas only', async (t) => {
+ const id = '00000000-0000-4000-8000-000000000001'; const seen = [];
+ const request = await setup(t, async (url, init) => { seen.push(String(url)); assert.equal(init.headers.authorization, 'Bearer field-token'); return Response.json({ ok: true }); });
+ // Field work, and what Today, Approvals, Woddy, Me and Finance read.
+ const paths = [`project-core/projects/${id}/work`, `site/projects/${id}`, 'purchasing/receipts', `factory/orders/${id}`, `pre-projects/${id}/assets/${id}/markup`,
+  'home/summary', 'home/metrics', 'approvals/mine/count', 'ai-settings', 'ai/agent/runs', 'me/feedback', 'members', `payables/bills/${id}`, 'receivables'];
+ for (const path of paths) assert.equal((await request(`/workspaces/${id}/${path}`, { id }, { authorization: 'Bearer field-token' })).status, 200, path);
+ for (const other of ['settings', 'billing', 'home-overview', 'site/../settings']) {
+  assert.equal((await request(`/workspaces/${id}/${other}`, {}, { authorization: 'Bearer field-token' })).status, 404, other);
+ }
+ assert.equal((await request(`/workspaces/${id}/site/projects/${id}`, {}, { origin: 'https://outside.example', authorization: 'Bearer field-token' })).status, 403);
+ assert.equal(seen.length, paths.length);
 });

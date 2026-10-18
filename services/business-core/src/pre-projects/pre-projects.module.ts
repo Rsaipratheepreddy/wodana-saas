@@ -21,7 +21,8 @@ import { PreProjectDefinitionService } from "./pre-project-definition.service";
 @ApiBearerAuth()
 @Controller("workspaces/:workspaceId/pre-projects")
 export class PreProjectsController {
-  constructor(private readonly service: PreProjectsService, private readonly readiness: PreProjectReadinessService) {}
+  constructor(private readonly service: PreProjectsService, private readonly readiness: PreProjectReadinessService, private readonly designs: DesignService) {}
+  @Get("design-queue") designQueue(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.designs.queue(actor, workspaceId); }
   @Get() list(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: ListPreProjectsDto) { return this.service.list(actor, workspaceId, query); }
   @Get("candidates") candidates(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: ListPreProjectsDto) { return this.service.candidates(actor, workspaceId, query); }
   @Get("start-options") startOptions(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) { return this.service.startOptions(actor, workspaceId); }
@@ -32,5 +33,5 @@ export class PreProjectsController {
   @Patch(":id/profile") updateProfile(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: UpdateEngagementProfileDto) { return this.service.updateProfile(actor, workspaceId, id, body); }
   @Post(":id/lifecycle") transition(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("id", ParseUUIDPipe) id: string, @Body() body: TransitionEngagementDto) { return this.service.transition(actor, workspaceId, id, body); }
 }
-@Module({ imports: [WorkspacesModule, CrmOpportunitiesModule], controllers: [PreProjectsController,CaseContentController,SiteController,AssetMarkupController], providers: [PreProjectsService,PreProjectDefinitionService,PreProjectReadinessService,BriefService,DesignService,BrandAssetStorageService,ItemSpecificationService,SiteService,AssetMarkupService], exports: [PreProjectDefinitionService,PreProjectReadinessService] })
+@Module({ imports: [WorkspacesModule, CrmOpportunitiesModule], controllers: [PreProjectsController,CaseContentController,SiteController,AssetMarkupController], providers: [PreProjectsService,PreProjectDefinitionService,PreProjectReadinessService,BriefService,DesignService,BrandAssetStorageService,ItemSpecificationService,SiteService,AssetMarkupService], exports: [PreProjectDefinitionService,PreProjectReadinessService,DesignService] })
 export class PreProjectsModule {}

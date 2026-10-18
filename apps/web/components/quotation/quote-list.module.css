@@ -1,0 +1,8 @@
+.toolbar { display: flex; align-items: center; gap: var(--wd-space-2); min-block-size: var(--wd-control-sm); }
+.title { display: grid; gap: var(--wd-space-0-5); }
+.title a { color: var(--wd-color-text); font-weight: var(--wd-weight-medium); text-decoration: none; }
+.title a:hover { text-decoration: underline; }
+.title small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.amount { font-variant-numeric: tabular-nums; }
+.kind { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1); }
+.dialogActions { display: flex; flex: 1 1 auto; justify-content: flex-end; gap: var(--wd-space-2); }

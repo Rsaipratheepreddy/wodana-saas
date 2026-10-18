@@ -1,0 +1,29 @@
+/* What the client did, for the team: their files, reactions and conversation. */
+.files { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.thumb { display: block; inline-size: var(--wd-space-20); block-size: var(--wd-space-20); overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); }
+.thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.thumb:focus-visible, .file:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 1px; }
+.file { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); min-block-size: var(--wd-space-8); padding-inline: var(--wd-space-2-5); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface); color: var(--wd-color-text); font-size: var(--wd-text-sm); text-decoration: none; overflow-wrap: anywhere; }
+.file:hover { background: var(--wd-color-surface-hover); }
+
+.feedback { display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.subhead { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.spacer { flex: 1; }
+.reactions { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; font-size: var(--wd-text-sm); }
+.reactions li { display: flex; align-items: center; gap: var(--wd-space-1-5); overflow-wrap: anywhere; }
+.reactions li[data-reaction="dislike"] svg { color: var(--wd-color-danger); }
+.reactions li[data-reaction="like"] svg { color: var(--wd-color-success); }
+.thread { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.message { display: grid; gap: var(--wd-space-0-5); padding: var(--wd-space-2) var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); font-size: var(--wd-text-sm); }
+.message[data-from="team"] { background: var(--wd-color-action-primary-subtle); }
+.meta { display: flex; flex-wrap: wrap; gap: var(--wd-space-1-5); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.meta strong { color: var(--wd-color-text); font-weight: var(--wd-weight-semibold); }
+.text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.muted { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.reply { display: grid; gap: var(--wd-space-2); }
+.replyActions { display: flex; justify-content: flex-end; }
+
+/* Counts on a card: shown to the client, likes, dislikes and comments. */
+.signals { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
+.signals li { display: inline-flex; align-items: center; gap: var(--wd-space-1); }

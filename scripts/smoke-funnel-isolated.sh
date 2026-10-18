@@ -20,9 +20,9 @@ if ! [[ "$test_port" =~ ^[0-9]+$ ]] || (( test_port < 1024 || test_port > 65535 
   exit 1
 fi
 case "$smoke_command" in
-  test:smoke|test:smoke:funnel|test:smoke:palm-clone|test:smoke:auth|test:smoke:operator|test:smoke:crm|test:smoke:seats|test:smoke:app-effects|test:smoke:auth-web|test:smoke:operator-web) ;;
+  test:smoke|test:smoke:funnel|test:smoke:sales-rules|test:smoke:palm-clone|test:smoke:palm-flow|test:smoke:auth|test:smoke:operator|test:smoke:crm|test:smoke:seats|test:smoke:app-effects|test:smoke:auth-web|test:smoke:operator-web|test:smoke:roles-web) ;;
   *)
-    echo "SMOKE_COMMAND must be one of: test:smoke, test:smoke:funnel, test:smoke:palm-clone, test:smoke:auth, test:smoke:operator, test:smoke:crm, test:smoke:seats, test:smoke:app-effects, test:smoke:auth-web, test:smoke:operator-web." >&2
+    echo "SMOKE_COMMAND must name a supported isolated business-core or web smoke (including test:smoke:roles-web)." >&2
     exit 1
     ;;
 esac
@@ -30,7 +30,7 @@ if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$test_port" -sTCP:LISTEN >
   echo "Port $test_port is already in use. Set FUNNEL_TEST_PORT to another local port." >&2
   exit 1
 fi
-if [[ "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smoke:operator-web" ]]; then
+if [[ "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smoke:operator-web" || "$smoke_command" == "test:smoke:roles-web" ]]; then
   if ! [[ "$web_test_port" =~ ^[0-9]+$ ]] || (( web_test_port < 1024 || web_test_port > 65535 )); then
     echo "FUNNEL_WEB_PORT must be an available port between 1024 and 65535." >&2
     exit 1
@@ -74,6 +74,12 @@ cleanup() {
   if [[ -n "$web_dist_dir" && -d "$web_dist_dir" ]]; then
     rm -rf "$web_dist_dir"
   fi
+  # Next dev rewrites this tracked file to point at its temporary dist directory.
+  # Restore only that generated reference, leaving concurrent edits alone.
+  if [[ -f "$temporary_root/next-env.d.ts" && -f apps/web/next-env.d.ts ]] \
+    && grep -q '\.next-onboarding-crm-smoke' apps/web/next-env.d.ts; then
+    cp "$temporary_root/next-env.d.ts" apps/web/next-env.d.ts
+  fi
   dropdb --force --if-exists "$database_name" >/dev/null 2>&1 || true
   rm -rf "$temporary_root"
   return "$exit_status"
@@ -91,7 +97,7 @@ DATABASE_URL="$database_url" \
 npm run build --workspace @wodana/business-core >/dev/null
 
 auth_mode="development"
-if [[ "$smoke_command" == "test:smoke:auth" || "$smoke_command" == "test:smoke:operator" || "$smoke_command" == "test:smoke:app-effects" || "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smoke:operator-web" ]]; then
+if [[ "$smoke_command" == "test:smoke:palm-flow" || "$smoke_command" == "test:smoke:auth" || "$smoke_command" == "test:smoke:operator" || "$smoke_command" == "test:smoke:app-effects" || "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smoke:operator-web" || "$smoke_command" == "test:smoke:roles-web" ]]; then
   auth_mode="local"
 fi
 
@@ -132,13 +138,14 @@ if [[ "$ready" != "true" ]]; then
   exit 1
 fi
 
-if [[ "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smoke:operator-web" ]]; then
+if [[ "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smoke:operator-web" || "$smoke_command" == "test:smoke:roles-web" ]]; then
   web_dist_dir="apps/web/.next-onboarding-crm-smoke"
   if [[ -e "$web_dist_dir" ]]; then
     echo "Refusing to overwrite an existing web smoke build directory." >&2
     exit 1
   fi
   mkdir "$web_dist_dir"
+  cp apps/web/next-env.d.ts "$temporary_root/next-env.d.ts"
   (
     cd apps/web
     BUSINESS_CORE_URL="http://127.0.0.1:${test_port}/api/v1" \
@@ -164,7 +171,12 @@ if [[ "$smoke_command" == "test:smoke:auth-web" || "$smoke_command" == "test:smo
     echo "Web did not start for the isolated onboarding to CRM smoke." >&2
     exit 1
   fi
-  if [[ "$smoke_command" == "test:smoke:operator-web" ]]; then
+  if [[ "$smoke_command" == "test:smoke:roles-web" ]]; then
+    BUSINESS_CORE_URL="http://127.0.0.1:${test_port}/api/v1" \
+    BUSINESS_CORE_INTERNAL_TOKEN="local-development-token" \
+    WEB_BASE_URL="http://127.0.0.1:${web_test_port}" \
+      node ./scripts/smoke-roles-web.mjs
+  elif [[ "$smoke_command" == "test:smoke:operator-web" ]]; then
     BUSINESS_CORE_URL="http://127.0.0.1:${test_port}/api/v1" \
     DATABASE_URL="$database_url" \
     PLATFORM_TEST_DATABASE_URL="$database_url" \
@@ -184,6 +196,7 @@ else
   BUSINESS_CORE_URL="http://127.0.0.1:${test_port}/api/v1" \
     DATABASE_URL="$database_url" \
     PLATFORM_TEST_DATABASE_URL="$database_url" \
+    PALM_FLOW_ISOLATED="1" \
     APP_EFFECTS_TEST_DATABASE_URL="$database_url" \
     BUSINESS_CORE_INTERNAL_TOKEN="local-development-token" \
     npm run "$smoke_command" --workspace @wodana/business-core

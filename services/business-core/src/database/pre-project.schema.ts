@@ -65,7 +65,10 @@ export const preProjectLifecycleCommands = pgTable("pre_project_lifecycle_comman
 // Definitions mirror the additive brief, design and specification migrations.
 const caseColumns = () => ({ workspaceId: uuid("workspace_id").notNull(), caseId: uuid("case_id").notNull() });
 const createdColumns = () => ({ createdBy: uuid("created_by").notNull().references(() => users.id), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow() });
-const caseForeignKey = (t: { workspaceId: import("drizzle-orm/pg-core").AnyPgColumn; caseId: import("drizzle-orm/pg-core").AnyPgColumn }) => foreignKey({ columns: [t.workspaceId, t.caseId], foreignColumns: [preProjectCases.workspaceId, preProjectCases.id] });
+/** Written by staff, or by a client portal contact (then no staff author; 0137_client_portal_v2). */
+const clientAuthoredColumns = () => ({ createdBy: uuid("created_by").references(() => users.id), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  clientGrantId: uuid("client_grant_id") });
+const caseForeignKey =(t: { workspaceId: import("drizzle-orm/pg-core").AnyPgColumn; caseId: import("drizzle-orm/pg-core").AnyPgColumn }) => foreignKey({ columns: [t.workspaceId, t.caseId], foreignColumns: [preProjectCases.workspaceId, preProjectCases.id] });
 
 export const preProjectBriefs = pgTable("pre_project_briefs", {
   caseId: uuid("case_id").primaryKey(), workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
@@ -86,8 +89,8 @@ export const preProjectBriefEntries = pgTable("pre_project_brief_entries", {
   note:text("note").notNull().default(""),category:varchar("category",{length:60}).notNull().default("General"),priority:varchar("priority",{length:20}).notNull().default("preferred"),
   scopeStatus:varchar("scope_status",{length:20}).notNull().default("undecided"),reviewStatus:varchar("review_status",{length:20}).notNull().default("captured"),
   quantity:numeric("quantity",{precision:16,scale:4}),unit:varchar("unit",{length:20}).notNull().default("nos"),referenceUrl:varchar("reference_url",{length:2000}).notNull().default(""),
-  avoid:text("avoid").notNull().default(""),source:varchar("source",{length:20}).notNull().default("team"),version:integer("version").notNull().default(1),...createdColumns(),
-  updatedBy:uuid("updated_by").notNull().references(()=>users.id),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),archivedAt:timestamp("archived_at",{withTimezone:true}),
+  avoid:text("avoid").notNull().default(""),source:varchar("source",{length:20}).notNull().default("team"),version:integer("version").notNull().default(1),...clientAuthoredColumns(),
+  updatedBy:uuid("updated_by").references(()=>users.id),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),archivedAt:timestamp("archived_at",{withTimezone:true}),
 },t=>[caseForeignKey(t),unique().on(t.workspaceId,t.caseId,t.id),
   foreignKey({columns:[t.workspaceId,t.caseId,t.roomId],foreignColumns:[preProjectRooms.workspaceId,preProjectRooms.caseId,preProjectRooms.id]}),
   index("pre_project_brief_entries_case_idx").on(t.workspaceId,t.caseId,t.updatedAt.desc()),
@@ -98,7 +101,7 @@ export const preProjectBriefEntries = pgTable("pre_project_brief_entries", {
 
 export const preProjectBriefAssets = pgTable("pre_project_brief_assets",{
   id:uuid("id").primaryKey(),...caseColumns(),originalName:varchar("original_name",{length:240}).notNull(),mimeType:varchar("mime_type",{length:100}).notNull(),byteSize:integer("byte_size").notNull(),
-  objectKey:text("object_key").notNull().unique(),previewKey:text("preview_key"),sha256:varchar("sha256",{length:64}).notNull(),...createdColumns(),
+  objectKey:text("object_key").notNull().unique(),previewKey:text("preview_key"),sha256:varchar("sha256",{length:64}).notNull(),...clientAuthoredColumns(),
 },t=>[caseForeignKey(t),unique().on(t.workspaceId,t.caseId,t.id),check("pre_project_brief_assets_byte_size_check",sql`${t.byteSize}>0 AND ${t.byteSize}<=20971520`)]);
 
 export const preProjectEntryAssets = pgTable("pre_project_entry_assets",{
@@ -162,6 +165,7 @@ export const oneTreeNodeRevisions = pgTable("one_tree_node_revisions", {
 ]);
 
 export const preProjectDesignFolders = pgTable("pre_project_design_folders",{
+ reviewerId:uuid("reviewer_id"),approvedVersions:jsonb("approved_versions"),approvedAt:timestamp("approved_at",{withTimezone:true}),
  id:uuid("id").primaryKey(),...caseColumns(),name:varchar("name",{length:160}).notNull(),description:text("description").notNull().default(""),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),version:integer("version").notNull().default(1),...createdColumns(),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[unique().on(t.workspaceId,t.caseId,t.id),uniqueIndex("pre_project_design_folders_name_key").on(t.workspaceId,t.caseId,sql`lower(${t.name})`),
  index("pre_project_design_folders_context_idx").on(t.workspaceId,t.caseId,t.roomId,t.scopeEntryId),
@@ -169,7 +173,7 @@ export const preProjectDesignFolders = pgTable("pre_project_design_folders",{
 
 export const preProjectDesigns = pgTable("pre_project_designs",{
   folderId:uuid("folder_id"),
-  id:uuid("id").primaryKey(),...caseColumns(),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),title:varchar("title",{length:240}).notNull(),documentType:varchar("document_type",{length:60}).notNull(),
+  id:uuid("id").primaryKey(),...caseColumns(),roomId:uuid("room_id"),scopeEntryId:uuid("scope_entry_id"),title:varchar("title",{length:240}).notNull(),documentType:varchar("document_type",{length:60}).notNull(),stage:varchar("stage",{length:30}),
   description:text("description").notNull().default(""),version:integer("version").notNull().default(1),archivedAt:timestamp("archived_at",{withTimezone:true}),...createdColumns(),updatedAt:timestamp("updated_at",{withTimezone:true}).notNull().defaultNow(),
 },t=>[foreignKey({columns:[t.workspaceId,t.caseId,t.folderId],foreignColumns:[preProjectDesignFolders.workspaceId,preProjectDesignFolders.caseId,preProjectDesignFolders.id]}),caseForeignKey(t),unique().on(t.workspaceId,t.caseId,t.id),index("pre_project_designs_case_idx").on(t.workspaceId,t.caseId,t.updatedAt.desc()),
   foreignKey({columns:[t.workspaceId,t.caseId,t.roomId],foreignColumns:[preProjectRooms.workspaceId,preProjectRooms.caseId,preProjectRooms.id]}),
@@ -210,6 +214,7 @@ export const preProjectItemDesignRefs = pgTable("pre_project_item_design_refs",{
   foreignKey({columns:[t.workspaceId,t.caseId,t.designVersionId],foreignColumns:[preProjectDesignVersions.workspaceId,preProjectDesignVersions.caseId,preProjectDesignVersions.id]}),check("pre_project_item_design_refs_usage_check",sql`${t.usage} IN ('2d','3d','reference')`)]);
 
 export const preProjectDesignThreads=pgTable('pre_project_design_threads',{
+ anchor:jsonb('anchor'),mentions:jsonb('mentions').notNull().default([]),
  id:uuid('id').primaryKey(),...caseColumns(),designId:uuid('design_id').notNull(),versionId:uuid('version_id').notNull(),title:varchar('title',{length:240}).notNull(),blocking:boolean('blocking').notNull().default(false),status:varchar('status',{length:12}).notNull().default('open'),version:integer('version').notNull().default(1),...createdColumns(),resolvedBy:uuid('resolved_by').references(()=>users.id),resolvedAt:timestamp('resolved_at',{withTimezone:true}),
 },t=>[unique().on(t.workspaceId,t.caseId,t.designId,t.id),foreignKey({columns:[t.workspaceId,t.caseId,t.designId,t.versionId],foreignColumns:[preProjectDesignVersions.workspaceId,preProjectDesignVersions.caseId,preProjectDesignVersions.designId,preProjectDesignVersions.id]}),index('pre_project_design_threads_revision_idx').on(t.workspaceId,t.caseId,t.designId,t.versionId)]);
 export const preProjectDesignMessages=pgTable('pre_project_design_messages',{

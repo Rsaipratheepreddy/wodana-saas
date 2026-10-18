@@ -1,18 +1,45 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { TransactionalEmailService, type EmailDeliveryResult } from "../../email/transactional-email.service";
+import { CLAIMED_EMAIL_COLUMNS, EMAIL_DISPATCH_BUDGET_MS, emailDisposition, expiredRetry, recordEmailDisposition, releaseClaimedEmails, type ClaimedEmail } from "../../notifications/email-dispatch-outcome";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { deliveryAllowlist, NOT_ALLOWLISTED } from "../../notifications/delivery-allowlist";
+import { staffEmailAction } from "../../notifications/staff-email-actions";
 import { createHash } from "node:crypto";
 import { PoolClient } from "pg";
 import { DatabaseService } from "../../database/database.service";
 import { RequestActor } from "../../auth/actor";
+import { currentViewAs } from "../../auth/view-as/view-as.context";
+import { privateNoticesRemoved } from "../../auth/view-as/view-as.domain";
 import { WorkspaceAccessService } from "../../workspaces/workspace-access.service";
 import { CrmEventsService } from "../shared/crm-events.service";
 import { ApproveTemplateDto, ClaimNotificationJobsDto, ClaimPushReceiptsDto, CreateNotificationPolicyDto, CreateNotificationTemplateDto, EnqueueNotificationDto, NotificationPolicyStatusDto, NotificationResultDto, PushPreferenceDto, PushReceiptResultDto, RecordDeviceConsentDto, RegisterDeviceEndpointDto, RevokeDeviceEndpointDto, UpsertPreferenceDto } from "./dto/notifications.dto";
 import { CrmMessageReceiptService } from "../conversations/crm-message-receipt.service";
+import { normalizeTemplateParameter, renderTemplate, templateParametersProblem, templatePlaceholders, type TemplateVariableSource } from "../conversations/inbox/inbox-rules";
+import { resolveTemplateSources } from "../conversations/inbox/template-variables";
 import { DeviceTokenStoreService } from "./device-token-store.service";
+import { approvalPush, approvalVersion } from "../../approvals/approval-push";
+import { contactEmailSql } from "../../client-portal/contact-email";
+import { BrandAssetStorageService } from "../../workspaces/brand-asset-storage.service";
+import { CHAT_EMAIL_SQL, dispatchChatEmails } from "./chat-email-dispatch";
+import { CRITICAL_REMINDER_EVENT_TYPES } from "../../reminders/reminders-contract";
 const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
 type Row = Record<string, unknown>;
 @Injectable()
 export class CrmNotificationsService {
-  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(), @Optional() private readonly deviceTokens?: DeviceTokenStoreService) {}
+  private readonly logger = new Logger(CrmNotificationsService.name);
+  constructor(private readonly database: DatabaseService, private readonly access: WorkspaceAccessService, private readonly events: CrmEventsService, private readonly receipts: CrmMessageReceiptService = new CrmMessageReceiptService(), @Optional() private readonly deviceTokens?: DeviceTokenStoreService, @Optional() private readonly mailer?: TransactionalEmailService, @Optional() private readonly config?: ConfigService, @Optional() private readonly storage?: BrandAssetStorageService) {}
+  /** Local and UAT: external deliveries only to DELIVERY_ALLOWLIST recipients (webhooks go to systems, not people). */
+  private async allowlisted(client: PoolClient, row: Row, destination: Row | null) {
+    const allowlist = deliveryAllowlist(this.config ?? { get: (key: string) => process.env[key] });
+    if (!allowlist.enabled || row.channel === "webhook" || !destination) return true;
+    if (row.channel === "push") {
+      // A device token names nobody: the push goes to the member whose email is on the list.
+      const user = row.recipientType === "user" ? (await client.query<{ email: string }>(`SELECT primary_email AS email FROM users WHERE id=$1`, [row.recipientId])).rows[0] : undefined;
+      return allowlist.allowsEmail(user?.email);
+    }
+    const value = String(destination.email ?? destination.normalizedValue ?? destination.value ?? "");
+    return row.channel === "email" ? allowlist.allowsEmail(value) : allowlist.allowsPhone(value);
+  }
   templates(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client) => (await client.query(`SELECT id,code,channel,locale,version_number AS "versionNumber",status,subject_template AS "subjectTemplate",body_template AS "bodyTemplate",variables,provider_template_id AS "providerTemplateId",approved_at AS "approvedAt" FROM notification_templates WHERE workspace_id=$1 ORDER BY code,channel,locale,version_number DESC`, [workspaceId])).rows);
   }
@@ -54,22 +81,40 @@ export class CrmNotificationsService {
     });
   }
   preference(actor: RequestActor, workspaceId: string, input: UpsertPreferenceDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.communications.view", async (client, actorUser) => {
-      if (input.recipientType === "user" && input.recipientId !== actorUser.userId) {
+    // Your own preferences need only membership (a QS or Finance reviewer mutes their own notices);
+    // anyone else's need crm.communications.view, and another person's an administrator.
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
+      const own = input.recipientType === "user" && input.recipientId === actorUser.userId;
+      if (!own && !(await this.access.hasPermission(client, workspaceId, actorUser.userId, "crm.communications.view"))) throw new ForbiddenException("Permissions required: crm.communications.view");
+      if (input.recipientType === "user" && !own) {
         const admin = await client.query(`SELECT 1 FROM workspace_memberships membership JOIN effective_member_roles assigned ON assigned.membership_id=membership.id JOIN roles role ON role.id=assigned.role_id WHERE membership.workspace_id=$1 AND membership.user_id=$2 AND role.code IN ('owner','administrator')`, [workspaceId, actorUser.userId]);
         if (!admin.rowCount) throw new UnprocessableEntityException("Only administrators may change another user's preference");
       }
       this.validateQuietHours(input.quietHours ?? {});
+      // R13: critical reminders (approvals waiting, payments and invoices due, permits) can't be muted.
+      if (input.enabled === false && CRITICAL_REMINDER_EVENT_TYPES.includes(input.eventType)) throw new UnprocessableEntityException("This notice is critical and is always on.");
       const result = await client.query(`INSERT INTO notification_preferences (workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (workspace_id,recipient_type,recipient_id,event_type,channel) DO UPDATE SET enabled=EXCLUDED.enabled,quiet_hours=EXCLUDED.quiet_hours,version=notification_preferences.version+1 RETURNING id,recipient_type AS "recipientType",recipient_id AS "recipientId",event_type AS "eventType",channel,enabled,quiet_hours AS "quietHours",version`, [workspaceId, input.recipientType, input.recipientId, input.eventType, input.channel, input.enabled, input.quietHours ?? {}]);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.preference.changed.v1", entityType: "notification_preference", entityId: String(result.rows[0].id), after: result.rows[0] as Row });
       return result.rows[0];
     });
   }
+  /** Your own preferences (per event and channel, and quiet hours), for Settings → Notifications. */
+  myPreferences(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => (await client.query(
+      `SELECT event_type AS "eventType",channel,enabled,quiet_hours AS "quietHours",version FROM notification_preferences
+       WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 ORDER BY event_type,channel`, [workspaceId, actorUser.userId])).rows);
+  }
+  // Your own notices, devices and push settings need only membership: every role is told about its work
+  // (QS reviews, Finance verifications…). Every query below is bound to the signed-in user as recipient;
+  // templates, policies and anyone else's notices keep their permissions.
   notificationSettings(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => this.mobileSettings(client, workspaceId, actorUser.userId));
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
+      await this.pushOnForAllowedPhone(client, workspaceId, actorUser.userId);
+      return this.mobileSettings(client, workspaceId, actorUser.userId);
+    });
   }
   recordDeviceConsent(actor: RequestActor, workspaceId: string, input: RecordDeviceConsentDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       this.assertTimezone(input.timezone);
       const replay = await client.query<Row>(`SELECT id,permission_status AS "permissionStatus",version FROM notification_device_consents WHERE workspace_id=$1 AND user_id=$2 AND installation_id=$3 AND last_request_id=$4`, [workspaceId, actorUser.userId, input.installationId, input.requestId]);
       if (replay.rowCount) return { ...(await this.mobileSettings(client, workspaceId, actorUser.userId)), idempotentReplay: true };
@@ -89,7 +134,7 @@ export class CrmNotificationsService {
     });
   }
   registerDevice(actor: RequestActor, workspaceId: string, input: RegisterDeviceEndpointDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       if (!this.deviceTokens) throw new ServiceUnavailableException("Push registration is unavailable");
       this.assertTimezone(input.timezone);
       if (!["granted", "provisional", "ephemeral"].includes(input.status)) throw new BadRequestException("Allow notifications on this device before registering push delivery");
@@ -107,6 +152,7 @@ export class CrmNotificationsService {
           ON CONFLICT(workspace_id,user_id,installation_id) DO UPDATE SET last_request_id=EXCLUDED.last_request_id,platform=EXCLUDED.platform,token_type=EXCLUDED.token_type,consent_id=EXCLUDED.consent_id,token_hash=EXCLUDED.token_hash,encrypted_token_reference=EXCLUDED.encrypted_token_reference,locale=EXCLUDED.locale,timezone=EXCLUDED.timezone,status='active',last_seen_at=now(),updated_at=now(),version=device_endpoints.version+1
           RETURNING id,installation_id AS "installationId",platform,token_type AS "tokenType",locale,timezone,status,last_seen_at AS "lastSeenAt",version`, [workspaceId, actorUser.userId, input.installationId, input.requestId, input.platform, input.tokenType, consent.rows[0].id, tokenHash, tokenReference, input.locale, input.timezone]);
         await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.device.registered.v1", entityType: "device_endpoint", entityId: String(endpoint.rows[0].id), after: { installationId: input.installationId, platform: input.platform, tokenType: input.tokenType } });
+        await this.pushOnForAllowedPhone(client, workspaceId, actorUser.userId);
         await Promise.all([...displaced.rows, ...prior.rows].filter((row) => row.tokenReference !== tokenReference).map((row) => this.deviceTokens?.delete(String(row.tokenReference))));
         return { endpoint: endpoint.rows[0] };
       } catch (error) {
@@ -116,7 +162,7 @@ export class CrmNotificationsService {
     });
   }
   setPushPreference(actor: RequestActor, workspaceId: string, input: PushPreferenceDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       if (input.enabled && !(await client.query(`SELECT 1 FROM device_endpoints endpoint JOIN notification_device_consents consent ON consent.id=endpoint.consent_id AND consent.workspace_id=endpoint.workspace_id WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active' AND consent.permission_status IN ('granted','provisional','ephemeral')`, [workspaceId, actorUser.userId])).rowCount) throw new ConflictException("Allow notifications and register this device before enabling push");
       const preference = await this.setPushPreferenceWithClient(client, workspaceId, actorUser.userId, input.enabled);
       await this.events.record(client, { workspaceId, actorUserId: actorUser.userId, source: "user", action: "notification.push_preference.changed.v1", entityType: "notification_preference", entityId: String(preference.id), after: preference });
@@ -124,7 +170,7 @@ export class CrmNotificationsService {
     });
   }
   revokeDevice(actor: RequestActor, workspaceId: string, endpointId: string, input: RevokeDeviceEndpointDto) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const current = await client.query<Row>(`SELECT id,status,version,last_request_id,encrypted_token_reference AS "tokenReference" FROM device_endpoints WHERE workspace_id=$1 AND user_id=$2 AND id=$3 FOR UPDATE`, [workspaceId, actorUser.userId, endpointId]);
       if (!current.rowCount) throw new NotFoundException("Notification device not found");
       if (current.rows[0].last_request_id === input.requestId) return { ...(await this.mobileSettings(client, workspaceId, actorUser.userId)), idempotentReplay: true };
@@ -139,19 +185,33 @@ export class CrmNotificationsService {
     });
   }
   inbox(actor: RequestActor, workspaceId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
-      const result = await client.query(`SELECT id,event_type AS "eventType",status,subject,body,deep_link AS "deepLink",delivered_at AS "deliveredAt",read_at AS "readAt",created_at AS "createdAt",version FROM notifications WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' ORDER BY created_at DESC LIMIT 200`, [workspaceId, actorUser.userId]);
-      return result.rows;
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
+      const result = await client.query<Row>(`SELECT id,event_type AS "eventType",status,subject,body,deep_link AS "deepLink",delivered_at AS "deliveredAt",read_at AS "readAt",created_at AS "createdAt",version FROM notifications WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' ORDER BY created_at DESC LIMIT 200`, [workspaceId, actorUser.userId]);
+      // The phone opens a notice it has no screen for on the web, in the browser.
+      const origin = this.config?.get<string>("WEB_ORIGIN", "")?.split(",")[0]?.trim();
+      const webUrl = (link: unknown) => {
+        if (!origin || typeof link !== "string" || !link.startsWith("/workspace/")) return null;
+        try { return new URL(link, origin).toString(); } catch { return null; }
+      };
+      // Viewing as someone: their notices, less what stays private (views of them, and leave reasons).
+      const rows = currentViewAs() ? privateNoticesRemoved(result.rows) : result.rows;
+      return rows.map((row) => ({ ...row, webUrl: webUrl(row.deepLink) }));
+    });
+  }
+  readAll(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
+      const result = await client.query(`UPDATE notifications SET read_at=now(),version=version+1 WHERE workspace_id=$1 AND recipient_type='user' AND recipient_id=$2 AND channel='in_app' AND read_at IS NULL RETURNING id`, [workspaceId, actorUser.userId]);
+      return { updated: result.rowCount };
     });
   }
   read(actor: RequestActor, workspaceId: string, notificationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const result = await client.query(`UPDATE notifications SET read_at=COALESCE(read_at,now()),version=version+1 WHERE workspace_id=$1 AND id=$2 AND recipient_type='user' AND recipient_id=$3 RETURNING id,read_at AS "readAt",version`, [workspaceId, notificationId, actorUser.userId]);
       if (!result.rowCount) throw new NotFoundException("Notification not found"); return result.rows[0];
     });
   }
   open(actor: RequestActor, workspaceId: string, notificationId: string) {
-    return this.access.withPermission(actor, workspaceId, "crm.notifications.view", async (client, actorUser) => {
+    return this.access.asMember(actor, workspaceId, async (client, actorUser) => {
       const result = await client.query<Row>(`UPDATE notifications SET read_at=COALESCE(read_at,now()),version=version+1 WHERE workspace_id=$1 AND id=$2 AND recipient_type='user' AND recipient_id=$3 AND channel IN ('push','in_app') RETURNING id,deep_link AS "deepLink",read_at AS "readAt",version`, [workspaceId, notificationId, actorUser.userId]);
       if (!result.rowCount) throw new NotFoundException("Notification not found");
       const destination = await this.mobileDestination(client, workspaceId, actorUser.userId, String(result.rows[0].deepLink ?? ""));
@@ -172,8 +232,16 @@ export class CrmNotificationsService {
     const template = await this.findTemplate(client, input);
     const declared = Array.isArray(template.variables) ? template.variables.map(String) : [];
     for (const variable of declared) if (!(variable in input.variables)) throw new UnprocessableEntityException(`Missing template variable: ${variable}`);
+    // A provider template with {{1}}…{{n}} (WhatsApp) takes its values from the inbox's variable mapping and the client's records.
+    const positions = input.channel === "whatsapp" ? templatePlaceholders(String(template.body_template)) : [];
+    let templateParameters: string[] = [];
+    if (positions.length) {
+      const filled = await this.templateParameters(client, input, String(template.code), positions);
+      if (!filled) return this.suppressed(client, input, "template_value_missing");
+      templateParameters = filled;
+    }
     const subject = template.subject_template ? this.render(String(template.subject_template), input.variables) : null;
-    const body = this.render(String(template.body_template), input.variables);
+    const body = positions.length ? renderTemplate(String(template.body_template), templateParameters) : this.render(String(template.body_template), input.variables);
     let scheduledFor = input.scheduledFor ? new Date(input.scheduledFor) : new Date();
     if (Number.isNaN(scheduledFor.getTime())) throw new BadRequestException("scheduledFor is invalid");
     const timezone = await this.recipientTimezone(client, input);
@@ -181,7 +249,7 @@ export class CrmNotificationsService {
       if (quietHours && typeof quietHours === "object") scheduledFor = this.afterQuietHours(scheduledFor, quietHours as Record<string, unknown>, timezone);
     }
     try {
-      const result = await client.query(`INSERT INTO notifications (workspace_id,policy_id,template_id,recipient_type,recipient_id,channel,event_type,status,scheduled_for,subject,body,deep_link,idempotency_key,correlation_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id,status,scheduled_for AS "scheduledFor",subject,body,deep_link AS "deepLink",version`, [input.workspaceId, policy?.id ?? null, template.id, input.recipientType, input.recipientId, input.channel, input.eventType, input.channel === "in_app" ? "delivered" : scheduledFor > new Date() ? "scheduled" : "pending", scheduledFor, subject, body, input.deepLink ?? null, input.idempotencyKey, input.correlationId]);
+      const result = await client.query(`INSERT INTO notifications (workspace_id,policy_id,template_id,recipient_type,recipient_id,channel,event_type,status,scheduled_for,subject,body,deep_link,idempotency_key,correlation_id,template_parameters) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id,status,scheduled_for AS "scheduledFor",subject,body,deep_link AS "deepLink",version`, [input.workspaceId, policy?.id ?? null, template.id, input.recipientType, input.recipientId, input.channel, input.eventType, input.channel === "in_app" ? "delivered" : scheduledFor > new Date() ? "scheduled" : "pending", scheduledFor, subject, body, input.deepLink ?? null, input.idempotencyKey, input.correlationId, templateParameters]);
       const response = result.rows[0] as Row;
       if (input.channel === "in_app") await client.query(`UPDATE notifications SET delivered_at=now() WHERE id=$1`, [response.id]);
       if (input.channel !== "in_app") await this.events.record(client, { workspaceId: input.workspaceId, actorUserId: null, source: "automation", action: "notification.delivery_requested.v1", entityType: "notification", entityId: String(response.id), correlationId: input.correlationId, after: { ...response, channel: input.channel } });
@@ -191,6 +259,77 @@ export class CrmNotificationsService {
       throw error;
     }
   }
+  /**
+   * Staff emails go out through the platform mailer in the tenant's brand, not a tenant connector,
+   * so they work before any integration is connected. Claim, send, record; one bad address never
+   * blocks the rest. Sends share the process-wide send limit: what doesn't fit in this call's time
+   * (EMAIL_DISPATCH_BUDGET_MS) goes back to the queue untried, and a throttled or transient failure
+   * stays scheduled for its retry.
+   */
+  async dispatchStaffEmailsInternal(input: ClaimNotificationJobsDto) {
+    const notAfter = Date.now() + EMAIL_DISPATCH_BUDGET_MS;
+    // Replies in email conversations first, as someone waits on them; they go out the same way, with the inbound
+    // address as Reply-To (PLM-025).
+    const chat = await dispatchChatEmails({ database: this.database, mailer: this.mailer, storage: this.storage, receipts: this.receipts,
+      inboundDomain: this.config?.get<string>("INBOUND_EMAIL_DOMAIN") ?? process.env.INBOUND_EMAIL_DOMAIN ?? null }, input.workspaceId, input.limit ?? 50, { notAfter });
+    // No slot left in this call: the staff emails wait for the next one, unclaimed.
+    const staff = chat.deferred ? { claimed: 0, delivered: 0 } : await this.sendStaffEmails(input, notAfter);
+    return { claimed: staff.claimed + chat.claimed, delivered: staff.delivered + chat.delivered };
+  }
+
+  /** Team members, client portal contacts and the finance inbox: claimed, sent through the platform mailer, recorded. */
+  private async sendStaffEmails(input: ClaimNotificationJobsDto, notAfter: number) {
+    // Team members (users) and client portal contacts: both are sent by the platform mailer in the tenant's brand.
+    const claimed = await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
+      const result = await client.query<{ id: string; subject: string | null; body: string; deepLink: string | null; email: string | null; eventType: string; recipientType: string } & ClaimedEmail>(
+        `WITH due AS (
+           SELECT notification.id, CASE WHEN notification.recipient_type='user' THEN person.primary_email
+                  WHEN notification.recipient_type='finance_inbox' THEN inbox.finance_inbox ELSE ${contactEmailSql("contact")} END AS email
+           FROM notifications notification
+           LEFT JOIN users person ON notification.recipient_type='user' AND person.id=notification.recipient_id
+           LEFT JOIN client_portal_grants contact ON notification.recipient_type='portal_contact' AND contact.workspace_id=notification.workspace_id
+                                                AND contact.id=notification.recipient_id AND contact.active
+           -- The workspace's finance inbox (finance requests): an address Finance set, not a person.
+           LEFT JOIN finance_request_settings inbox ON notification.recipient_type='finance_inbox' AND inbox.workspace_id=notification.workspace_id
+           WHERE notification.workspace_id=$1 AND notification.recipient_type IN ('user','portal_contact','finance_inbox') AND notification.channel='email'
+             AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
+               OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
+           ORDER BY notification.scheduled_for FOR UPDATE OF notification SKIP LOCKED LIMIT $2)
+         UPDATE notifications notification SET status='processing', processing_started_at=now(), version=version+1
+         FROM due WHERE notification.id=due.id
+         RETURNING notification.id, notification.subject, notification.body, notification.deep_link AS "deepLink", due.email, notification.event_type AS "eventType",
+                   notification.recipient_type AS "recipientType", ${CLAIMED_EMAIL_COLUMNS}`,
+        [input.workspaceId, Math.min(input.limit ?? 50, 100)],
+      );
+      return result.rows;
+    });
+    let delivered = 0;
+    for (const [index, row] of claimed.entries()) {
+      const actionLabel = staffEmailAction(row.eventType, row.recipientType);
+      // A retry found more than a day after the notice was raised fails instead of going out late.
+      const expired = row.email ? expiredRetry(row) : null;
+      const outcome: EmailDeliveryResult = !row.email || expired
+        ? { status: "failed", provider: expired ? this.mailer?.provider() ?? null : null, messageId: null }
+        : await (this.mailer ? this.mailer.sendStaffNotice({ workspaceId: input.workspaceId, to: row.email, subject: row.subject ?? "Update", body: row.body, deepLink: row.deepLink, actionLabel }, { notAfter })
+          : Promise.resolve<EmailDeliveryResult>({ status: "not_configured", provider: null, messageId: null }))
+          .catch((): EmailDeliveryResult => ({ status: "failed", provider: null, messageId: null, errorCode: "MAILER_ERROR" }));
+      const disposition = expired ?? emailDisposition(outcome, row);
+      if (disposition.kind === "deferred") {
+        // Out of time or slots: this one and the rest of the batch go back to the queue, untried.
+        await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) =>
+          releaseClaimedEmails(client, input.workspaceId, claimed.slice(index).map((item) => item.id), disposition.until));
+        break;
+      }
+      if (disposition.kind === "delivered") delivered += 1;
+      // A real send attempt is recorded like the worker's, so delivery health can show when email last
+      // worked and why it last failed.
+      await this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, (client) => recordEmailDisposition(client, {
+        workspaceId: input.workspaceId, notificationId: row.id, disposition, provider: outcome.provider, messageId: outcome.messageId,
+        attempted: Boolean(row.email) && (Boolean(expired) || outcome.status !== "not_configured"), destinationMissing: !row.email }));
+    }
+    return { claimed: claimed.length, delivered };
+  }
+
   claimInternal(input: ClaimNotificationJobsDto) {
     return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const result = await client.query(`WITH due AS (
@@ -199,6 +338,8 @@ export class CrmNotificationsService {
         FROM notifications notification
         WHERE notification.workspace_id=$1
           AND notification.channel<>'in_app'
+          AND NOT (notification.recipient_type IN ('user','portal_contact','finance_inbox') AND notification.channel='email')
+          AND NOT ${CHAT_EMAIL_SQL}
           AND ((notification.status IN ('pending','scheduled') AND notification.scheduled_for<=now())
             OR (notification.status='processing' AND notification.processing_started_at<now()-interval '5 minutes'))
         ORDER BY notification.scheduled_for
@@ -208,31 +349,69 @@ export class CrmNotificationsService {
       UPDATE notifications notification
       SET status='processing',processing_started_at=now(),version=version+1
       FROM due WHERE notification.id=due.id
-      RETURNING notification.id,notification.recipient_type AS "recipientType",notification.recipient_id AS "recipientId",notification.channel,notification.event_type AS "eventType",notification.subject,notification.body,notification.deep_link AS "deepLink",notification.correlation_id AS "correlationId",notification.idempotency_key AS "idempotencyKey",notification.template_id AS "templateId",notification.version,due.attempt`, [input.workspaceId, Math.min(input.limit ?? 50, 100)]);
+      RETURNING notification.id,notification.recipient_type AS "recipientType",notification.recipient_id AS "recipientId",notification.channel,notification.event_type AS "eventType",notification.subject,notification.body,notification.deep_link AS "deepLink",notification.correlation_id AS "correlationId",notification.idempotency_key AS "idempotencyKey",notification.template_id AS "templateId",notification.template_parameters AS "templateParameters",notification.version,due.attempt`, [input.workspaceId, Math.min(input.limit ?? 50, 100)]);
       const items: Row[] = [];
       for (const row of result.rows as Row[]) {
         const currentInput = { workspaceId: input.workspaceId, recipientType: String(row.recipientType), recipientId: String(row.recipientId), channel: String(row.channel), eventType: String(row.eventType) };
         const preference = await client.query<{ enabled: boolean }>(`SELECT enabled FROM notification_preferences WHERE workspace_id=$1 AND recipient_type=$2 AND recipient_id=$3 AND event_type::text IN ($4::text,'*') AND channel=$5 ORDER BY event_type::text=$4::text DESC LIMIT 1`, [currentInput.workspaceId, currentInput.recipientType, currentInput.recipientId, currentInput.eventType, currentInput.channel]);
         const consentValid = currentInput.recipientType !== "party" || ["in_app", "webhook"].includes(currentInput.channel) || await this.hasConsent(client, currentInput);
         const destination = await this.destination(client, input.workspaceId, row);
-        const reason = preference.rows[0]?.enabled === false ? "recipient_preference" : !consentValid ? "consent_withdrawn" : !destination ? "destination_missing" : null;
+        const reason = preference.rows[0]?.enabled === false ? "recipient_preference" : !consentValid ? "consent_withdrawn" : !destination ? "destination_missing"
+          : !(await this.allowlisted(client, row, destination)) ? NOT_ALLOWLISTED : null;
+        if (reason === NOT_ALLOWLISTED) this.logger.warn(`Notification ${String(row.id)} (${String(row.channel)}) suppressed: ${NOT_ALLOWLISTED}`);
         if (reason) {
           if (row.channel === "push" && row.recipientType === "user") await this.fallbackPushToInbox(client, input.workspaceId, row, reason);
           await client.query(`UPDATE notifications SET status='suppressed',suppressed_reason=$1,processing_started_at=NULL,version=version+1 WHERE workspace_id=$2 AND id=$3`, [reason, input.workspaceId, row.id]);
           continue;
         }
         const template = row.templateId ? await client.query(`SELECT code,locale FROM notification_templates WHERE workspace_id=$1 AND id=$2`, [input.workspaceId, row.templateId]) : { rows: [] };
-        items.push({ ...row, workspaceId: input.workspaceId, destination, templateCode: template.rows[0]?.code ?? null, locale: template.rows[0]?.locale ?? null });
+        // An approval a phone can decide from its lock screen carries its buttons and the row to decide (X-2).
+        // It names the version it goes out with, so a record changed since opens instead of being approved unseen.
+        const push = row.channel === "push" ? approvalPush(String(row.eventType), typeof row.deepLink === "string" ? row.deepLink : null) : null;
+        const version = push ? await approvalVersion(client, input.workspaceId, push.approval.kind, push.approval.id) : null;
+        const approval = push && version !== null ? { pushCategory: push.pushCategory, approval: { ...push.approval, version } } : {};
+        items.push({ ...row, workspaceId: input.workspaceId, destination, templateCode: template.rows[0]?.code ?? null, locale: template.rows[0]?.locale ?? null, ...approval, ...await this.chatDelivery(client, input.workspaceId, row) });
       }
       return { items };
     });
   }
+  /**
+   * For a chat message on WhatsApp: the number it goes from (the chat's, while that number is connected; else the
+   * worker uses the default) and its file, which the worker uploads to WhatsApp and sends with the caption.
+   */
+  private async chatDelivery(client: PoolClient, workspaceId: string, row: Row): Promise<{ connectionId?: string; media?: Row }> {
+    const messageId = /^message:([0-9a-f-]{36})$/i.exec(String(row.idempotencyKey ?? ""))?.[1];
+    if (row.channel !== "whatsapp" || !messageId) return {};
+    const found = (await client.query<Row>(
+      `SELECT (SELECT number.id FROM integration_connections number WHERE number.workspace_id = conversation.workspace_id AND number.id = conversation.connection_id
+                  AND number.provider = 'whatsapp' AND number.status = 'connected') AS "connectionId",
+              attachment.id AS "attachmentId", attachment.kind, attachment.content_type AS "mimeType", attachment.file_name AS "fileName", message.body_text AS caption
+         FROM crm_messages message
+         JOIN crm_conversations conversation ON conversation.workspace_id = message.workspace_id AND conversation.id = message.conversation_id
+         LEFT JOIN crm_message_attachments attachment ON attachment.workspace_id = message.workspace_id AND attachment.message_id = message.id AND attachment.status = 'stored'
+        WHERE message.workspace_id = $1 AND message.id = $2`, [workspaceId, messageId])).rows[0];
+    if (!found) return {};
+    return {
+      ...(found.connectionId ? { connectionId: String(found.connectionId) } : {}),
+      ...(found.attachmentId ? { media: { attachmentId: found.attachmentId, kind: found.kind, mimeType: found.mimeType, fileName: found.fileName, caption: found.caption ?? null } } : {}),
+    };
+  }
+
   resultInternal(notificationId: string, input: NotificationResultDto) {
     return this.database.tenantTransaction(input.workspaceId, SERVICE_ACTOR_ID, async (client) => {
       const notification = await client.query<Row>(`SELECT * FROM notifications WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [input.workspaceId, notificationId]);
       if (!notification.rowCount) throw new NotFoundException("Notification not found");
       const prior = await client.query(`SELECT status,provider_message_id AS "providerMessageId" FROM notification_delivery_attempts WHERE workspace_id=$1 AND notification_id=$2 AND attempt=$3`, [input.workspaceId, notificationId, input.attempt]);
       if (prior.rowCount) return { id: notificationId, status: notification.rows[0].status, idempotentReplay: true };
+      if (input.result === "accepted" && notification.rows[0].channel === "whatsapp") {
+        // Meta accepted the message: it is sent (one tick). Only its own delivered/read receipts say more.
+        if (!input.providerMessageId) throw new BadRequestException("An accepted WhatsApp message needs the provider's message id");
+        await client.query(`INSERT INTO notification_delivery_attempts(workspace_id,notification_id,attempt,provider,status,provider_message_id,completed_at) VALUES($1,$2,$3,$4,'accepted',$5,now())`, [input.workspaceId, notificationId, input.attempt, input.provider, input.providerMessageId]);
+        const sent = await client.query(`UPDATE notifications SET status='sent',processing_started_at=NULL,version=version+1 WHERE workspace_id=$1 AND id=$2 RETURNING id,status,version`, [input.workspaceId, notificationId]);
+        const messageId = /^message:([0-9a-f-]{36})$/i.exec(String(notification.rows[0].idempotency_key ?? ""))?.[1];
+        if (messageId) await this.receipts.record(client, messageId, { workspaceId: input.workspaceId, status: "sent", providerMessageId: input.providerMessageId }, { ignoreMissing: true, ignoreNonOutbound: true });
+        return { ...sent.rows[0], providerAccepted: true, delivered: false };
+      }
       if (input.result === "accepted") {
         if (notification.rows[0].channel !== "push" || !input.providerMessageId || !input.endpointReference) throw new BadRequestException("Only push delivery may wait for a provider receipt");
         await client.query(`INSERT INTO notification_delivery_attempts(workspace_id,notification_id,attempt,provider,status,provider_message_id,destination_reference,error_code,error_message) VALUES($1,$2,$3,$4,'accepted',$5,$6,$7,$8)`, [input.workspaceId, notificationId, input.attempt, input.provider, input.providerMessageId, input.endpointReference, input.errorCode ?? null, input.errorMessage ?? null]);
@@ -240,14 +419,16 @@ export class CrmNotificationsService {
         return { ...accepted.rows[0], providerAccepted: true, delivered: false };
       }
       const retryAt = input.result === "retry" && input.attempt < 8 ? new Date(Date.now() + this.retryDelay(input.attempt)) : null;
-      const finalStatus = input.result === "delivered" ? "delivered" : retryAt ? "scheduled" : "failed";
+      // The worker's own DELIVERY_ALLOWLIST guard refused it: suppressed, not a provider failure.
+      const suppressed = input.result === "permanent_failure" && input.errorCode === NOT_ALLOWLISTED;
+      const finalStatus = input.result === "delivered" ? "delivered" : retryAt ? "scheduled" : suppressed ? "suppressed" : "failed";
       await client.query(`INSERT INTO notification_delivery_attempts (workspace_id,notification_id,attempt,provider,status,provider_message_id,destination_reference,error_code,error_message,retry_at,completed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`, [input.workspaceId, notificationId, input.attempt, input.provider, input.result, input.providerMessageId ?? null, input.endpointReference ?? null, input.errorCode ?? null, input.errorMessage ?? null, retryAt]);
-      const result = await client.query(`UPDATE notifications SET status=$1::notification_status,scheduled_for=COALESCE($2,scheduled_for),processing_started_at=NULL,delivered_at=CASE WHEN $1='delivered' THEN now() ELSE delivered_at END,version=version+1 WHERE workspace_id=$3 AND id=$4 RETURNING id,status,scheduled_for AS "scheduledFor",delivered_at AS "deliveredAt",version`, [finalStatus, retryAt, input.workspaceId, notificationId]);
+      const result = await client.query(`UPDATE notifications SET status=$1::notification_status,scheduled_for=COALESCE($2,scheduled_for),processing_started_at=NULL,delivered_at=CASE WHEN $1='delivered' THEN now() ELSE delivered_at END,suppressed_reason=CASE WHEN $1='suppressed' THEN $5 ELSE suppressed_reason END,version=version+1 WHERE workspace_id=$3 AND id=$4 RETURNING id,status,scheduled_for AS "scheduledFor",delivered_at AS "deliveredAt",version`, [finalStatus, retryAt, input.workspaceId, notificationId, NOT_ALLOWLISTED]);
       if (input.errorCode === "DeviceNotRegistered" && input.endpointReference) await this.revokeFailedEndpoint(client, input.workspaceId, String(notification.rows[0].recipient_id), input.endpointReference);
       if (finalStatus === "failed" && notification.rows[0].channel === "push") await this.fallbackPushToInbox(client, input.workspaceId, { recipientId: notification.rows[0].recipient_id, eventType: notification.rows[0].event_type, subject: notification.rows[0].subject, body: notification.rows[0].body, deepLink: notification.rows[0].deep_link, idempotencyKey: notification.rows[0].idempotency_key, correlationId: notification.rows[0].correlation_id }, "delivery_failed");
       const key = String(notification.rows[0].idempotency_key ?? "");
       const messageId = /^message:([0-9a-f-]{36})$/i.exec(key)?.[1];
-      if (messageId && (finalStatus === "delivered" || finalStatus === "failed")) {
+      if (messageId && (finalStatus === "delivered" || finalStatus === "failed" || finalStatus === "suppressed")) {
         await this.receipts.record(client, messageId, {
           workspaceId: input.workspaceId,
           status: finalStatus === "delivered" ? "sent" : "failed",
@@ -299,6 +480,17 @@ export class CrmNotificationsService {
     const pushEnabled = preference.rows[0]?.enabled === true;
     return { pushEnabled, pushAvailable: endpoints.rows.some((row) => row.status === "active"), preference: preference.rows[0] ?? null, consents: consents.rows, devices: endpoints.rows, unreadCount: unread.rows[0]?.count ?? 0 };
   }
+  /**
+   * A phone that allows notifications gets pushes unless the person has chosen otherwise in Me. Run when a
+   * phone registers and when the app reads its settings, so phones registered before this get it too.
+   */
+  private async pushOnForAllowedPhone(client: PoolClient, workspaceId: string, userId: string) {
+    await client.query(`INSERT INTO notification_preferences(workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours)
+      SELECT $1,'user',$2,'*','push',true,'{}'::jsonb WHERE EXISTS (SELECT 1 FROM device_endpoints endpoint JOIN notification_device_consents consent
+        ON consent.id=endpoint.consent_id AND consent.workspace_id=endpoint.workspace_id
+        WHERE endpoint.workspace_id=$1 AND endpoint.user_id=$2 AND endpoint.status='active' AND consent.permission_status IN ('granted','provisional','ephemeral'))
+      ON CONFLICT(workspace_id,recipient_type,recipient_id,event_type,channel) DO NOTHING`, [workspaceId, userId]);
+  }
   private async setPushPreferenceWithClient(client: PoolClient, workspaceId: string, userId: string, enabled: boolean) {
     const result = await client.query<Row>(`INSERT INTO notification_preferences(workspace_id,recipient_type,recipient_id,event_type,channel,enabled,quiet_hours) VALUES($1,'user',$2,'*','push',$3,'{}'::jsonb) ON CONFLICT(workspace_id,recipient_type,recipient_id,event_type,channel) DO UPDATE SET enabled=EXCLUDED.enabled,updated_at=now(),version=notification_preferences.version+1 RETURNING id,enabled,version`, [workspaceId, userId, enabled]);
     return result.rows[0];
@@ -327,8 +519,8 @@ export class CrmNotificationsService {
       if (!leadId || (await client.query(`SELECT 1 FROM crm_leads WHERE workspace_id=$1 AND id=$2`, [workspaceId, leadId])).rowCount) return { module: "crm", screen: "leads", recordId: leadId };
       return null;
     }
-    if (path === "/workspace/crm/inbox" && await this.access.hasPermission(client, workspaceId, userId, "crm.communications.view")) {
-      const recordId = url.searchParams.get("conversation");
+    if ((path === "/workspace/crm/inbox" || path === "/workspace/crm/conversations") && await this.access.hasPermission(client, workspaceId, userId, "crm.communications.view")) {
+      const recordId = url.searchParams.get("conversation") ?? url.searchParams.get("record");
       if (!recordId || (await client.query(`SELECT 1 FROM crm_conversations WHERE workspace_id=$1 AND id=$2`, [workspaceId, recordId])).rowCount) return { module: "crm", screen: "inbox", recordId };
       return null;
     }
@@ -358,6 +550,23 @@ export class CrmNotificationsService {
       if (visible.rowCount) return { module: "projects", screen: project[2] ?? "overview", recordId: project[1], actionId: url.searchParams.get("record") };
       return null;
     }
+    // Finance and supplier notices open their record in the app (FD-6), for people who may see it.
+    const finance = /^\/workspace\/finance(?:\/([a-z-]+))?(?:\/([0-9a-f-]{36}))?$/i.exec(path);
+    if (finance) {
+      const [, section = "", vendorId] = finance;
+      const record = (name: string) => { const value = url.searchParams.get(name); return value && /^[0-9a-f-]{36}$/i.test(value) ? value : null; };
+      const can = (code: string) => this.access.hasPermission(client, workspaceId, userId, code);
+      if (section === "client-invoices") return await can("receivables.view") ? { module: "finance", screen: record("invoice") ? "invoice" : "overview", recordId: record("invoice") } : null;
+      if (section === "bills") return await can("payables.view") ? { module: "finance", screen: record("bill") ? "bill" : "overview", recordId: record("bill") } : null;
+      if (section === "runs") return await can("payables.view") ? { module: "finance", screen: record("run") ? "run" : "overview", recordId: record("run") } : null;
+      if (section === "suppliers" && vendorId) return await can("payables.view") ? { module: "finance", screen: "supplier", recordId: vendorId } : null;
+      if (section === "petty-cash") return { module: "approvals", screen: "overview", recordId: null };
+      return await can("receivables.view") || await can("payables.view") ? { module: "finance", screen: "overview", recordId: null } : null;
+    }
+    if (path === "/workspace/purchasing/suppliers" && await this.access.hasPermission(client, workspaceId, userId, "vendors.view")) {
+      const supplier = url.searchParams.get("supplier");
+      return { module: "purchasing", screen: "supplier", recordId: supplier && /^[0-9a-f-]{36}$/i.test(supplier) ? supplier : null };
+    }
     const preProject = /^\/workspace\/pre-projects(?:\/cases)?\/([0-9a-f-]{36})(?:\/([^/?]+))?$/i.exec(path);
     if (preProject && await this.access.hasPermission(client, workspaceId, userId, "pre_projects.view")) {
       const visible = await client.query(`SELECT 1 FROM pre_project_cases WHERE workspace_id=$1 AND id=$2 LIMIT 1`, [workspaceId, preProject[1]]);
@@ -367,6 +576,19 @@ export class CrmNotificationsService {
   }
   private async suppressed(client: PoolClient, input: EnqueueNotificationDto, reason: string, policyId: string | null = null) { const result = await client.query(`INSERT INTO notifications (workspace_id,policy_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,suppressed_reason) VALUES ($1,$2,$3,$4,$5,$6,'suppressed',NULL,'Suppressed',$7,$8,$9,$10) ON CONFLICT (workspace_id,idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING id,status,suppressed_reason AS "suppressedReason",version`, [input.workspaceId,policyId,input.recipientType,input.recipientId,input.channel,input.eventType,input.deepLink??null,input.idempotencyKey,input.correlationId,reason]); return result.rows[0]; }
   private async findTemplate(client: import("pg").PoolClient, input: EnqueueNotificationDto): Promise<Row> { const result = await client.query<Row>(`SELECT template.* FROM notification_templates template JOIN workspaces workspace ON workspace.id=template.workspace_id WHERE template.workspace_id=$1 AND template.code=$2 AND template.channel=$3 AND template.status='approved' AND template.locale::text IN ($4::text,split_part($4::text,'-',1),workspace.default_locale::text,'en') ORDER BY CASE WHEN template.locale::text=$4::text THEN 0 WHEN template.locale::text=split_part($4::text,'-',1) THEN 1 WHEN template.locale=workspace.default_locale THEN 2 ELSE 3 END,template.version_number DESC LIMIT 1`, [input.workspaceId,input.templateCode,input.channel,input.locale??"en"]); if (!result.rowCount) throw new UnprocessableEntityException("No approved notification template matches the channel and locale"); return result.rows[0]; }
+  /** Explicit `parameters` in the variables win; otherwise each {{n}} is filled through the inbox mapping for this client. Null when one is missing. */
+  private async templateParameters(client: PoolClient, input: EnqueueNotificationDto, code: string, positions: number[]): Promise<string[] | null> {
+    const explicit = Array.isArray(input.variables.parameters) ? (input.variables.parameters as unknown[]).map((value) => normalizeTemplateParameter(String(value ?? ""))) : null;
+    if (explicit) return templateParametersProblem(positions, explicit) ? null : explicit;
+    if (input.recipientType !== "party") return null;
+    const mapping = await client.query<{ position: number; source: TemplateVariableSource }>(`SELECT position, source FROM crm_template_variables WHERE workspace_id=$1 AND channel='whatsapp' AND template_code=$2`, [input.workspaceId, code]);
+    const sources = new Map(mapping.rows.map((row) => [Number(row.position), row.source]));
+    if (positions.some((position) => !sources.has(position))) return null;
+    const leadId = typeof input.variables.leadId === "string" && /^[0-9a-f-]{36}$/i.test(input.variables.leadId) ? input.variables.leadId : null;
+    const values = await resolveTemplateSources(client, { workspaceId: input.workspaceId, partyId: input.recipientId, leadId, staffUserId: null, config: this.config }, sources.values());
+    const parameters = positions.map((position) => values[sources.get(position)!] ?? "").map(normalizeTemplateParameter);
+    return templateParametersProblem(positions, parameters) ? null : parameters;
+  }
   private render(template: string, variables: Record<string, unknown>) { return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_all,key:string) => { const value=variables[key]; return value==null?"":String(value); }); }
   private assertTemplateVariables(subject: string, body: string, declared: string[]) { const found=[...`${subject} ${body}`.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g)].map((match)=>match[1]); const missing=[...new Set(found)].filter((key)=>!declared.includes(key)); if(missing.length) throw new UnprocessableEntityException(`Undeclared template variables: ${missing.join(", ")}`); }
   private async hasConsent(client: PoolClient, input: Pick<EnqueueNotificationDto, "workspaceId" | "recipientId" | "eventType" | "channel">) { const consent=await client.query<{ status: string; expires_at: Date | null }>(`SELECT status,expires_at FROM crm_consents WHERE workspace_id=$1 AND party_id=$2 AND purpose IN ($3,'service','marketing') AND channel IN ($4,'all') ORDER BY (purpose=$3) DESC,(channel=$4) DESC,captured_at DESC LIMIT 1`,[input.workspaceId,input.recipientId,input.eventType,input.channel]); const row=consent.rows[0]; return Boolean(row?.status==="granted"&&(!row.expires_at||row.expires_at>new Date())); }

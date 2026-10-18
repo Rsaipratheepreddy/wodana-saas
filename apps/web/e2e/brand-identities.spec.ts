@@ -16,7 +16,7 @@ test("uses one identity palette in the sidebar, organization, members and CRM", 
     expect(await companyMark.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(await workspaceMark.evaluate((el) => getComputedStyle(el).backgroundColor));
   }
   const woddy = page.getByRole("button", { name: "Ask Woddy" }).locator("img");
-  await expect(woddy).toHaveAttribute("src", /woddy-mark-v4\.png/);
+  await expect(woddy).toHaveAttribute("src", /\/brand\/woddy\/idle\.webp/);
   await page.screenshot({ path: testInfo.outputPath("organization-brand.png"), animations: "disabled" });
 
   await page.goto("/workspace/members");

@@ -118,6 +118,8 @@ export interface EvaluatePreProjectReadinessOptions {
   scopeReferences?: PricingScopeReference[];
   requireIncludedScope?: boolean;
   requireConfirmedDefinition?: boolean;
+  /** The paid design proposal precedes the site visit; the main quote still requires a plan. */
+  requireSitePlan?: boolean;
 }
 
 export interface PreProjectItemReadiness {
@@ -480,25 +482,6 @@ function evaluateItem(
     ),
   );
 
-  if (item.reviewStatus !== "reviewed") {
-    checks.push(
-      check(
-        "requirement_review",
-        "Requirement review",
-        "missing",
-        false,
-        `${title} is still ${item.reviewStatus === "clarification" ? "waiting for clarification" : "captured but not reviewed"}.`,
-        action(
-          "REVIEW_REQUIREMENT",
-          "Review requirement",
-          "scope_item",
-          item.id,
-        ),
-        item.id,
-      ),
-    );
-  }
-
   if (designs.some((design) => design.latestNumber > design.number)) {
     checks.push(
       check(
@@ -606,7 +589,7 @@ export function evaluatePreProjectReadiness(
   }
 
   const hasSitePlan = facts.sitePlanCount > 0;
-  checks.push(
+  if (options.requireSitePlan !== false) checks.push(
     check(
       "site_plan",
       "Current site plan exists",

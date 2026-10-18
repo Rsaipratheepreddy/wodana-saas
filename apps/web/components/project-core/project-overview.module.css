@@ -1,0 +1,41 @@
+/* Project Overview on the record anatomy (§5c D.7): the KPI tiles, the next step, what needs attention, the stages, site updates and activity. */
+.overview { min-inline-size: 0; }
+.muted { color: var(--wd-color-text-tertiary); }
+.late { color: var(--wd-color-danger); }
+
+/* The current stage's checks inside the next-step card. */
+.overview .cardChecks { padding: 0; }
+
+.sideLink { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
+.sideLink:hover { color: var(--wd-color-text); }
+.sideActions { display: flex; flex-wrap: wrap; gap: var(--wd-space-1); margin-block-start: var(--wd-space-2); }
+
+/* The crew on site, under the team. */
+.crew { display: grid; gap: var(--wd-space-0-5); padding-block: var(--wd-space-1); padding-inline-start: calc(var(--wd-space-6) + var(--wd-space-2)); font-size: var(--wd-text-sm); }
+.crew small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+/* The roles nobody holds, once, with the way to name someone. */
+.unnamed { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-1) var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+
+/* Needs attention: one compact row each, most severe first; the count (or a dot) in the row's tone, the first records, the way to fix it. */
+.attention { container-type: inline-size; display: grid; margin: 0; padding: 0; list-style: none; }
+.attention > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.attention a { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--wd-space-2); padding: var(--wd-space-2) var(--wd-space-1); border-radius: var(--wd-radius-sm);
+  color: var(--wd-color-text); font-size: var(--wd-text-sm); text-decoration: none; }
+.attention a:hover { background: var(--wd-color-surface-hover); }
+.attention a:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: -2px; }
+.attentionMark { flex: none; min-inline-size: var(--wd-space-6); color: var(--wd-color-warning); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); text-align: center; }
+.attention li[data-tone="danger"] .attentionMark { color: var(--wd-color-danger); }
+.attentionDot { display: inline-block; inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); background: currentColor; }
+.attentionLabel { flex: 1 1 auto; min-inline-size: 0; font-weight: var(--wd-weight-medium); overflow-wrap: anywhere; }
+/* Narrow: the records on a second line under the label. Wide: on the same line, cut with an ellipsis (whole in the tooltip and the link's name). */
+.attentionItems { flex: 1 1 100%; order: 1; min-inline-size: 0; overflow: hidden; padding-inline-start: calc(var(--wd-space-6) + var(--wd-space-2));
+  color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.attentionGo { flex: none; align-self: center; color: var(--wd-color-text-tertiary); }
+@container (min-width: 32rem) {
+  .attentionLabel { flex: none; }
+  .attentionItems { flex: 1 1 0; order: 0; padding-inline-start: var(--wd-space-2); }
+}
+.clear { display: flex; align-items: center; gap: var(--wd-space-2); margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.clear svg { color: var(--wd-color-success); }

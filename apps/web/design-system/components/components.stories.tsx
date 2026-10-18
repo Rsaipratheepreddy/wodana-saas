@@ -4,16 +4,18 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { Button, ButtonGroup, MenuButton, SplitButton } from "./actions";
 import { Checkbox, FieldStack, InputAction, SelectField, Switch, TextAreaField, TextInput } from "./forms";
-import { Badge, Callout, EmptyState, Progress, Skeleton } from "./status";
+import { Badge, Callout, EmptyState, Progress } from "./status";
+import { Skeleton } from "./skeleton";
 import { Heading } from "../primitives/typography";
 import { Stack } from "../primitives/layout";
-import { CharacterCount, DateTimeInput, DurationInput, EmailInput, InlineEdit, MentionInput, OtpInput, PasswordInput, RecurrenceField, RichTextEditor, SignatureField, TimeZoneField } from "./advanced-forms";
+import { CharacterCount, DateTimeInput, DurationInput, EmailInput, MentionInput, OtpInput, PasswordInput, RecurrenceField, RichTextEditor, SignatureField, TimeZoneField } from "./advanced-forms";
+import { EditableField, EditableFieldList } from "./editable-field";
 
 function AdvancedFormExample() {
   const [otp, setOtp] = useState("");
   const [comment, setComment] = useState("");
   const [duration, setDuration] = useState(90);
-  return <div style={{ maxWidth: 640 }}><FieldStack><EmailInput label="Email" placeholder="name@studio.com" /><PasswordInput label="Password" /><div><span className="wd-field-label">Verification code</span><OtpInput onChange={setOtp} value={otp} /></div><DurationInput label="Duration" onChange={setDuration} value={duration} /><DateTimeInput label="Review time" /><RecurrenceField /><TimeZoneField /><RichTextEditor label="Client brief" /><MentionInput onChange={setComment} people={[{ id: "diya", label: "Diya Nair" }, { id: "kabir", label: "Kabir Arora" }]} value={comment} /><CharacterCount max={500} value={comment} /><InlineEdit ariaLabel="Edit space name" value="Living room" /><SignatureField label="Client signature" /></FieldStack></div>;
+  return <div style={{ maxWidth: 640 }}><FieldStack><EmailInput label="Email" placeholder="name@studio.com" /><PasswordInput label="Password" /><div><span className="wd-field-label">Verification code</span><OtpInput onChange={setOtp} value={otp} /></div><DurationInput label="Duration" onChange={setDuration} value={duration} /><DateTimeInput label="Review time" /><RecurrenceField /><TimeZoneField /><RichTextEditor label="Client brief" /><MentionInput onChange={setComment} people={[{ id: "diya", label: "Diya Nair" }, { id: "kabir", label: "Kabir Arora" }]} value={comment} /><CharacterCount max={500} value={comment} /><EditableFieldList><EditableField label="Space name" onSave={() => undefined} value="Living room" /></EditableFieldList><SignatureField label="Client signature" /></FieldStack></div>;
 }
 
 function FormExample() {

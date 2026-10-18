@@ -1,0 +1,195 @@
+/* Small charts: the data-viz palette (never the brand action colour), quiet history and a hairline baseline.
+   Hooks: --wd-mini-bars-current, --wd-bar-chart-color, --wd-bar-chart-height and --wd-progress-ring-color let a
+   widget choose its series colour and density. */
+.wd-chart-flow:dir(rtl) { transform: scaleX(-1); }
+
+.wd-sparkline { display: inline-flex; inline-size: 100%; block-size: var(--wd-space-8); color: var(--wd-color-viz-1); }
+.wd-sparkline[data-tone="neutral"] { color: var(--wd-color-text-tertiary); }
+.wd-sparkline svg { inline-size: 100%; block-size: 100%; overflow: visible; }
+.wd-sparkline polyline { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.wd-sparkline circle { fill: currentColor; }
+
+.wd-mini-bars { display: inline-flex; }
+/* Eight slim rounded bars, lighter than the figure beside them; a week with nothing is a 2px stub. */
+.wd-mini-bars-plot { display: inline-flex; align-items: flex-end; gap: var(--wd-space-1); block-size: var(--wd-space-6); }
+.wd-mini-bars-plot i { inline-size: var(--wd-space-1); border-radius: var(--wd-radius-pill); block-size: max(var(--wd-space-0-5), calc(var(--wd-bar) * 100%)); background: var(--wd-color-border-strong); transition: block-size var(--wd-duration-base) var(--wd-ease-out); }
+.wd-mini-bars-plot i[data-current] { background: var(--wd-mini-bars-current, var(--wd-color-viz-1)); }
+
+/* One track as wide as the figure: long month names (e.g. in Arabic) never widen the plot past its widget. */
+.wd-bar-chart-v2 { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); container-type: inline-size; }
+.wd-bar-chart-v2 { --wd-bar-chart-series: var(--wd-bar-chart-color, var(--wd-color-viz-1)); }
+.wd-bar-chart-plot { display: flex; align-items: stretch; gap: var(--wd-space-3); block-size: var(--wd-bar-chart-height, calc(var(--wd-space-24) + var(--wd-space-16))); border-radius: var(--wd-radius-xs); outline-offset: var(--wd-space-1); }
+.wd-bar-chart-plot:focus-visible { outline: 2px solid var(--wd-color-focus); }
+.wd-bar-chart-column { position: relative; flex: 1; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--wd-space-1-5); min-inline-size: 0; }
+/* History bars are a soft tint of the series; the current period carries the full colour. */
+.wd-bar-chart-track { display: flex; align-items: flex-end; justify-content: center; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-bar-chart-track i { inline-size: min(100%, var(--wd-space-8)); block-size: max(var(--wd-space-0-5), calc(var(--wd-bar) * 100%)); border-radius: var(--wd-radius-2xs) var(--wd-radius-2xs) 0 0; background: color-mix(in srgb, var(--wd-bar-chart-series) 34%, var(--wd-color-surface)); transition: block-size var(--wd-duration-slow) var(--wd-ease-out), background var(--wd-duration-fast) var(--wd-ease-standard); }
+.wd-bar-chart-column[data-current] .wd-bar-chart-track i { background: var(--wd-bar-chart-series); }
+.wd-bar-chart-column[data-active] .wd-bar-chart-track i { background: color-mix(in srgb, var(--wd-bar-chart-series) 82%, var(--wd-color-text)); }
+.wd-bar-chart-column small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.wd-bar-chart-tip { position: absolute; inset-block-start: calc(-1 * var(--wd-space-2)); inset-inline-start: 50%; translate: -50% 0; z-index: var(--wd-z-popover); padding: var(--wd-space-1) var(--wd-space-2); border-radius: var(--wd-radius-xs); background: var(--wd-color-text); color: var(--wd-color-text-inverse); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-semibold); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; unicode-bidi: plaintext; }
+.wd-bar-chart-tip:dir(rtl) { translate: 50% 0; }
+/* Narrow charts label every other bar; the exact values stay in the tooltip and the table. */
+@container (max-width: 28rem) { .wd-bar-chart-column:nth-last-child(even) small { visibility: hidden; } .wd-bar-chart-plot { gap: var(--wd-space-1-5); } .wd-bar-chart-column small { justify-self: center; inline-size: max-content; overflow: visible; } }
+
+.wd-split-bar { display: grid; gap: var(--wd-space-3); }
+.wd-split-bar-track { display: flex; gap: var(--wd-space-0-5); block-size: var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-subtle); overflow: hidden; }
+.wd-split-bar-track i { flex: 0 0 calc(var(--wd-part) * 100%); min-inline-size: var(--wd-space-1); border-radius: var(--wd-radius-pill); }
+.wd-split-bar-legend { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); margin: 0; padding: 0; list-style: none; }
+.wd-split-bar-legend li { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-split-bar-legend strong { unicode-bidi: plaintext; color: var(--wd-color-text); font-weight: var(--wd-weight-medium); font-variant-numeric: tabular-nums; }
+.wd-split-bar-legend i { inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); }
+.wd-split-bar [data-series="0"] { background: var(--wd-color-viz-1); }
+.wd-split-bar [data-series="1"] { background: var(--wd-color-viz-2); }
+.wd-split-bar [data-series="2"] { background: var(--wd-color-viz-6); }
+.wd-split-bar [data-series="3"] { background: var(--wd-color-text-tertiary); }
+
+.wd-progress-ring { position: relative; display: inline-grid; place-items: center; inline-size: var(--wd-space-24); block-size: var(--wd-space-24); flex: none; }
+.wd-progress-ring svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; rotate: -90deg; }
+.wd-progress-ring circle { fill: none; stroke-width: 3.2; }
+.wd-progress-ring-track { stroke: var(--wd-color-surface-subtle); }
+.wd-progress-ring-value { stroke: var(--wd-progress-ring-color, var(--wd-color-viz-3)); stroke-linecap: round; transition: stroke-dasharray var(--wd-duration-slow) var(--wd-ease-out); }
+.wd-progress-ring-label { position: relative; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wd-mini-bars-plot i, .wd-bar-chart-track i, .wd-progress-ring-value { transition: none; }
+}
+
+/* Report charts (management dashboards): ranked bars, columns, trend lines, gauge, donut, funnel and KPI figures.
+   Series colours are the data-viz tokens in order; status tones are the semantic success/warning/danger tokens. */
+.wd-report-legend, .wd-donut-legend, .wd-funnel-steps ol, .wd-ranked-bars ol { margin: 0; padding: 0; list-style: none; }
+.wd-report-legend { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+.wd-report-legend li { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); }
+.wd-report-legend i, .wd-donut-legend i { inline-size: var(--wd-space-2); block-size: var(--wd-space-2); border-radius: var(--wd-radius-round); flex: none; }
+.wd-report-note { display: inline-flex; align-items: center; gap: var(--wd-space-1-5); font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); }
+:is(.wd-report-legend, .wd-column-chart, .wd-donut, .wd-trend-lines) [data-series="0"] { --wd-series: var(--wd-color-viz-1); }
+:is(.wd-report-legend, .wd-column-chart, .wd-donut, .wd-trend-lines) [data-series="1"] { --wd-series: var(--wd-color-viz-2); }
+:is(.wd-report-legend, .wd-column-chart, .wd-donut, .wd-trend-lines) [data-series="2"] { --wd-series: var(--wd-color-viz-3); }
+:is(.wd-report-legend, .wd-column-chart, .wd-donut, .wd-trend-lines) [data-series="3"] { --wd-series: var(--wd-color-viz-4); }
+:is(.wd-report-legend, .wd-column-chart, .wd-donut, .wd-trend-lines) [data-series="4"] { --wd-series: var(--wd-color-viz-5); }
+:is(.wd-report-legend, .wd-column-chart, .wd-donut, .wd-trend-lines) [data-series="5"] { --wd-series: var(--wd-color-viz-6); }
+:is(.wd-report-legend, .wd-donut-legend) i { background: var(--wd-series); }
+.wd-ranked-bars, .wd-column-chart, .wd-trend-lines, .wd-gauge, .wd-donut, .wd-funnel-steps { margin: 0; display: grid; gap: var(--wd-space-3); min-inline-size: 0; }
+/* One track as wide as the widget: twelve period labels never widen a chart past its card. */
+.wd-ranked-bars, .wd-column-chart, .wd-trend-lines, .wd-funnel-steps { grid-template-columns: minmax(0, 1fr); }
+.wd-ranked-bars button, .wd-column-chart button, .wd-trend-lines button, .wd-donut button, .wd-funnel-steps button, .wd-kpi-figure button {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: start; border-radius: var(--wd-radius-xs); }
+:is(.wd-ranked-bars, .wd-column-chart, .wd-trend-lines, .wd-donut, .wd-funnel-steps, .wd-kpi-figure) button:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: var(--wd-space-0-5); }
+
+.wd-ranked-bars ol { display: grid; gap: var(--wd-space-1); }
+.wd-ranked-bars-row { display: grid; grid-template-columns: minmax(var(--wd-space-20), 2fr) minmax(0, 3fr) minmax(var(--wd-space-16), auto); align-items: center; gap: var(--wd-space-3); inline-size: 100%; padding-block: var(--wd-space-1); font-size: var(--wd-text-sm); }
+button.wd-ranked-bars-row:hover .wd-ranked-bars-track i { background: color-mix(in srgb, var(--wd-ranked-series) 82%, var(--wd-color-text)); }
+.wd-ranked-bars { --wd-ranked-series: var(--wd-color-viz-1); }
+.wd-ranked-bars[data-tone="danger"] { --wd-ranked-series: var(--wd-color-danger); }
+.wd-ranked-bars-label { overflow-wrap: anywhere; color: var(--wd-color-text); }
+.wd-ranked-bars-track { position: relative; display: block; block-size: var(--wd-space-2); border-radius: var(--wd-radius-pill); background: var(--wd-color-surface-subtle); }
+.wd-ranked-bars-track i { position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: max(var(--wd-space-0-5), calc(var(--wd-bar) * 100%)); border-radius: var(--wd-radius-pill); background: var(--wd-ranked-series); }
+.wd-ranked-bars-target { position: absolute; inset-block: calc(-1 * var(--wd-space-1)); inset-inline-start: calc(var(--wd-bar) * 100%); inline-size: var(--wd-space-0-5); background: var(--wd-color-text); }
+.wd-ranked-bars-target-key { display: inline-block; inline-size: var(--wd-space-0-5); block-size: var(--wd-space-3); background: var(--wd-color-text); }
+.wd-ranked-bars-value { display: grid; justify-items: end; font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-medium); unicode-bidi: plaintext; }
+.wd-ranked-bars-value small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); font-weight: var(--wd-weight-regular); }
+
+.wd-column-chart { container-type: inline-size; }
+.wd-column-chart-plot { --wd-column-gap: var(--wd-space-2); display: flex; align-items: stretch; gap: var(--wd-column-gap); block-size: calc(var(--wd-space-24) + var(--wd-space-16)); }
+/* A line over the columns: a point at its value in each column (the stack's row) and a segment to the next column's point,
+   drawn toward the inline end in both directions. */
+.wd-column-chart-line { grid-row: 2; grid-column: 1; position: relative; pointer-events: none; }
+.wd-column-chart-segment { position: absolute; inset-block: 0; inset-inline-start: 50%; inline-size: calc(100% + var(--wd-column-gap)); block-size: 100%; overflow: visible; }
+.wd-column-chart-segment line { stroke: var(--wd-color-text); stroke-width: 1.5; }
+.wd-column-chart .wd-column-chart-point { position: absolute; inset-inline-start: 50%; inset-block-end: calc(var(--wd-bar) * 100%); inline-size: var(--wd-space-2); block-size: var(--wd-space-2);
+  margin-inline-start: calc(-1 * var(--wd-space-1)); margin-block-end: calc(-1 * var(--wd-space-1)); padding: 0; border: 2px solid var(--wd-color-text); border-radius: var(--wd-radius-round);
+  background: var(--wd-color-surface); pointer-events: auto; }
+.wd-column-chart button.wd-column-chart-point:hover { background: var(--wd-color-text); }
+.wd-report-legend-line { display: inline-block; inline-size: var(--wd-space-3); block-size: var(--wd-space-0-5); background: var(--wd-color-text); }
+.wd-column-chart-column { flex: 1; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--wd-space-1); min-inline-size: 0; }
+/* The total sits above the current period only (the others read from the tooltip and the table). */
+.wd-column-chart-total { justify-self: center; inline-size: max-content; font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; unicode-bidi: plaintext; visibility: hidden; }
+.wd-column-chart-column[data-current] .wd-column-chart-total { visibility: visible; }
+.wd-column-chart-stack { align-self: end; justify-self: center; display: flex; flex-direction: column-reverse; inline-size: min(100%, var(--wd-space-8)); block-size: max(var(--wd-space-0-5), calc(var(--wd-bar) * 100%)); border-block-end: 1px solid var(--wd-color-structural-divider); }
+.wd-column-chart .wd-column-chart-stack > * { display: block; flex: 0 0 calc(var(--wd-part) * 100%); min-block-size: var(--wd-space-0-5); background: color-mix(in srgb, var(--wd-series) 55%, var(--wd-color-surface)); border-radius: 0; }
+.wd-column-chart-stack > :last-child { border-start-start-radius: var(--wd-radius-2xs); border-start-end-radius: var(--wd-radius-2xs); }
+.wd-column-chart-column[data-current] .wd-column-chart-stack > * { background: var(--wd-series); }
+.wd-column-chart .wd-column-chart-stack > button:hover { background: color-mix(in srgb, var(--wd-series) 82%, var(--wd-color-text)); }
+.wd-column-chart-column small { font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 36rem) { .wd-column-chart-column:nth-last-child(even) small { visibility: hidden; } .wd-column-chart-column small { justify-self: center; inline-size: max-content; overflow: visible; } .wd-column-chart-plot { --wd-column-gap: var(--wd-space-1); } }
+
+.wd-trend-lines svg { inline-size: 100%; block-size: calc(var(--wd-space-24) + var(--wd-space-8)); overflow: visible; }
+.wd-trend-lines line { stroke: var(--wd-color-structural-divider); stroke-width: 0.5; }
+.wd-trend-lines g { color: var(--wd-series); }
+.wd-trend-lines polyline { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wd-trend-lines .wd-trend-dot { stroke: currentColor; stroke-width: 6; stroke-linecap: round; }
+.wd-trend-lines { container-type: inline-size; }
+.wd-trend-lines-axis { display: flex; justify-content: space-between; gap: var(--wd-space-1); min-inline-size: 0; font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); }
+.wd-trend-lines-axis > * { min-inline-size: 0; white-space: nowrap; }
+/* Narrow: every other period is labelled (the latest always); the exact values stay in the table. */
+@container (max-width: 36rem) { .wd-trend-lines-axis > :nth-last-child(even) { visibility: hidden; inline-size: 0; } }
+.wd-trend-lines-axis button:hover { color: var(--wd-color-text); text-decoration: underline; }
+
+.wd-gauge { justify-items: center; --wd-gauge-color: var(--wd-color-viz-1); }
+.wd-gauge[data-tone="success"] { --wd-gauge-color: var(--wd-color-success); }
+.wd-gauge[data-tone="warning"] { --wd-gauge-color: var(--wd-color-warning); }
+.wd-gauge[data-tone="danger"] { --wd-gauge-color: var(--wd-color-danger); }
+.wd-gauge svg { inline-size: min(100%, calc(var(--wd-space-24) * 2)); overflow: visible; }
+.wd-gauge path { fill: none; stroke-width: 8; stroke-linecap: round; }
+.wd-gauge-track { stroke: var(--wd-color-surface-subtle); }
+.wd-gauge-value { stroke: var(--wd-gauge-color); transition: stroke-dasharray var(--wd-duration-slow) var(--wd-ease-out); }
+.wd-gauge-target { stroke: var(--wd-color-text); stroke-width: 1.5; }
+.wd-gauge figcaption { margin-block-start: calc(-1 * var(--wd-space-6)); font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; unicode-bidi: plaintext; }
+
+.wd-donut { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--wd-space-5); }
+.wd-donut-ring { position: relative; display: inline-grid; place-items: center; inline-size: calc(var(--wd-space-24) + var(--wd-space-8)); block-size: calc(var(--wd-space-24) + var(--wd-space-8)); }
+.wd-donut-ring svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; rotate: -90deg; }
+.wd-donut-ring circle { fill: none; stroke-width: 4.2; }
+.wd-donut-ring circle[data-series] { stroke: var(--wd-series); }
+.wd-donut-track { stroke: var(--wd-color-surface-subtle); }
+.wd-donut-centre { position: relative; display: grid; justify-items: center; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; }
+.wd-donut-legend { display: grid; gap: var(--wd-space-1); }
+.wd-donut-legend :is(button, span:has(> i)) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--wd-space-2); inline-size: 100%; padding-block: var(--wd-space-1); font-size: var(--wd-text-sm); }
+.wd-donut-legend strong { font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-medium); unicode-bidi: plaintext; }
+.wd-donut-legend small { grid-column: 2 / -1; font-size: var(--wd-text-2xs); color: var(--wd-color-text-secondary); unicode-bidi: plaintext; }
+@container (max-width: 24rem) { .wd-donut { grid-template-columns: minmax(0, 1fr); justify-items: center; } }
+
+.wd-funnel-steps ol { display: grid; gap: var(--wd-space-1); }
+.wd-funnel-steps li > * { display: grid; grid-template-columns: minmax(0, 3fr) minmax(var(--wd-space-20), 2fr) auto minmax(var(--wd-space-12), auto); align-items: center; gap: var(--wd-space-3); inline-size: 100%; padding-block: var(--wd-space-1); font-size: var(--wd-text-sm); }
+.wd-funnel-steps-bar { display: flex; justify-content: center; }
+.wd-funnel-steps-bar i { display: block; inline-size: calc(var(--wd-bar) * 100%); block-size: var(--wd-space-6); border-radius: var(--wd-radius-xs); background: var(--wd-color-viz-1); }
+.wd-funnel-steps button:hover .wd-funnel-steps-bar i { background: color-mix(in srgb, var(--wd-color-viz-1) 82%, var(--wd-color-text)); }
+.wd-funnel-steps strong { font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-medium); unicode-bidi: plaintext; }
+.wd-funnel-steps small { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; unicode-bidi: plaintext; }
+
+.wd-kpi-figure { display: grid; align-content: start; gap: var(--wd-space-3); min-inline-size: 0; padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); --wd-kpi-tone: var(--wd-color-text); }
+.wd-kpi-figure[data-tone="success"] { --wd-kpi-tone: var(--wd-color-success); }
+.wd-kpi-figure[data-tone="warning"] { --wd-kpi-tone: var(--wd-color-warning); }
+.wd-kpi-figure[data-tone="danger"] { --wd-kpi-tone: var(--wd-color-danger); }
+.wd-kpi-figure header { display: grid; gap: var(--wd-space-1); }
+.wd-kpi-figure h3 { margin: 0; font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); }
+.wd-kpi-figure .wd-kpi-figure-value { justify-self: start; font-size: var(--wd-text-2xl); font-weight: var(--wd-weight-semibold); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--wd-kpi-tone); unicode-bidi: plaintext; }
+button.wd-kpi-figure-value:hover { text-decoration: underline; text-underline-offset: var(--wd-space-1); }
+.wd-kpi-figure-empty { font-size: var(--wd-text-sm); font-weight: var(--wd-weight-regular); color: var(--wd-color-text-tertiary); letter-spacing: 0; }
+.wd-kpi-figure-detail, .wd-kpi-figure-no-target { font-size: var(--wd-text-xs); color: var(--wd-color-text-secondary); unicode-bidi: plaintext; }
+.wd-kpi-figure-target { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-5); margin: 0; font-size: var(--wd-text-xs); }
+.wd-kpi-figure-target div { display: grid; gap: var(--wd-space-0-5); }
+.wd-kpi-figure-target dt { color: var(--wd-color-text-secondary); }
+.wd-kpi-figure-target dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-medium); unicode-bidi: plaintext; }
+.wd-kpi-figure-target div:nth-child(2) dd { color: var(--wd-kpi-tone); }
+.wd-kpi-figure-chart { min-inline-size: 0; container-type: inline-size; }
+/* Target, % achieved and gap read as one line under the figure. */
+.wd-kpi-figure .wd-kpi-figure-target div { display: inline-flex; align-items: baseline; gap: var(--wd-space-1); }
+.wd-report-panel { display: grid; align-content: start; gap: var(--wd-space-3); min-inline-size: 0; padding: var(--wd-space-4); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.wd-report-panel > header { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-2); min-block-size: var(--wd-space-6); }
+.wd-report-panel h3 { margin: 0; font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); color: var(--wd-color-text); }
+.wd-report-panel-body { min-inline-size: 0; container-type: inline-size; }
+.wd-report-panel-body .wd-empty-state { min-block-size: 0; padding-block: var(--wd-space-6); }
+.wd-kpi-figure-change { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; color: var(--wd-color-text-secondary); unicode-bidi: plaintext; }
+.wd-kpi-figure-change[data-tone="success"] { color: var(--wd-color-success); }
+.wd-kpi-figure-change[data-tone="danger"] { color: var(--wd-color-danger); }
+.wd-kpi-figure-change svg { flex: none; }
+.wd-kpi-figure-note { font-size: var(--wd-text-xs); color: var(--wd-color-text-tertiary); unicode-bidi: plaintext; }
+.wd-kpi-figure-empty-state { min-inline-size: 0; }
+.wd-kpi-figure-empty-state .wd-empty-state { min-block-size: 0; padding: var(--wd-space-4) 0; }
+
+@media (prefers-reduced-motion: reduce) { .wd-gauge-value { transition: none; } }
+@media print {
+  .wd-kpi-figure { break-inside: avoid; padding: var(--wd-space-2); }
+  .wd-column-chart-stack > *, .wd-ranked-bars-track i, .wd-funnel-steps-bar i, .wd-donut-ring circle, .wd-gauge path { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

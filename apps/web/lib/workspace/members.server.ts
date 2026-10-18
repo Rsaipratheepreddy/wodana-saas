@@ -4,21 +4,20 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ACCESS_COOKIE, businessApiUrl, getAuthenticatedProfile } from "@/lib/auth/server";
 import {
+  memberAccessCapabilities,
   membersPageFixture,
   type MembersPageData,
+  type SeatUsage,
   type WorkspaceInvitation,
   type WorkspaceMember,
   type WorkspaceRole,
 } from "./members";
+import { getViewAsReadiness } from "./view-as.server";
 
 export async function getMembersPageData(): Promise<MembersPageData> {
   const authProfile = await getAuthenticatedProfile();
   const membership = authProfile.memberships[0];
   if (!membership) redirect("/login");
-
-  const canManage = membership.roles.some((role) =>
-    ["owner", "administrator"].includes(role.toLowerCase()),
-  );
 
   if (process.env.NODE_ENV !== "production" && process.env.E2E_AUTH_BYPASS === "true") {
     return membersPageFixture;
@@ -31,33 +30,53 @@ export async function getMembersPageData(): Promise<MembersPageData> {
     cache: "no-store",
   }).catch(() => null);
 
-  const [membersResponse, rolesResponse, invitationsResponse, teamsResponse] = await Promise.all([
+  const initialCapabilities = memberAccessCapabilities(
+    membership.allowedPermissions, membership.roles, [],
+  );
+  if (!initialCapabilities.canView) {
+    return {
+      ...initialCapabilities,
+      currentUserId: authProfile.id,
+      currentUserName: authProfile.displayName,
+      workspaceId: membership.workspaceId,
+      members: [], roles: [], teams: [], invitations: [],
+    };
+  }
+  const { canReadInvitations, canReadTeams } = initialCapabilities;
+  const [membersResponse, rolesResponse, invitationsResponse, teamsResponse, seatsResponse] = await Promise.all([
     request(`/workspaces/${membership.workspaceId}/members`),
     request(`/workspaces/${membership.workspaceId}/roles`),
-    canManage ? request(`/workspaces/${membership.workspaceId}/invitations`) : Promise.resolve(null),
-    canManage ? request(`/workspaces/${membership.workspaceId}/teams`) : Promise.resolve(null),
+    canReadInvitations ? request(`/workspaces/${membership.workspaceId}/invitations`) : Promise.resolve(null),
+    canReadTeams ? request(`/workspaces/${membership.workspaceId}/teams`) : Promise.resolve(null),
+    request(`/workspaces/${membership.workspaceId}/seats`),
   ]);
 
   if ([membersResponse, rolesResponse, invitationsResponse, teamsResponse].some((response) => response?.status === 401)) {
     redirect("/login");
   }
-  if (!membersResponse || !rolesResponse || (canManage && (!invitationsResponse || !teamsResponse))) {
+  if (!membersResponse || !rolesResponse || (canReadInvitations && !invitationsResponse) || (canReadTeams && !teamsResponse)) {
     throw new Error("The members service is unavailable.");
   }
   if (!membersResponse.ok || !rolesResponse.ok || (invitationsResponse && !invitationsResponse.ok) || (teamsResponse && !teamsResponse.ok)) {
     throw new Error("Workspace members could not be loaded.");
   }
 
+  const roles = await rolesResponse.json() as WorkspaceRole[];
+  const capabilities = memberAccessCapabilities(membership.allowedPermissions, membership.roles, roles);
+  const viewAs = await getViewAsReadiness(authProfile);
   return {
-    canManage,
+    ...capabilities,
+    viewAs: { ...viewAs, viewerIsOwner: membership.roles.includes("owner") },
     currentUserId: authProfile.id,
     currentUserName: authProfile.displayName,
     workspaceId: membership.workspaceId,
     members: await membersResponse.json() as WorkspaceMember[],
-    roles: await rolesResponse.json() as WorkspaceRole[],
-    teams: teamsResponse ? (await teamsResponse.json() as Array<{ id: string; name: string }>) : [],
+    roles,
+    teams: teamsResponse ? (await teamsResponse.json() as Array<{ id: string; name: string; roleIds?: string[] }>) : [],
     invitations: invitationsResponse
       ? await invitationsResponse.json() as WorkspaceInvitation[]
       : [],
+    // The meter is a help, never a blocker: without it People still loads (the server refuses at the limit).
+    seats: seatsResponse?.ok ? await seatsResponse.json().catch(() => null) as SeatUsage | null : null,
   };
 }

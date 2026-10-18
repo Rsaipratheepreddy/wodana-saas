@@ -14,6 +14,7 @@
     "ios:mobile": "npm --prefix apps/mobile run ios",
     "android:mobile": "npm --prefix apps/mobile run android",
     "dev:business": "npm run start:dev --workspace @wodana/business-core",
+    "dev:worker": "bash ./scripts/dev-worker.sh",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -21,6 +22,8 @@
     "verify:backend": "bash ./scripts/verify-backend.sh",
     "test:smoke:funnel": "bash ./scripts/smoke-funnel-isolated.sh",
     "test:smoke:palm-fixture": "bash ./scripts/smoke-palm-synthetic-uat.sh",
+    "test:smoke:roles-web": "SMOKE_COMMAND=test:smoke:roles-web bash ./scripts/smoke-funnel-isolated.sh",
+    "test:smoke:palm-flow": "SMOKE_COMMAND=test:smoke:palm-flow bash ./scripts/smoke-funnel-isolated.sh",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down"
   },

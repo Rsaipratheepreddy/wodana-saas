@@ -1,0 +1,310 @@
+import { BadRequestException, ConflictException } from "@nestjs/common";
+import type { PoolClient } from "pg";
+import { membershipOf, readTeam } from "./project-core.store";
+
+type Db = Pick<PoolClient, "query">;
+
+export const WORK_TYPES = ["task", "blocker", "client_request", "snag"] as const;
+export const WORK_STATUSES = ["todo", "in_progress", "in_review", "done", "cancelled"] as const;
+export const WORK_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+export type WorkType = (typeof WORK_TYPES)[number];
+export type WorkStatus = (typeof WORK_STATUSES)[number];
+export const OPEN = (status: WorkStatus) => status !== "done" && status !== "cancelled";
+
+export type WorkRef = { id: string; number: number; title: string; type: WorkType; status: WorkStatus };
+export type WorkItem = {
+  id: string; projectId: string; number: number; type: WorkType; parentId: string | null; packageId: string | null; boqLineId: string | null; stageId: string | null; sprintId: string | null;
+  title: string; status: WorkStatus; priority: (typeof WORK_PRIORITIES)[number]; assigneeId: string | null; assigneeName: string | null;
+  startDate: string | null; dueDate: string | null; baselineStart: string | null; baselineDue: string | null; completedAt: string | null; createdBy: string; version: number;
+  /** The package's materials must be there when it starts: purchasing counts back from its start. */
+  needsMaterials: boolean;
+  /** How far it is, 0–100, as the site last reported it (or set on the plan); null when nobody said. */
+  progress: number | null;
+  /** For a snag: how serious, where it came from, the area it's in, and who marked it fixed. */
+  severity: "minor" | "major" | "critical" | null; source: "internal" | "inspection" | "delivery" | "client" | "warranty" | null; areaId: string | null; fixedBy: string | null;
+  subtasks: number; subtasksDone: number; comments: number;
+  /** What it's waiting on: a predecessor not yet finished (finish-to-start) or not yet started (start-to-start). */
+  blockedBy: WorkRef[];
+  /** While it's open: when its assignee is away on approved leave within its dates (dates only — never the kind of leave). */
+  assigneeAway: Array<{ startDate: string; endDate: string }>;
+};
+
+const ITEM_SELECT = `SELECT item.id, item.project_id AS "projectId", item.number, item.type, item.parent_id AS "parentId", item.package_id AS "packageId",
+  item.boq_line_id AS "boqLineId", item.stage_id AS "stageId", item.sprint_id AS "sprintId", item.title, item.status, item.priority, item.assignee_membership_id AS "assigneeId",
+  coalesce(assignee.display_name, assignee.primary_email) AS "assigneeName", item.start_date::text AS "startDate", item.due_date::text AS "dueDate",
+  item.baseline_start::text AS "baselineStart", item.baseline_due::text AS "baselineDue", item.completed_at AS "completedAt", item.created_by AS "createdBy", item.version,
+  item.needs_materials AS "needsMaterials", item.progress, item.severity, item.source, item.area_id AS "areaId", item.fixed_by AS "fixedBy",
+  (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status <> 'cancelled') AS subtasks,
+  (SELECT count(*)::int FROM work_items child WHERE child.workspace_id = item.workspace_id AND child.parent_id = item.id AND child.status = 'done') AS "subtasksDone",
+  (SELECT count(*)::int FROM work_item_comments comment WHERE comment.workspace_id = item.workspace_id AND comment.work_item_id = item.id) AS comments,
+  coalesce((SELECT jsonb_agg(jsonb_build_object('id', before.id, 'number', before.number, 'title', before.title, 'type', before.type, 'status', before.status) ORDER BY before.number)
+     FROM work_item_links link JOIN work_items before ON before.workspace_id = link.workspace_id AND before.id = link.predecessor_id
+    WHERE link.workspace_id = item.workspace_id AND link.successor_id = item.id
+      AND ((link.kind = 'fs' AND before.status NOT IN ('done', 'cancelled')) OR (link.kind = 'ss' AND before.status = 'todo'))), '[]'::jsonb) AS "blockedBy",
+  coalesce((SELECT jsonb_agg(jsonb_build_object('startDate', greatest(away.start_date, coalesce(item.start_date, item.due_date))::text,
+                                                'endDate', least(away.end_date, coalesce(item.due_date, item.start_date))::text) ORDER BY away.start_date)
+     FROM hrms_leave_requests away
+    WHERE away.workspace_id = item.workspace_id AND away.membership_id = item.assignee_membership_id AND away.status IN ('approved', 'cancellation_pending')
+      AND item.status NOT IN ('done', 'cancelled') AND coalesce(item.start_date, item.due_date) IS NOT NULL
+      AND away.start_date <= coalesce(item.due_date, item.start_date) AND away.end_date >= coalesce(item.start_date, item.due_date)), '[]'::jsonb) AS "assigneeAway"
+  FROM work_items item
+  LEFT JOIN workspace_memberships membership ON membership.workspace_id = item.workspace_id AND membership.id = item.assignee_membership_id
+  LEFT JOIN users assignee ON assignee.id = membership.user_id`;
+
+export async function readItems(db: Db, workspaceId: string, projectId: string): Promise<WorkItem[]> {
+  return (await db.query<WorkItem>(`${ITEM_SELECT} WHERE item.workspace_id = $1 AND item.project_id = $2 ORDER BY item.number`, [workspaceId, projectId])).rows;
+}
+
+export async function readItem(db: Db, workspaceId: string, itemId: string, lock = false): Promise<WorkItem | undefined> {
+  if (lock) await db.query(`SELECT 1 FROM work_items WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, itemId]);
+  return (await db.query<WorkItem>(`${ITEM_SELECT} WHERE item.workspace_id = $1 AND item.id = $2`, [workspaceId, itemId])).rows[0];
+}
+
+export type MyWorkItem = WorkItem & { projectReference: string; projectName: string };
+
+/** Open work across the projects the person can see: theirs, or everyone's. */
+export async function readOpenWork(db: Db, workspaceId: string, membershipId: string | null, input: { all: boolean; mine: boolean }): Promise<MyWorkItem[]> {
+  return (await db.query<MyWorkItem>(
+    `SELECT listed.*, project.reference AS "projectReference", project.name AS "projectName"
+       FROM (${ITEM_SELECT} WHERE item.workspace_id = $1 AND item.status NOT IN ('done', 'cancelled')
+               AND ($4::boolean IS FALSE OR item.assignee_membership_id = $2)) listed
+       JOIN delivery_projects project ON project.workspace_id = $1 AND project.id = listed."projectId"
+      WHERE project.status IN ('active', 'on_hold')
+        AND ($3 OR EXISTS (SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id = project.workspace_id
+                             AND assignment.project_id = project.id AND assignment.membership_id = $2 AND assignment.active))
+      ORDER BY listed."dueDate" NULLS LAST, CASE listed.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, project.reference, listed.number
+      LIMIT 500`, [workspaceId, membershipId, input.all, input.mine])).rows;
+}
+
+export type ActivityEntry =
+  | { id: string; kind: "comment"; body: string; by: string; at: string }
+  | { id: string; kind: string; detail: Record<string, unknown>; by: string; at: string };
+
+/** An item's comments and changes, oldest first. */
+export async function readActivity(db: Db, workspaceId: string, itemId: string): Promise<ActivityEntry[]> {
+  return (await db.query<ActivityEntry>(
+    `SELECT * FROM (
+       SELECT comment.id, 'comment' AS kind, comment.body, NULL::jsonb AS detail, person.display_name AS by, comment.created_at AS at
+         FROM work_item_comments comment JOIN users person ON person.id = comment.author_id
+        WHERE comment.workspace_id = $1 AND comment.work_item_id = $2
+       UNION ALL
+       SELECT event.id, event.kind, NULL, event.detail, person.display_name, event.at
+         FROM work_item_events event JOIN users person ON person.id = event.actor_id
+        WHERE event.workspace_id = $1 AND event.work_item_id = $2) entries
+     ORDER BY at, id`, [workspaceId, itemId])).rows
+    .map((row) => (row.kind === "comment" ? { id: row.id, kind: "comment", body: (row as { body: string }).body, by: row.by, at: row.at }
+      : { id: row.id, kind: row.kind, detail: (row as { detail: Record<string, unknown> }).detail, by: row.by, at: row.at }));
+}
+
+/** What an item waits on and what waits on it, with the kind of link and the lag. */
+export async function readLinks(db: Db, workspaceId: string, itemId: string) {
+  const rows = (await db.query<WorkRef & { kind: "fs" | "ss"; lagDays: number; direction: "before" | "after" }>(
+    `SELECT other.id, other.number, other.title, other.type, other.status, link.kind, link.lag_days AS "lagDays",
+            CASE WHEN link.successor_id = $2 THEN 'before' ELSE 'after' END AS direction
+       FROM work_item_links link
+       JOIN work_items other ON other.workspace_id = link.workspace_id AND other.id = CASE WHEN link.successor_id = $2 THEN link.predecessor_id ELSE link.successor_id END
+      WHERE link.workspace_id = $1 AND (link.successor_id = $2 OR link.predecessor_id = $2)
+      ORDER BY other.number`, [workspaceId, itemId])).rows;
+  return { before: rows.filter((row) => row.direction === "before").map(({ direction: _d, ...row }) => row), after: rows.filter((row) => row.direction === "after").map(({ direction: _d, ...row }) => row) };
+}
+
+/** True when linking predecessor → successor would close a loop (the successor already leads to the predecessor). */
+export async function wouldCycle(db: Db, workspaceId: string, predecessorId: string, successorId: string) {
+  return Boolean((await db.query(
+    `WITH RECURSIVE downstream (id) AS (
+       SELECT successor_id FROM work_item_links WHERE workspace_id = $1 AND predecessor_id = $2
+       UNION
+       SELECT link.successor_id FROM work_item_links link JOIN downstream ON link.predecessor_id = downstream.id WHERE link.workspace_id = $1)
+     SELECT 1 FROM downstream WHERE id = $3 LIMIT 1`, [workspaceId, successorId, predecessorId])).rowCount);
+}
+
+export async function workEvent(db: Db, workspaceId: string, itemId: string, kind: string, detail: Record<string, unknown>, actorUserId: string) {
+  await db.query(`INSERT INTO work_item_events (id, workspace_id, work_item_id, kind, detail, actor_id) VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5)`,
+    [workspaceId, itemId, kind, JSON.stringify(detail), actorUserId]);
+}
+
+/**
+ * Who checks a snag once it is marked fixed: the project's leads and whoever raised it. The same whether it was marked
+ * on the project's work or by the factory on its inspection (PLM-150).
+ */
+export async function snagCheckers(db: Db, workspaceId: string, projectId: string, raisedBy: string) {
+  const leads = ((await readTeam(db, workspaceId, [projectId])).get(projectId) ?? []).filter((member) => member.lead).map((member) => member.membershipId);
+  const raiser = await membershipOf(db, workspaceId, raisedBy);
+  return [...leads, ...(raiser ? [raiser] : [])];
+}
+
+/** Gives someone access to a project without a role, so work given to them opens for them. */
+export async function ensureProjectAccess(db: Db, workspaceId: string, projectId: string, membershipId: string) {
+  await db.query(
+    `INSERT INTO project_assignments (workspace_id, project_id, membership_id, is_manager, active, role_keys)
+     VALUES ($1, $2, $3, false, true, '{}')
+     ON CONFLICT (workspace_id, project_id, membership_id) WHERE project_id IS NOT NULL DO UPDATE SET active = true`,
+    [workspaceId, projectId, membershipId]);
+}
+
+/** Every dependency on the project, for scheduling. */
+export async function readProjectLinks(db: Db, workspaceId: string, projectId: string) {
+  return (await db.query<{ predecessorId: string; successorId: string; kind: "fs" | "ss"; lagDays: number }>(
+    `SELECT predecessor_id AS "predecessorId", successor_id AS "successorId", kind, lag_days AS "lagDays" FROM work_item_links WHERE workspace_id = $1 AND project_id = $2`,
+    [workspaceId, projectId])).rows;
+}
+
+export type WorkInsightRow = {
+  membershipId: string | null; name: string | null; total: boolean;
+  open: number; late: number; dueThisWeek: number; blocked: number;
+  /** Finished in the period; of those with a due date, how many on or before it. */
+  done: number; doneWithDue: number; onTime: number;
+  /** Median days from starting to finishing, for work finished in the period. */
+  cycleDays: number | null;
+};
+
+/**
+ * Who has what across the projects someone oversees, and how work has gone over the last `days` days.
+ * Dates are the workspace's calendar days; "on time" means finished on or before the due date. The
+ * total row is computed on its own (never an average of people), so its median is a true median.
+ */
+export async function readInsights(db: Db, workspaceId: string, membershipId: string | null, all: boolean, days: number): Promise<WorkInsightRow[]> {
+  return (await db.query<WorkInsightRow>(
+    `WITH clock AS (
+       SELECT (now() AT TIME ZONE coalesce(default_timezone, 'UTC'))::date AS today, coalesce(default_timezone, 'UTC') AS zone FROM workspaces WHERE id = $1
+     ), scoped AS (
+       SELECT item.assignee_membership_id, item.status, item.due_date, item.started_at, item.completed_at,
+              item.status NOT IN ('done', 'cancelled') AS is_open,
+              item.status = 'done' AND item.completed_at >= now() - make_interval(days => $4) AS done_recently,
+              (item.completed_at AT TIME ZONE clock.zone)::date AS done_on, clock.today,
+              EXISTS (SELECT 1 FROM work_item_links link JOIN work_items before ON before.workspace_id = link.workspace_id AND before.id = link.predecessor_id
+                       WHERE link.workspace_id = item.workspace_id AND link.successor_id = item.id
+                         AND ((link.kind = 'fs' AND before.status NOT IN ('done', 'cancelled')) OR (link.kind = 'ss' AND before.status = 'todo'))) AS is_blocked
+         FROM work_items item
+         JOIN delivery_projects project ON project.workspace_id = item.workspace_id AND project.id = item.project_id
+         CROSS JOIN clock
+        WHERE item.workspace_id = $1 AND item.status <> 'cancelled' AND project.started_at IS NOT NULL AND project.status IN ('active', 'on_hold', 'completed')
+          AND ($2 OR EXISTS (SELECT 1 FROM project_assignments assignment WHERE assignment.workspace_id = project.workspace_id
+                              AND assignment.project_id = project.id AND assignment.membership_id = $3 AND assignment.active))
+     )
+     SELECT scoped.assignee_membership_id AS "membershipId", coalesce(person.display_name, person.primary_email) AS name,
+            GROUPING(scoped.assignee_membership_id) = 1 AS total,
+            count(*) FILTER (WHERE is_open)::int AS open,
+            count(*) FILTER (WHERE is_open AND due_date < today)::int AS late,
+            count(*) FILTER (WHERE is_open AND due_date BETWEEN today AND today + 6)::int AS "dueThisWeek",
+            count(*) FILTER (WHERE is_open AND is_blocked)::int AS blocked,
+            count(*) FILTER (WHERE done_recently)::int AS done,
+            count(*) FILTER (WHERE done_recently AND due_date IS NOT NULL)::int AS "doneWithDue",
+            count(*) FILTER (WHERE done_recently AND due_date IS NOT NULL AND done_on <= due_date)::int AS "onTime",
+            round((percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM completed_at - started_at) / 86400)
+                   FILTER (WHERE done_recently AND started_at IS NOT NULL AND completed_at >= started_at))::numeric, 1)::float8 AS "cycleDays"
+       FROM scoped
+       LEFT JOIN workspace_memberships membership ON membership.workspace_id = $1 AND membership.id = scoped.assignee_membership_id
+       LEFT JOIN users person ON person.id = membership.user_id
+      GROUP BY GROUPING SETS ((scoped.assignee_membership_id, person.display_name, person.primary_email), ())
+      ORDER BY GROUPING(scoped.assignee_membership_id) DESC, count(*) FILTER (WHERE is_open) DESC, name NULLS LAST`,
+    [workspaceId, all, membershipId, days])).rows;
+}
+
+/**
+ * How far the work is, in whole percent. A task counts once it's done; until then a task with subtasks
+ * counts the share of its subtasks done, and one without counts the progress the site last reported. A package is the share of its tasks; the project weighs each
+ * package by its value in the live scope (equally when the scope has no values), and a package with no
+ * tasks yet counts as not started. With no packages, the project is the share of all its tasks. Issues
+ * and cancelled work don't count. Null when there's nothing to count.
+ */
+export async function readProgress(db: Db, workspaceId: string, projectId: string): Promise<{ project: number | null; packages: Record<string, number> }> {
+  const tasks = (await db.query<{ packageId: string | null; units: number; count: number }>(
+    `SELECT task.package_id AS "packageId", sum(CASE WHEN task.status = 'done' THEN 1 WHEN sub.total > 0 THEN sub.done::float8 / sub.total ELSE coalesce(task.progress, 0)::float8 / 100 END)::float8 AS units, count(*)::int AS count
+       FROM work_items task
+       LEFT JOIN LATERAL (SELECT count(*) FILTER (WHERE child.status <> 'cancelled') AS total, count(*) FILTER (WHERE child.status = 'done') AS done
+                            FROM work_items child WHERE child.workspace_id = task.workspace_id AND child.parent_id = task.id) sub ON true
+      WHERE task.workspace_id = $1 AND task.project_id = $2 AND task.parent_id IS NULL AND task.type = 'task' AND task.status <> 'cancelled'
+      GROUP BY task.package_id`, [workspaceId, projectId])).rows;
+  const packages = (await db.query<{ id: string; value: number }>(
+    `SELECT package.id, coalesce((SELECT sum(line.net) FROM project_boq_lines line WHERE line.workspace_id = package.workspace_id AND line.package_id = package.id AND line.status = 'active'), 0)::float8 AS value
+       FROM project_packages package WHERE package.workspace_id = $1 AND package.project_id = $2`, [workspaceId, projectId])).rows;
+  const percent = (share: number) => Math.floor(Math.round(share * 10_000) / 100);
+  const share = new Map(tasks.filter((row) => row.packageId).map((row) => [row.packageId!, row.units / row.count]));
+  const byPackage = Object.fromEntries([...share].filter(([id]) => packages.some((item) => item.id === id)).map(([id, value]) => [id, percent(value)]));
+  if (!packages.length) {
+    const count = tasks.reduce((sum, row) => sum + row.count, 0);
+    return { project: count ? percent(tasks.reduce((sum, row) => sum + row.units, 0) / count) : null, packages: byPackage };
+  }
+  const total = packages.reduce((sum, item) => sum + item.value, 0);
+  const weight = (item: { value: number }) => (total > 0 ? item.value / total : 1 / packages.length);
+  return { project: percent(packages.reduce((sum, item) => sum + (share.get(item.id) ?? 0) * weight(item), 0)), packages: byPackage };
+}
+
+/**
+ * How far a task got (0–100), from the day's site report or the plan: 100 finishes it (only once its subtasks are
+ * finished or cancelled), anything above nothing starts it. A task already done stays done; cancelled work and
+ * issues take no progress. Recorded in the item's history. Returns what changed, or null when nothing did.
+ */
+export async function setWorkProgress(db: Db, workspaceId: string, input: { projectId: string; itemId: string; progress: number; userId: string }) {
+  const item = (await db.query<{ number: number; type: WorkType; status: WorkStatus; progress: number | null }>(
+    `SELECT number, type, status, progress FROM work_items WHERE workspace_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE`,
+    [workspaceId, input.projectId, input.itemId])).rows[0];
+  if (!item) throw new BadRequestException("Choose work from this project's plan.");
+  if (item.type !== "task") throw new BadRequestException(`#${item.number} isn't a task.`);
+  if (item.status === "cancelled") throw new ConflictException(`#${item.number} was cancelled.`);
+  if (item.status === "done") return null;
+  const progress = Math.max(0, Math.min(100, Math.round(input.progress)));
+  const done = progress === 100;
+  if (done) {
+    const open = (await db.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM work_items WHERE workspace_id = $1 AND parent_id = $2 AND status NOT IN ('done', 'cancelled')`, [workspaceId, input.itemId])).rows[0].count;
+    if (open) throw new ConflictException(open === 1 ? `#${item.number}: finish or cancel its open subtask first.` : `#${item.number}: finish or cancel its ${open} open subtasks first.`);
+  }
+  const status: WorkStatus = done ? "done" : progress > 0 && item.status === "todo" ? "in_progress" : item.status;
+  if (progress === item.progress && status === item.status) return null;
+  await db.query(
+    `UPDATE work_items SET progress = $3, status = $4::varchar, started_at = CASE WHEN $4::varchar <> 'todo' THEN coalesce(started_at, now()) ELSE started_at END,
+            completed_at = CASE WHEN $4::varchar = 'done' THEN now() ELSE completed_at END, completed_by = CASE WHEN $4::varchar = 'done' THEN $5::uuid ELSE completed_by END,
+            version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2`, [workspaceId, input.itemId, progress, status, input.userId]);
+  await workEvent(db, workspaceId, input.itemId, "progress", { from: item.progress, to: progress }, input.userId);
+  if (status !== item.status) await workEvent(db, workspaceId, input.itemId, "status", { from: item.status, to: status, via: "site_report" }, input.userId);
+  return { number: item.number, from: item.progress, to: progress, status };
+}
+
+/**
+ * Raises a snag on a project from another record (a delivery that arrived short at site): numbered like
+ * any work, in the package and scope line it concerns, told to no one yet — the project's lists show it.
+ */
+export async function raiseSnag(db: Db, workspaceId: string, input: { projectId: string; title: string; description: string; severity: "minor" | "major" | "critical";
+  source: "delivery" | "inspection" | "client" | "warranty"; packageId?: string | null; boqLineId?: string | null; actorId: string }) {
+  await db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, input.projectId]);
+  const number = (await db.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, input.projectId])).rows[0].next;
+  const id = (await db.query<{ id: string }>(
+    `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, boq_line_id, title, description, severity, source, created_by)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'snag', $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+    [workspaceId, input.projectId, number, input.packageId ?? null, input.boqLineId ?? null, input.title.slice(0, 300), input.description.slice(0, 10000), input.severity, input.source, input.actorId])).rows[0].id;
+  await workEvent(db, workspaceId, id, "created", { type: "snag", source: input.source }, input.actorId);
+  return { id, number };
+}
+
+/**
+ * Raises a blocker on a project from another record (a supplier line that arrives after the work needs it):
+ * numbered like any work, given to someone, and put before the work it holds up, so that work shows as
+ * blocked until the blocker is done.
+ */
+export async function raiseBlocker(db: Db, workspaceId: string, input: { projectId: string; title: string; description: string; packageId?: string | null;
+  boqLineId?: string | null; assigneeMembershipId: string | null; blocks: string[]; actorId: string }) {
+  await db.query(`SELECT 1 FROM delivery_projects WHERE workspace_id = $1 AND id = $2 FOR UPDATE`, [workspaceId, input.projectId]);
+  const number = (await db.query<{ next: number }>(`SELECT coalesce(max(number), 0) + 1 AS next FROM work_items WHERE workspace_id = $1 AND project_id = $2`, [workspaceId, input.projectId])).rows[0].next;
+  const id = (await db.query<{ id: string }>(
+    `INSERT INTO work_items (id, workspace_id, project_id, number, type, package_id, boq_line_id, title, description, priority, assignee_membership_id, created_by)
+     VALUES (gen_random_uuid(), $1, $2, $3, 'blocker', $4, $5, $6, $7, 'high', $8, $9) RETURNING id`,
+    [workspaceId, input.projectId, number, input.packageId ?? null, input.boqLineId ?? null, input.title.slice(0, 300), input.description.slice(0, 10000),
+      input.assigneeMembershipId, input.actorId])).rows[0].id;
+  for (const successorId of new Set(input.blocks))
+    await db.query(`INSERT INTO work_item_links (workspace_id, project_id, predecessor_id, successor_id, kind, lag_days, created_by) VALUES ($1, $2, $3, $4, 'fs', 0, $5)
+      ON CONFLICT DO NOTHING`, [workspaceId, input.projectId, id, successorId, input.actorId]);
+  await workEvent(db, workspaceId, id, "created", { type: "blocker", blocks: input.blocks.length }, input.actorId);
+  return { id, number };
+}
+
+/** Closes a blocker another record raised, once what it waited for happened (it stays in the history). */
+export async function resolveBlocker(db: Db, workspaceId: string, itemId: string, actorId: string, note: string) {
+  const closed = await db.query(
+    `UPDATE work_items SET status = 'done', completed_at = now(), completed_by = $3, version = version + 1, updated_at = now()
+      WHERE workspace_id = $1 AND id = $2 AND status NOT IN ('done', 'cancelled')`, [workspaceId, itemId, actorId]);
+  if (closed.rowCount) await workEvent(db, workspaceId, itemId, "resolved", { note: note.slice(0, 500) }, actorId);
+  return Boolean(closed.rowCount);
+}

@@ -22,10 +22,15 @@ function isOperationalEvidence(
   );
 }
 
+/** The signed agreement is on record: an uploaded signed document, or a written description of it. */
+export function agreementHasSignedEvidence(agreement: Pick<Agreement, "evidence" | "files"> | null | undefined) {
+  return Boolean(agreement && (agreement.evidence?.trim() || agreement.files?.length));
+}
+
 export function agreementIsOperational(agreement: Agreement | null | undefined) {
   return Boolean(
     agreement?.status === "executed" &&
-      agreement.evidence.trim() &&
+      agreementHasSignedEvidence(agreement) &&
       isOperationalEvidence(agreement),
   );
 }
@@ -66,6 +71,12 @@ export function releasePaymentIsOperational(payment: Payment) {
   return paymentIsVerified(payment) && isOperationalEvidence(payment);
 }
 
+/** The delivery round is distinct from the first paid design round. */
+export function activeDeliveryQuote(data: CommercialData | null | undefined) {
+  return data?.quotes.find((quote) => quote.kind === "quotation" && quote.status === "accepted" &&
+    (!data.servicePath || quote.round === "main"));
+}
+
 function agreementMatchesFinanceContext(data: CommercialData) {
   return Boolean(
     data.financeContext &&
@@ -74,7 +85,7 @@ function agreementMatchesFinanceContext(data: CommercialData) {
   );
 }
 
-function paymentHasFinanceVerifiedReceipt(
+export function paymentHasFinanceVerifiedReceipt(
   data: CommercialData,
   payment: Payment,
 ) {
@@ -96,6 +107,28 @@ function paymentHasFinanceVerifiedReceipt(
     )
     .reduce((sum, allocation) => sum + allocation.amount, 0);
   return Math.round(allocated * 100) === Math.round(payment.amount * 100);
+}
+
+/** Finance verified a receipt for this quotation inside Wodana (same rule as business-core), so no outside proof link is needed. */
+export function quoteHasVerifiedReceipt(data: CommercialData, quoteId: string) {
+  return data.payments.some((payment) => payment.sourceQuoteId === quoteId &&
+    (data.financeContext ? paymentHasFinanceVerifiedReceipt(data, payment) : payment.status === "verified"));
+}
+
+/** The Deal File carries proof of payment: a link, or a Finance-verified receipt for its quotation. */
+export function dealPaymentProofReady(data: CommercialData, proofUrl: string | undefined, quoteId: string) {
+  return Boolean(proofUrl) || quoteHasVerifiedReceipt(data, quoteId);
+}
+
+/** Why a proof-of-payment link can't be sent yet ("" when it can): HTTPS only, and optional once a receipt is verified. */
+export function paymentProofProblem(input: string, receiptVerified: boolean): "" | "missing" | "insecure" {
+  const value = input.trim();
+  if (!value) return receiptVerified ? "" : "missing";
+  try {
+    return new URL(value).protocol === "https:" && value.length <= 2048 ? "" : "insecure";
+  } catch {
+    return "insecure";
+  }
 }
 
 type ApprovalSource = { lineId: string; materialRowId: string };
@@ -142,13 +175,32 @@ export function materialApprovalsComplete(
   );
 }
 
+export function materialListSignedOff(data: CommercialData, quote: Quote) {
+  if (!data.servicePath?.scope.materialSelection) return materialApprovalsComplete(quote, data.materialApprovals);
+  return quotationApprovalSources(quote).length > 0 && materialApprovalsComplete(quote, data.materialApprovals);
+}
+
+export function financeGatePaymentsReady(data: CommercialData, quoteId?: string) {
+  const required = data.payments.filter((payment) => payment.requiredForRelease &&
+    (!quoteId || payment.sourceQuoteId === quoteId));
+  return required.length > 0 && required.every((payment) =>
+    releasePaymentIsOperational(payment) && paymentHasFinanceVerifiedReceipt(data, payment));
+}
+
+/**
+ * Whether a change request holds up release (Q-29): a decision the client still owes, a controlled change case, or
+ * a change to a quote while it is open. A client's plain message from the portal ("when do you start?") is a
+ * conversation, not a change, and never blocks.
+ */
+export function requestBlocksRelease(request: Pick<CommercialData["requests"][number], "status" | "quoteId" | "control" | "decisionRequest">) {
+  if (["resolved", "declined", "withdrawn"].includes(request.status)) return false;
+  return Boolean(request.decisionRequest || request.control || request.quoteId);
+}
+
 export function commercialReleaseInputsReady(
   data: CommercialData | null | undefined,
 ) {
-  const quote = data?.quotes.find(
-    (candidate) =>
-      candidate.kind === "quotation" && candidate.status === "accepted",
-  );
+  const quote = activeDeliveryQuote(data);
   if (
     !data ||
     !quote ||
@@ -159,22 +211,15 @@ export function commercialReleaseInputsReady(
     data.dealFile.quoteId !== quote.id ||
     data.ownerReview?.status !== "approved" ||
     data.ownerReview.quoteId !== quote.id ||
-    !materialApprovalsComplete(quote, data.materialApprovals)
+    !data.ownerReview.financeReviewedById ||
+    !dealPaymentProofReady(data, data.dealFile.paymentProofUrl, quote.id) ||
+    !Array.isArray(data.dealFile.commissionLines) ||
+    !(data.servicePath ? materialListSignedOff(data, quote) : materialApprovalsComplete(quote, data.materialApprovals))
   )
     return false;
-  const releasePayments = data.payments.filter(
-    (payment) => payment.requiredForRelease,
-  );
   return (
-    releasePayments.length > 0 &&
-    releasePayments.every(
-        (payment) =>
-          releasePaymentIsOperational(payment) &&
-          paymentHasFinanceVerifiedReceipt(data, payment),
-      ) &&
-    data.requests.every((request) =>
-      ["resolved", "declined", "withdrawn"].includes(request.status),
-    )
+    financeGatePaymentsReady(data, data.servicePath ? quote.id : undefined) &&
+    !data.requests.some(requestBlocksRelease)
   );
 }
 

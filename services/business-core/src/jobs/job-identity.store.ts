@@ -134,7 +134,7 @@ async function sourceRow(
                    (SELECT count(*)::int FROM jsonb_array_elements(
                      CASE WHEN jsonb_typeof(content->'quotes')='array' THEN content->'quotes' ELSE '[]'::jsonb END
                    ) quote WHERE quote->>'id'=$3) AS "matches"
-              FROM commercial_cases WHERE workspace_id=$1 AND case_id=$2`,
+              FROM commercial_cases_view WHERE workspace_id=$1 AND case_id=$2`,
       params: [workspaceId, source.caseId, source.id],
     },
     project: {

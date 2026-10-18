@@ -1,4 +1,5 @@
 import type { Quote, QuoteLine, QuotationMaterialRow } from "./types";
+import { tKey } from "@/lib/i18n/keys";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { materialNotes } from "./materials";
 export {
@@ -58,7 +59,7 @@ export async function quotationPhoto(file: File): Promise<string> {
     !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
     file.size > 8 * 1024 * 1024
   )
-    throw new Error("Choose a PNG, JPEG or WebP image under 8 MB.");
+    throw new Error(tKey("Choose a PNG, JPEG or WebP image under 8 MB."));
   const url = URL.createObjectURL(file),
     image = new Image();
   try {
@@ -73,7 +74,7 @@ export async function quotationPhoto(file: File): Promise<string> {
     canvas.width = 600;
     canvas.height = 450;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Could not prepare this photo.");
+    if (!context) throw new Error(tKey("Could not prepare this photo."));
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, Math.round((canvas.width - width) / 2), Math.round((canvas.height - height) / 2), width, height);
@@ -81,7 +82,7 @@ export async function quotationPhoto(file: File): Promise<string> {
       const data = canvas.toDataURL("image/webp", quality);
       if (data.length <= 60000) return data;
     }
-    throw new Error("Choose a smaller or simpler photo.");
+    throw new Error(tKey("Choose a smaller or simpler photo."));
   } finally {
     URL.revokeObjectURL(url);
   }

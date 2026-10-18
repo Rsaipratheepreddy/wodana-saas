@@ -1,103 +1,136 @@
+import { tKey, translatorFor, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import type { WorkspaceRole } from "./members";
+
+/** English labels when no translator is passed (tests, server code). */
+const english: Translate = translatorFor({});
 
 export type WorkspacePermissionDefinition = {
   code: string;
   description: string;
 };
 
-export type PermissionAreaId = "all" | "workspace" | "crm" | "pre-execution" | "projects" | "hrms" | "platform";
+export type PermissionAreaId = "all" | "company" | "sales" | "planning" | "commercial" | "projects" | "supply" | "clients" | "people" | "platform";
 
-export const PERMISSION_AREAS: Array<{ id: PermissionAreaId; label: string }> = [
-  { id: "all", label: "All" },
-  { id: "workspace", label: "Workspace" },
-  { id: "crm", label: "CRM" },
-  { id: "pre-execution", label: "Pre-execution" },
-  { id: "projects", label: "Projects" },
-  { id: "hrms", label: "HRMS" },
-  { id: "platform", label: "AI & platform" },
+export const PERMISSION_AREAS: Array<{ id: PermissionAreaId; label: MessageKey }> = [
+  { id: "all", label: tKey("All") },
+  { id: "company", label: tKey("Company") },
+  { id: "sales", label: tKey("Sales") },
+  { id: "planning", label: tKey("Planning & design") },
+  { id: "commercial", label: tKey("Quotations & finance") },
+  { id: "projects", label: tKey("Projects & work") },
+  { id: "supply", label: tKey("Supply & catalog") },
+  { id: "clients", label: tKey("Client portal") },
+  { id: "people", label: tKey("People") },
+  { id: "platform", label: tKey("AI & platform") },
 ];
 
-const RESOURCE_LABELS: Record<string, string> = {
-  "module.organization": "organization profile",
-  "module.members": "people",
-  "module.teams": "work groups",
-  "module.roles": "roles and permissions",
-  "module.integrations": "integrations",
-  "workspace.members": "people",
-  "workspace.roles": "roles and permissions",
-  "workspace.settings": "workspace settings",
-  legal_entities: "business records",
-  integrations: "integrations",
-  "crm.parties": "customers",
-  "crm.leads": "enquiries",
-  "crm.opportunities": "opportunities",
-  "crm.activities": "activities and follow-ups",
-  "crm.automations": "smart rules",
-  "crm.communications": "customer communications",
-  "crm.consent": "customer consent",
-  "crm.notifications": "CRM notifications",
-  "crm.privacy": "CRM privacy",
-  "crm.reports": "CRM reports",
-  "crm.settings": "CRM settings",
-  jobs: "Jobs",
-  "jobs.stage": "Job stages",
-  pre_projects: "pre-execution cases",
-  commercial: "quotations and agreements",
-  "commercial.costs": "internal quotation costs",
-  "commercial.finance": "payment evidence",
-  catalog: "master data",
-  supplier_offers: "supplier offers",
-  vendors: "vendors",
-  portal: "client portal",
-  projects: "projects",
-  "projects.schedule": "project schedules",
-  hrms: "HRMS",
-  audit: "audit history",
-  "finance.settings": "finance settings",
-  "ai.suggestions": "AI suggestions",
+const RESOURCE_LABELS: Record<string, MessageKey> = {
+  "module.organization": tKey("organization profile"),
+  "module.members": tKey("people"),
+  "module.teams": tKey("work groups"),
+  "module.roles": tKey("roles and permissions"),
+  "module.integrations": tKey("integrations"),
+  "workspace.members": tKey("people"),
+  "workspace.roles": tKey("roles and permissions"),
+  "workspace.settings": tKey("workspace settings"),
+  legal_entities: tKey("business records"),
+  integrations: tKey("integrations"),
+  "crm.parties": tKey("customers"),
+  "crm.leads": tKey("enquiries"),
+  "crm.opportunities": tKey("opportunities"),
+  "crm.activities": tKey("activities and follow-ups"),
+  "crm.automations": tKey("smart rules"),
+  "crm.communications": tKey("customer communications"),
+  "crm.consent": tKey("customer consent"),
+  "crm.notifications": tKey("CRM notifications"),
+  "crm.privacy": tKey("CRM privacy"),
+  "crm.reports": tKey("CRM reports"),
+  "crm.settings": tKey("CRM settings"),
+  jobs: tKey("Jobs"),
+  "jobs.stage": tKey("Job stages"),
+  pre_projects: tKey("planning cases"),
+  commercial: tKey("quotations and agreements"),
+  "commercial.costs": tKey("internal quotation costs"),
+  "commercial.finance": tKey("payment evidence"),
+  catalog: tKey("master data"),
+  supplier_offers: tKey("supplier offers"),
+  vendors: tKey("vendors"),
+  portal: tKey("client portal"),
+  projects: tKey("projects"),
+  "projects.schedule": tKey("project schedules"),
+  hrms: tKey("HRMS"),
+  audit: tKey("audit history"),
+  "finance.settings": tKey("finance settings"),
+  "ai.suggestions": tKey("AI suggestions"),
 };
 
-const ACTION_LABELS: Record<string, string> = {
-  read: "View",
-  view: "View",
-  write: "Create",
-  create: "Create",
-  edit: "Edit",
-  manage: "Manage",
-  delete: "Delete",
-  assign: "Assign",
-  export: "Export",
-  merge: "Merge",
-  publish: "Publish",
-  send: "Send",
-  transition: "Move",
-  approve: "Approve",
-  release: "Release",
-  verify: "Verify",
-  buy: "Manage procurement for",
-  report: "Report progress for",
-  review: "Review",
-  repair: "Repair",
-  use: "Use",
+const ACTION_LABELS: Record<string, MessageKey> = {
+  read: tKey("View"),
+  view: tKey("View"),
+  write: tKey("Create"),
+  create: tKey("Create"),
+  edit: tKey("Edit"),
+  manage: tKey("Manage"),
+  delete: tKey("Delete"),
+  assign: tKey("Assign"),
+  export: tKey("Export"),
+  merge: tKey("Merge"),
+  publish: tKey("Publish"),
+  send: tKey("Send"),
+  transition: tKey("Move"),
+  approve: tKey("Approve"),
+  release: tKey("Release"),
+  verify: tKey("Verify"),
+  buy: tKey("Manage procurement for"),
+  report: tKey("Report progress for"),
+  review: tKey("Review"),
+  repair: tKey("Repair"),
+  use: tKey("Use"),
 };
 
-const EXACT_LABELS: Record<string, string> = {
-  "ai.suggestions.use": "Use AI suggestions",
-  "commercial.override_price": "Override quotation prices",
-  "crm.opportunities.sensitive_values": "View sensitive opportunity values",
-  "crm.privacy.erase": "Erase customer data",
-  "hrms.evidence": "Record attendance evidence",
-  "hrms.manage": "Manage HRMS",
-  "hrms.self": "Use own attendance and leave",
-  "hrms.team": "Review team attendance and leave",
-  "jobs.stage.manage": "Manage Job stages",
-  "pre_projects.manage_lifecycle": "Manage pre-execution lifecycle",
-  "pre_projects.publish_definition": "Publish scope confirmation",
-  "pre_projects.record_client_definition_decisions": "Record client scope decisions",
-  "pre_projects.record_client_design_decisions": "Record client design decisions",
-  "pre_projects.review_designs": "Review design revisions",
-  "pre_projects.verify_measurements": "Verify site measurements",
-  "projects.schedule.override": "Override project schedule conflicts",
+const EXACT_LABELS: Record<string, MessageKey> = {
+  "ai.suggestions.use": tKey("Use AI suggestions"),
+  "crm.communications.view": tKey("See own chats"),
+  "crm.communications.send": tKey("Answer chats"),
+  "crm.inbox.team": tKey("See the unassigned queue and the team's chats"),
+  "crm.inbox.manage": tKey("See every chat and manage the inbox"),
+  "crm.inbox.close_chats": tKey("Send the closing message to a quiet chat"),
+  "crm.spam.unmark": tKey("Clear a wrong spam flag"),
+  "commercial.deal.approve": tKey("Approve deal file"),
+  "commercial.estimate": tKey("Approve QS quotation estimate"),
+  "commercial.finance.verify": tKey("Verify payment evidence"),
+  "commercial.override_price": tKey("Override quotation prices"),
+  "crm.opportunities.sensitive_values": tKey("View sensitive opportunity values"),
+  "crm.parties.identity": tKey("Change a client's name and phone"),
+  "crm.privacy.erase": tKey("Erase customer data"),
+  "hrms.evidence": tKey("Record attendance evidence"),
+  "hrms.manage": tKey("Manage HRMS"),
+  "hrms.self": tKey("Use own attendance and leave"),
+  "hrms.team": tKey("Review team attendance and leave"),
+  "jobs.stage.manage": tKey("Manage Job stages"),
+  "pre_projects.manage_lifecycle": tKey("Manage planning lifecycle"),
+  "pre_projects.publish_definition": tKey("Publish scope confirmation"),
+  "pre_projects.record_client_definition_decisions": tKey("Record client scope decisions"),
+  "pre_projects.record_client_design_decisions": tKey("Record client design decisions"),
+  "pre_projects.review_designs": tKey("Review design revisions"),
+  "pre_projects.verify_measurements": tKey("Verify site measurements"),
+  "pre_projects.manage_materials": tKey("Keep the material log and the samples on cases"),
+  "catalog.samples.manage": tKey("Keep the sample library"),
+  "portal.contacts.manage": tKey("Add client contacts and decision-makers"),
+  "commercial.record_decision": tKey("Record a client's decision on a quote"),
+  "workspace.view_as": tKey("View as a team member or role, read-only"),
+  "projects.schedule.override": tKey("Override project schedule conflicts"),
+  "finance_requests.raise": tKey("Ask Finance for invoices, refunds and supplier payments"),
+  "finance_requests.manage": tKey("Work the Finance requests board"),
+  "stock.alerts": tKey("Hear when stock runs low"),
+  "fulfilment.deliver": tKey("Deliver won orders"),
+  "logistics.manage": tKey("Book deliveries, installations, permits and production"),
+  "reports.management.view": tKey("Open the management dashboards"),
+  "reports.management.targets": tKey("Enter the management dashboard targets"),
+  "books.view": tKey("See the Ledger: journals, accounts and reports"),
+  "books.post": tKey("Prepare manual and opening journals"),
+  "books.approve": tKey("Approve journals someone else prepared"),
+  "books.manage": tKey("Set up the Ledger: accounts, tax codes, dates"),
 };
 
 function words(value: string) {
@@ -105,37 +138,116 @@ function words(value: string) {
 }
 
 export function permissionArea(code: string): Exclude<PermissionAreaId, "all"> {
-  if (code.startsWith("crm.") || code.startsWith("jobs.")) return "crm";
-  if (["pre_projects.", "commercial.", "catalog.", "supplier_offers.", "vendors.", "portal."].some((prefix) => code.startsWith(prefix))) return "pre-execution";
+  if (code.startsWith("crm.") || code.startsWith("jobs.")) return "sales";
+  if (code.startsWith("pre_projects.")) return "planning";
+  if (code.startsWith("commercial.") || code.startsWith("books.")) return "commercial";
+  if (code === "projects.buy" || ["catalog.", "supplier_offers.", "vendors."].some((prefix) => code.startsWith(prefix))) return "supply";
+  if (code.startsWith("portal.")) return "clients";
   if (code.startsWith("projects.")) return "projects";
-  if (code.startsWith("hrms.")) return "hrms";
+  if (code.startsWith("hrms.")) return "people";
   if (code.startsWith("ai.")) return "platform";
-  return "workspace";
+  return "company";
 }
 
-export function permissionAreaLabel(code: string) {
+export function permissionAreaLabel(code: string, t: Translate = english) {
   const area = permissionArea(code);
-  return PERMISSION_AREAS.find((item) => item.id === area)?.label ?? "Workspace";
+  return t(PERMISSION_AREAS.find((item) => item.id === area)?.label ?? tKey("Company"));
 }
 
-export function permissionLabel(code: string) {
-  if (EXACT_LABELS[code]) return EXACT_LABELS[code];
+export function permissionLabel(code: string, t: Translate = english) {
+  if (EXACT_LABELS[code]) return t(EXACT_LABELS[code]);
   const resourceCode = Object.keys(RESOURCE_LABELS)
     .sort((left, right) => right.length - left.length)
     .find((candidate) => code.startsWith(`${candidate}.`));
   if (!resourceCode) return words(code);
   const action = code.slice(resourceCode.length + 1);
-  const verb = ACTION_LABELS[action] ?? words(action);
-  return `${verb} ${RESOURCE_LABELS[resourceCode]}`;
+  const verb = ACTION_LABELS[action] ? t(ACTION_LABELS[action]) : words(action);
+  return t("{action} {resource}", { action: verb, resource: t(RESOURCE_LABELS[resourceCode]) });
 }
 
+/** Erasing or exporting data, changing settings, verifying money and approvals deserve a second look. */
+const SENSITIVE_PERMISSIONS = /(\.(erase|export|delete|approve|verify|release|override|override_price)$)|(settings\.manage$)|(^workspace\.roles\.manage$)|(^commercial\.estimate$)|(^books\.manage$)/;
+
+export function isSensitivePermission(code: string) {
+  return SENSITIVE_PERMISSIONS.test(code);
+}
+
+export type PermissionSection = {
+  id: Exclude<PermissionAreaId, "all">;
+  label: string;
+  permissions: WorkspacePermissionDefinition[];
+};
+
+/** Capabilities grouped by product area, in the area order, each area sorted by label. */
+export function permissionSections(permissions: WorkspacePermissionDefinition[], t: Translate = english): PermissionSection[] {
+  return PERMISSION_AREAS
+    .filter((area): area is { id: Exclude<PermissionAreaId, "all">; label: MessageKey } => area.id !== "all")
+    .map((area) => ({
+      id: area.id,
+      label: t(area.label),
+      permissions: permissions
+        .filter((permission) => permissionArea(permission.code) === area.id)
+        .sort((left, right) => permissionLabel(left.code, t).localeCompare(permissionLabel(right.code, t))),
+    }))
+    .filter((section) => section.permissions.length > 0);
+}
+
+export type SectionState = "all" | "none" | "mixed";
+
+export function sectionState(section: PermissionSection, granted: ReadonlySet<string>): { on: number; total: number; state: SectionState } {
+  const on = section.permissions.filter((permission) => granted.has(permission.code)).length;
+  const total = section.permissions.length;
+  return { on, total, state: on === 0 ? "none" : on === total ? "all" : "mixed" };
+}
+
+/** One sentence that ends with punctuation, so notes can follow it without running on. */
+export function roleSentence(description: string | null | undefined, fallback: string) {
+  const text = (description ?? "").trim() || fallback;
+  return /[.!?…]$/.test(text) ? text : `${text}.`;
+}
+
+export type RoleMemberSummary = {
+  id: string;
+  displayName: string;
+  email?: string;
+  avatarPreset?: string | null;
+  photoUrl?: string | null;
+  /** Every role the person has, direct and through their teams. */
+  roles: string[];
+  /** The roles given to the person directly (the ones Members can add or remove), with the member's version. */
+  directRoles?: string[];
+  version?: number;
+};
+
 export type RolesPermissionsPageData = {
-  canManage: boolean;
-  memberCount: number;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  /** May add people to a role or take it away (People: edit members). */
+  canEditMembers?: boolean;
+  delegablePermissions: string[] | null;
+  memberCount: number | null;
+  /** Active people with their role codes (direct and inherited), when the reader may see members. */
+  members?: RoleMemberSummary[] | null;
   permissions: WorkspacePermissionDefinition[];
   roles: WorkspaceRole[];
   workspaceId: string;
+  /** "Preview as {role}" (owners and administrators): whether it is offered, and whether MFA is on for the code. */
+  viewAs?: { canViewAs: boolean; mfaEnabled: boolean; viewerIsOwner: boolean };
 };
+
+export function roleMutationCapabilities(allowedPermissions: readonly string[] | undefined, roles: readonly string[]) {
+  // The fallback keeps Owner/Admin access during a rolling backend update; a
+  // current /me response is authoritative even when it grants no actions.
+  const legacyOwner = !allowedPermissions && roles.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+  const granted = new Set(allowedPermissions ?? []);
+  const managesAll = legacyOwner || granted.has("workspace.roles.manage");
+  return {
+    canCreate: managesAll || granted.has("module.roles.write"),
+    canEdit: managesAll || granted.has("module.roles.edit"),
+    canDelete: managesAll || granted.has("module.roles.delete"),
+  };
+}
 
 // Every code below is registered by a business-core migration. This fixture
 // keeps the local workspace faithful to the production permission catalogue.
@@ -147,21 +259,28 @@ const FIXTURE_PERMISSION_CODES = [
   "module.integrations.read", "module.integrations.write", "module.integrations.edit", "module.integrations.delete",
   "workspace.members.manage", "workspace.roles.manage", "workspace.settings.manage",
   "legal_entities.view", "legal_entities.manage", "integrations.view", "integrations.manage", "audit.view", "finance.settings.manage",
-  "crm.parties.view", "crm.parties.manage", "crm.parties.export", "crm.parties.merge",
+  "crm.parties.view", "crm.parties.manage", "crm.parties.identity", "crm.parties.export", "crm.parties.merge",
   "crm.leads.view", "crm.leads.manage", "crm.leads.assign",
   "crm.opportunities.view", "crm.opportunities.manage", "crm.opportunities.transition", "crm.opportunities.sensitive_values",
   "crm.activities.view", "crm.activities.manage", "crm.automations.view", "crm.automations.manage", "crm.automations.publish",
-  "crm.communications.view", "crm.communications.send", "crm.consent.manage", "crm.notifications.view", "crm.notifications.manage",
+  "crm.communications.view", "crm.communications.send", "crm.inbox.team", "crm.inbox.manage", "crm.inbox.close_chats", "crm.spam.unmark", "crm.consent.manage", "crm.notifications.view", "crm.notifications.manage",
   "crm.privacy.erase", "crm.reports.view", "crm.settings.manage", "jobs.repair", "jobs.stage.manage",
   "pre_projects.view", "pre_projects.create", "pre_projects.edit", "pre_projects.manage_lifecycle",
   "pre_projects.review_designs", "pre_projects.record_client_design_decisions", "pre_projects.verify_measurements",
   "pre_projects.publish_definition", "pre_projects.record_client_definition_decisions",
   "commercial.approve", "commercial.release", "commercial.override_price", "commercial.finance.verify",
+  "commercial.estimate", "commercial.deal.approve", "commercial.record_decision",
   "commercial.costs.view", "commercial.costs.manage", "catalog.view", "catalog.manage",
-  "supplier_offers.view", "supplier_offers.manage", "vendors.view", "vendors.manage", "portal.manage",
+  "supplier_offers.view", "supplier_offers.manage", "vendors.view", "vendors.manage", "portal.manage", "portal.contacts.manage",
   "projects.view", "projects.manage", "projects.report", "projects.review", "projects.buy",
   "projects.schedule.view", "projects.schedule.manage", "projects.schedule.override",
   "hrms.self", "hrms.team", "hrms.manage", "hrms.evidence", "ai.suggestions.use",
+  "workspace.view_as", "projects.costs.view", "projects.funds_override", "purchasing.view", "purchasing.manage", "purchasing.approve",
+  "vendors.approve", "stock.view", "stock.manage", "stock.receive", "stock.adjust", "stock.inspect",
+  "factory.view", "factory.manage", "factory.report", "factory.approve",
+  "payables.view", "payables.manage", "payables.approve", "receivables.view", "receivables.manage", "accounting.manage",
+  "finance_requests.raise", "finance_requests.manage", "reports.management.view", "reports.management.targets",
+  "books.view", "books.post", "books.approve", "books.manage", "pre_projects.manage_materials", "catalog.samples.manage",
 ] as const;
 
 export const workspacePermissionFixture: WorkspacePermissionDefinition[] = FIXTURE_PERMISSION_CODES.map((code) => ({
@@ -175,8 +294,15 @@ const readOnlyFixturePermissions = workspacePermissionFixture
   .map((permission) => permission.code);
 
 export const rolesPermissionsFixture: RolesPermissionsPageData = {
-  canManage: true,
+  canCreate: true,
+  canEdit: true,
+  canDelete: true,
+  canEditMembers: true,
+  delegablePermissions: null,
   memberCount: 1,
+  members: [
+    { id: "00000000-0000-4000-8000-000000000011", displayName: "Olivia (QA Owner)", avatarPreset: null, photoUrl: null, roles: ["owner"], directRoles: ["owner"], version: 1 },
+  ],
   permissions: workspacePermissionFixture,
   roles: [
     {

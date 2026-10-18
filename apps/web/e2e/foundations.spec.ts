@@ -10,8 +10,8 @@ test.describe("web foundations", () => {
 
     await page.goto("/");
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("heading", { name: "Beautiful spaces. Beautifully managed." })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Log in", exact: true })).toHaveAttribute("href", "/login");
+    await expect(page.getByRole("heading", { level: 1, name: "Every job, from enquiry to handover." })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toHaveAttribute("href", "/login");
 
     const foundation = await page.evaluate(() => {
       const rootStyle = getComputedStyle(document.documentElement);
@@ -43,7 +43,7 @@ test.describe("web foundations", () => {
     await page.setViewportSize({ width: 320, height: 844 });
     await page.goto("/");
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole("heading", { name: "Beautiful spaces. Beautifully managed." })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Every job, from enquiry to handover." })).toBeVisible();
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

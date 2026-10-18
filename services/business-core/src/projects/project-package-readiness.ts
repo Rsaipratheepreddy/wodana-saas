@@ -1,9 +1,13 @@
+import { rfaReadiness } from "./project-rfa";
+import { deliveryQuantityReadiness } from "./project-delivery-quantities";
 import type { ProjectData, ProjectWorkPackage } from "./execution.types";
 import { designReadinessForTask } from "./project-design-control";
 import { routeSupportsLocation } from "./project-work-packages";
 
 export type WorkPackageReadinessIssue = {
   code:
+    | "rfa"
+    | "delivery_quantities"
     | "owner"
     | "schedule"
     | "next_action"
@@ -23,7 +27,7 @@ export type WorkPackageReadinessIssue = {
 function availableQuantity(
   material: ProjectData["materials"][number],
 ) {
-  return material.movements.reduce(
+  const onHand = material.movements.reduce(
     (total, movement) =>
       total +
       (["receive", "return"].includes(movement.kind)
@@ -31,6 +35,10 @@ function availableQuantity(
         : -movement.quantity),
     0,
   );
+  const issuedToTask = material.taskId ? material.movements.reduce((total, movement) => total +
+    (movement.taskId === material.taskId ? movement.kind === "issue" ? movement.quantity : movement.kind === "return" ? -movement.quantity : 0 : 0), 0) : 0;
+  const reservedElsewhere = (material.reservations ?? []).filter(r => !material.taskId || r.taskId !== material.taskId).reduce((total, r) => total + r.quantity, 0);
+  return Math.max(0, onHand - reservedElsewhere) + Math.max(0, issuedToTask);
 }
 
 /**
@@ -43,6 +51,10 @@ export function workPackageReadiness(
   workPackage: ProjectWorkPackage,
 ): WorkPackageReadinessIssue[] {
   const issues: WorkPackageReadinessIssue[] = [];
+  const approvalIssue = rfaReadiness(data, workPackage.scopeLineIds);
+  if (approvalIssue) issues.push({code:"rfa",detail:approvalIssue});
+  const quantityIssue = deliveryQuantityReadiness(data, workPackage);
+  if (quantityIssue) issues.push({code:"delivery_quantities",detail:quantityIssue});
   if (!workPackage.ownerId)
     issues.push({
       code: "owner",

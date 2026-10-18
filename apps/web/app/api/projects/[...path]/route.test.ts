@@ -1,0 +1,6 @@
+import {expect,it,vi} from 'vitest';
+vi.mock('@/lib/i18n/server', async () => { const { translator } = await import('@/lib/i18n/messages'); return { getServerT: async () => translator('en'), getServerLanguage: async () => 'en' }; });
+const proxy=vi.hoisted(()=>vi.fn().mockResolvedValue(new Response('{}')));
+vi.mock('@/lib/workspace/workspace-api',()=>({UUID:/^[a-f0-9-]{36}$/i,isSameOrigin:()=>true,workspaceJsonResponse:proxy}));
+import {GET} from './route';
+it('forwards project, assignee and calendar filters before backend pagination',async()=>{const workspace='11111111-1111-4111-8111-111111111111',project='22222222-2222-4222-8222-222222222222';await GET(new Request(`http://localhost/api/projects/work-queue?workspaceId=${workspace}&projectId=${project}&ownerId=unassigned&kind=task&location=factory&priority=urgent&area=Living&resourceId=${project}&from=2026-09-21&to=2026-09-28&cursor=next`),{params:Promise.resolve({path:['work-queue']})});const target=proxy.mock.calls[0][0];for(const value of [`projectId=${project}`,'ownerId=unassigned','kind=task','location=factory','priority=urgent','area=Living',`resourceId=${project}`,'from=2026-09-21','to=2026-09-28','cursor=next'])expect(target).toContain(value);});

@@ -1,3 +1,4 @@
+import { isFlowCode } from "../opportunities/flow-gates";
 import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { PoolClient } from "pg";
 import { RequestActor } from "../../auth/actor";
@@ -7,8 +8,17 @@ import { validateQualificationQuestionDefinitions } from "../leads/qualification
 import { ArchiveSettingDto, CreateCustomFieldDto, CreateQualificationFormDto, CreateSavedViewDto, CreateTaxonomyDto, QualificationQuestionDto, SetCustomFieldValueDto, UpdateCustomFieldDto, UpdateQualificationFormDto, UpdateSavedViewDto, UpdateTaxonomyDto } from "./dto/settings.dto";
 import { ConfigurationRevisionsService, type ConfigurationResourceType } from "../../workspaces/configuration-revisions.service";
 import type { RestoreConfigurationRevisionDto } from "../../workspaces/dto/restore-configuration-revision.dto";
+import { normaliseRoleCodes } from "../../workspaces/role-vocabulary";
+import { ensureEnquiryTypeFlows } from "../flows/enquiry-type-flows";
 
 type Row = Record<string, unknown>;
+
+/** Roles a choice is limited to, stored in the one role vocabulary (lower-case, unique); none means everyone. */
+function storedRoleCodes(codes: string[] | undefined) {
+  const normalised = normaliseRoleCodes(codes);
+  return normalised.length ? normalised : null;
+}
+
 @Injectable()
 export class CrmSettingsService {
   constructor(
@@ -25,8 +35,8 @@ export class CrmSettingsService {
 
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client) => {
-      const taxonomies = await client.query(`SELECT taxonomy.id, taxonomy.code, taxonomy.name, taxonomy.status, taxonomy.version, COALESCE(jsonb_agg(jsonb_build_object('id', option.id, 'code', option.code, 'label', option.label, 'position', option.position, 'status', option.status, 'version', option.version) ORDER BY option.position) FILTER (WHERE option.id IS NOT NULL), '[]'::jsonb) AS options FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options option ON option.taxonomy_id = taxonomy.id AND option.workspace_id = taxonomy.workspace_id WHERE taxonomy.workspace_id = $1 GROUP BY taxonomy.id ORDER BY taxonomy.name`, [workspaceId]);
-      const fields = await client.query(`SELECT id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version FROM crm_custom_field_definitions WHERE workspace_id = $1 ORDER BY entity_type, label`, [workspaceId]);
+      const taxonomies = await client.query(`SELECT taxonomy.id, taxonomy.code, taxonomy.name, taxonomy.status, taxonomy.version, COALESCE(jsonb_agg(jsonb_build_object('id', option.id, 'code', option.code, 'label', option.label, 'position', option.position, 'status', option.status, 'flow', option.flow, 'version', option.version) ORDER BY option.position) FILTER (WHERE option.id IS NOT NULL), '[]'::jsonb) AS options FROM crm_taxonomies taxonomy LEFT JOIN crm_taxonomy_options option ON option.taxonomy_id = taxonomy.id AND option.workspace_id = taxonomy.workspace_id WHERE taxonomy.workspace_id = $1 GROUP BY taxonomy.id ORDER BY taxonomy.name`, [workspaceId]);
+      const fields = await client.query(`SELECT id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version FROM crm_custom_field_definitions WHERE workspace_id = $1 ORDER BY entity_type, label`, [workspaceId]);
       const forms = await client.query(`SELECT form.id, form.code, form.name, form.status, form.service_type AS "serviceType", form.version, COALESCE(jsonb_agg(jsonb_build_object('id', question.id, 'key', question.key, 'label', question.label, 'dataType', question.data_type, 'required', question.required, 'position', question.position, 'scoring', question.scoring, 'configuration', question.configuration) ORDER BY question.position) FILTER (WHERE question.id IS NOT NULL), '[]'::jsonb) AS questions FROM crm_qualification_forms form LEFT JOIN crm_qualification_questions question ON question.form_id = form.id AND question.workspace_id = form.workspace_id WHERE form.workspace_id = $1 GROUP BY form.id ORDER BY form.name`, [workspaceId]);
       const views = await client.query(`SELECT id, entity_type AS "entityType", name, owner_membership_id AS "ownerMembershipId", is_shared AS "isShared", definition, version FROM crm_saved_views WHERE workspace_id = $1 ORDER BY entity_type, name`, [workspaceId]);
       return { taxonomies: taxonomies.rows, customFields: fields.rows, qualificationForms: forms.rows, savedViews: views.rows };
@@ -42,9 +52,11 @@ export class CrmSettingsService {
       const taxonomy = result.rows[0] as Row;
       const options: Row[] = [];
       for (const [index, option] of (input.options ?? []).entries()) {
-        const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position) VALUES ($1,$2,lower($3),$4,$5) RETURNING id, code, label, position, status, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index]);
+        const created = await client.query(`INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, allowed_role_codes, flow) VALUES ($1,$2,lower($3),$4,$5,$6,$7) RETURNING id, code, label, position, status, flow, version`, [workspaceId, taxonomy.id, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.flow ?? null]);
         options.push(created.rows[0] as Row);
       }
+      // One enquiry type, one flow: every new type gets its own steps (from Basic).
+      if (taxonomy.code === "enquiry_type") await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: actorUser.userId, fromBasic: new Set(options.map((option) => String(option.id))) });
       const response = { ...taxonomy, options };
       await this.revisions.record(client, {
         workspaceId, resourceType: "crm_taxonomy", resourceId: String(taxonomy.id),
@@ -74,14 +86,23 @@ export class CrmSettingsService {
         await client.query(`UPDATE crm_taxonomy_options SET status = 'archived', version = version + 1, updated_at = now() WHERE workspace_id = $1 AND taxonomy_id = $2 AND status = 'active'`, [workspaceId, taxonomyId]);
         for (const [index, option] of input.options.entries()) {
           await client.query(
-            `INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, status)
-             VALUES ($1,$2,lower($3),$4,$5,'active')
-             ON CONFLICT (workspace_id, taxonomy_id, code) DO UPDATE SET label = EXCLUDED.label, position = EXCLUDED.position, status = 'active', version = crm_taxonomy_options.version + 1, updated_at = now()`,
-            [workspaceId, taxonomyId, option.code, option.label, option.position ?? index],
+            `INSERT INTO crm_taxonomy_options (workspace_id, taxonomy_id, code, label, position, status, allowed_role_codes, flow)
+             VALUES ($1,$2,lower($3),$4,$5,'active',$6,$8)
+             ON CONFLICT (workspace_id, taxonomy_id, code) DO UPDATE SET label = EXCLUDED.label, position = EXCLUDED.position, status = 'active',
+               allowed_role_codes = CASE WHEN $7 THEN EXCLUDED.allowed_role_codes ELSE crm_taxonomy_options.allowed_role_codes END,
+               flow = CASE WHEN $9 THEN EXCLUDED.flow ELSE crm_taxonomy_options.flow END,
+               version = crm_taxonomy_options.version + 1, updated_at = now()`,
+            [workspaceId, taxonomyId, option.code, option.label, option.position ?? index, storedRoleCodes(option.allowedRoles), option.allowedRoles !== undefined, option.flow ?? null, option.flow !== undefined],
           );
         }
       }
-      const options = await client.query(`SELECT id, code, label, position, status, version FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 ORDER BY position, label`, [workspaceId, taxonomyId]);
+      if (input.options && before.code === "enquiry_type") {
+        // One enquiry type, one flow: a type added here gets its own steps (from Basic); the others keep theirs.
+        const known = new Set((before.options as Row[]).map((option) => String(option.code)));
+        const added = await client.query<{ id: string }>(`SELECT id FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 AND NOT (code = ANY($3::text[]))`, [workspaceId, taxonomyId, [...known]]);
+        await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: actorUser.userId, fromBasic: new Set(added.rows.map((row) => row.id)) });
+      }
+      const options = await client.query(`SELECT id, code, label, position, status, flow, version FROM crm_taxonomy_options WHERE workspace_id = $1 AND taxonomy_id = $2 ORDER BY position, label`, [workspaceId, taxonomyId]);
       const response = { ...result.rows[0], options: options.rows };
       await this.revisions.ensureBaseline(client, {
         workspaceId, resourceType: "crm_taxonomy", resourceId: taxonomyId,
@@ -100,7 +121,7 @@ export class CrmSettingsService {
   createField(actor: RequestActor, workspaceId: string, input: CreateCustomFieldDto) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, actorUser) => {
       this.validateFieldConfiguration(input);
-      const result = await client.query(`INSERT INTO crm_custom_field_definitions (workspace_id, entity_type, key, label, data_type, required, searchable, configuration) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version`, [workspaceId, input.entityType, input.key, input.label, input.dataType, input.required ?? false, input.searchable ?? false, input.configuration ?? {}]);
+      const result = await client.query(`INSERT INTO crm_custom_field_definitions (workspace_id, entity_type, key, label, data_type, required, searchable, configuration, visible, position) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version`, [workspaceId, input.entityType, input.key, input.label.trim(), input.dataType, input.required ?? false, input.searchable ?? false, input.configuration ?? {}, input.visible ?? true, input.position ?? 0]);
       const response = result.rows[0] as Row;
       await this.revisions.record(client, {
         workspaceId, resourceType: "crm_custom_field", resourceId: String(response.id),
@@ -120,10 +141,10 @@ export class CrmSettingsService {
       if (Number(before.version) !== input.version) throw new ConflictException("Custom field changed; reload and try again");
       if (input.configuration) this.validateFieldConfiguration({ dataType: String(before.data_type), configuration: input.configuration });
       const result = await client.query(
-        `UPDATE crm_custom_field_definitions SET label = COALESCE($1, label), required = COALESCE($2, required), searchable = COALESCE($3, searchable), configuration = COALESCE($4, configuration), status = COALESCE($5, status), version = version + 1, updated_at = now()
+        `UPDATE crm_custom_field_definitions SET label = COALESCE($1, label), required = COALESCE($2, required), searchable = COALESCE($3, searchable), configuration = COALESCE($4, configuration), status = COALESCE($5, status), visible = COALESCE($9, visible), position = COALESCE($10, position), version = version + 1, updated_at = now()
          WHERE workspace_id = $6 AND id = $7 AND version = $8
-         RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, version`,
-        [input.label?.trim() ?? null, input.required ?? null, input.searchable ?? null, input.configuration ?? null, input.status ?? null, workspaceId, definitionId, input.version],
+         RETURNING id, entity_type AS "entityType", key, label, data_type AS "dataType", required, searchable, configuration, status, visible, position, version`,
+        [input.label?.trim() ?? null, input.required ?? null, input.searchable ?? null, input.configuration ?? null, input.status ?? null, workspaceId, definitionId, input.version, input.visible ?? null, input.position ?? null],
       );
       if (!result.rowCount) throw new ConflictException("Custom field changed; reload and try again");
       await this.revisions.ensureBaseline(client, {
@@ -167,7 +188,7 @@ export class CrmSettingsService {
       const keys = new Set(input.questions.map((question) => question.key));
       const positions = new Set(input.questions.map((question) => question.position));
       if (keys.size !== input.questions.length || positions.size !== input.questions.length) throw new UnprocessableEntityException("Question keys and positions must be unique");
-      const result = await client.query(`INSERT INTO crm_qualification_forms (workspace_id, code, name, service_type) VALUES ($1,lower($2),$3,$4) RETURNING id, code, name, status, service_type AS "serviceType", version`, [workspaceId, input.code, input.name, input.serviceType?.trim() || null]);
+      const result = await client.query(`INSERT INTO crm_qualification_forms (workspace_id, code, name, service_type, purpose) VALUES ($1,lower($2),$3,$4,$5) RETURNING id, code, name, status, service_type AS "serviceType", purpose, version`, [workspaceId, input.code, input.name, input.serviceType?.trim() || null, input.purpose ?? "qualification"]);
       const form = result.rows[0] as Row;
       const questions: Row[] = [];
       for (const question of input.questions) {
@@ -335,7 +356,10 @@ export class CrmSettingsService {
         workspaceId, resourceType, resourceId: id, sourceVersion: Number(before.version),
         snapshot: before, actorUserId: actorUser.userId,
       });
-      if (type === "taxonomy") await this.restoreTaxonomy(client, workspaceId, id, input.version, before, revision.snapshot);
+      if (type === "taxonomy") {
+        await this.restoreTaxonomy(client, workspaceId, id, input.version, before, revision.snapshot);
+        if (before.code === "enquiry_type") await ensureEnquiryTypeFlows(client, workspaceId, { actorUserId: actorUser.userId });
+      }
       else if (type === "custom-field") await this.restoreCustomField(client, workspaceId, id, input.version, before, revision.snapshot);
       else await this.restoreQualificationForm(client, workspaceId, id, input.version, before, revision.snapshot);
       const after = await this.settingSnapshot(client, workspaceId, type, id);
@@ -379,7 +403,7 @@ export class CrmSettingsService {
       `SELECT taxonomy.id,taxonomy.code,taxonomy.name,taxonomy.status,taxonomy.version,
               COALESCE(jsonb_agg(jsonb_build_object(
                 'id',option.id,'code',option.code,'label',option.label,'position',option.position,
-                'status',option.status,'version',option.version
+                'status',option.status,'flow',option.flow,'version',option.version
               ) ORDER BY option.position,option.code) FILTER (WHERE option.id IS NOT NULL),'[]'::jsonb) AS options
        FROM crm_taxonomies taxonomy
        LEFT JOIN crm_taxonomy_options option ON option.workspace_id=taxonomy.workspace_id AND option.taxonomy_id=taxonomy.id
@@ -401,6 +425,7 @@ export class CrmSettingsService {
       searchable: row.searchable,
       configuration: row.configuration ?? {},
       status: row.status,
+      visible: row.visible ?? true,
       version: row.version,
     };
   }
@@ -446,12 +471,14 @@ export class CrmSettingsService {
     );
     for (const option of options) {
       await client.query(
-        `INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position,status)
-         VALUES($1,$2,$3,$4,$5,$6)
+        `INSERT INTO crm_taxonomy_options(workspace_id,taxonomy_id,code,label,position,status,flow)
+         VALUES($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT(workspace_id,taxonomy_id,code) DO UPDATE SET
            label=EXCLUDED.label,position=EXCLUDED.position,status=EXCLUDED.status,
+           flow=CASE WHEN $8 THEN EXCLUDED.flow ELSE crm_taxonomy_options.flow END,
            version=crm_taxonomy_options.version+1,updated_at=now()`,
-        [workspaceId, id, option.code, option.label, option.position, option.status === "archived" ? "archived" : "active"],
+        [workspaceId, id, option.code, option.label, option.position, option.status === "archived" ? "archived" : "active",
+          isFlowCode(option.flow) ? option.flow : null, Object.hasOwn(option, "flow")],
       );
     }
   }
@@ -466,9 +493,9 @@ export class CrmSettingsService {
     this.validateFieldConfiguration({ dataType: String(target.dataType), configuration: target.configuration as Record<string, unknown> });
     const result = await client.query(
       `UPDATE crm_custom_field_definitions
-       SET label=$1,required=$2,searchable=$3,configuration=$4,status=$5,version=version+1,updated_at=now()
+       SET label=$1,required=$2,searchable=$3,configuration=$4,status=$5,visible=COALESCE($9,visible),version=version+1,updated_at=now()
        WHERE workspace_id=$6 AND id=$7 AND version=$8 RETURNING id`,
-      [target.label, target.required, target.searchable, target.configuration, target.status, workspaceId, id, version],
+      [target.label, target.required, target.searchable, target.configuration, target.status, workspaceId, id, version, typeof target.visible === "boolean" ? target.visible : null],
     );
     if (!result.rowCount) throw new ConflictException("Custom field changed; reload and try again");
   }

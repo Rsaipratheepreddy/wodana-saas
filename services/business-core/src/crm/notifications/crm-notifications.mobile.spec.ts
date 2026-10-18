@@ -11,6 +11,7 @@ const endpointId = "66666666-6666-4666-8666-666666666666";
 function access(client: { query: ReturnType<typeof vi.fn> }, permissions: Record<string, boolean> = {}) {
   return {
     withPermission: vi.fn(async (_actor, _workspace, _permission, work) => work(client, { userId })),
+    asMember: vi.fn(async (_actor, _workspace, work) => work(client, { userId })),
     hasPermission: vi.fn(async (_client, _workspace, _user, permission: string) => permissions[permission] === true),
   };
 }
@@ -48,6 +49,21 @@ describe("native notification lifecycle", () => {
       destination: { module: "projects", screen: "overview", recordId: projectId },
     });
     expect(query.mock.calls.map(([sql]) => String(sql)).join("\n")).not.toContain("effective_member_permissions");
+  });
+
+  it("opens finance and supplier notices on their app screen for people who may see them (FD-6)", async () => {
+    const opened = async (deepLink: string, permissions: Record<string, boolean>) => {
+      const query = vi.fn(async (sql: string) => sql.includes("UPDATE notifications")
+        ? { rows: [{ deepLink, readAt: new Date(), version: 2 }], rowCount: 1 } : { rows: [], rowCount: 0 });
+      return service({ query, permissions }).instance.open({} as never, workspaceId, notificationId);
+    };
+    await expect(opened(`/workspace/finance/bills?bill=${projectId}`, { "payables.view": true })).resolves.toMatchObject({ fallback: false, destination: { module: "finance", screen: "bill", recordId: projectId } });
+    await expect(opened(`/workspace/finance/client-invoices?invoice=${projectId}`, { "receivables.view": true })).resolves.toMatchObject({ destination: { module: "finance", screen: "invoice", recordId: projectId } });
+    await expect(opened(`/workspace/finance/suppliers/${projectId}`, { "payables.view": true })).resolves.toMatchObject({ destination: { module: "finance", screen: "supplier", recordId: projectId } });
+    await expect(opened(`/workspace/purchasing/suppliers?supplier=${projectId}`, { "vendors.view": true })).resolves.toMatchObject({ destination: { module: "purchasing", screen: "supplier", recordId: projectId } });
+    await expect(opened(`/workspace/finance/petty-cash?claim=${projectId}`, {})).resolves.toMatchObject({ destination: { module: "approvals" } });
+    // Without the permission, the notice stays in the inbox.
+    await expect(opened(`/workspace/finance/bills?bill=${projectId}`, {})).resolves.toMatchObject({ fallback: true, destination: { module: "crm", screen: "inbox" } });
   });
 
   it("falls back to the CRM Inbox when a deep link is invalid or unavailable", async () => {

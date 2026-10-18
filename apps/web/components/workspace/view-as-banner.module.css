@@ -1,0 +1,48 @@
+/* View as: one line that stays at the top of the content while it scrolls. */
+.banner {
+  position: sticky;
+  z-index: calc(var(--wd-z-sticky) + 1);
+  inset-block-start: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--wd-space-2);
+  min-inline-size: 0;
+  padding-block: var(--wd-space-1-5);
+  padding-inline: var(--wd-space-4);
+  background: var(--wd-color-warning-subtle);
+  color: var(--wd-color-text);
+  font-size: var(--wd-text-sm);
+}
+
+.icon {
+  flex: none;
+  color: var(--wd-color-warning);
+}
+
+.who {
+  min-inline-size: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  color: var(--wd-color-text-tertiary);
+}
+
+.time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.exit {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+@media (max-width: 600px) {
+  .banner {
+    padding-inline: var(--wd-space-3);
+  }
+}

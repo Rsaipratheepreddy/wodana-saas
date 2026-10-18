@@ -1,13 +1,13 @@
-.case { display: grid; gap: 12px; padding-block: 12px; border-block-start: 1px solid var(--wd-color-structural-divider); }
-.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.case { display: grid; gap: var(--wd-space-3); padding-block: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); }
+.meta { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-4); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .meta strong { color: var(--wd-color-text); font-weight: 600; }
 .muted { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
 .targets { display: grid; gap: 0; }
-.target { display: grid; grid-template-columns: minmax(144px,1fr) minmax(160px,.8fr) minmax(200px,1.2fr); align-items: end; gap: 12px; padding-block: 12px; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.target { display: grid; grid-template-columns: minmax(144px,1fr) minmax(160px,.8fr) minmax(200px,1.2fr); align-items: end; gap: var(--wd-space-3); padding-block: var(--wd-space-3); border-block-end: 1px solid var(--wd-color-structural-divider); }
 .target strong, .target small { display: block; }
 .target strong { font-size: var(--wd-text-sm); font-weight: 600; }
-.target small { margin-block-start: 4px; color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
-.actions { display: flex; align-items: end; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-.links { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--wd-text-xs); }
+.target small { margin-block-start: var(--wd-space-1); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.actions { display: flex; align-items: end; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
+.links { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); font-size: var(--wd-text-xs); }
 .links a { color: var(--wd-color-link); }
 @media (max-width: 760px) { .target { grid-template-columns: 1fr; } }

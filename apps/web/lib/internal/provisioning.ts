@@ -17,13 +17,26 @@ export type NewTenantDetails = {
   regionCode: string;
   firmKitCode: string;
   planCode: string;
+  /** Seats sold when they differ from the plan's default; null keeps the plan's number. */
+  seatLimit: number | null;
 };
 
 export const emptyTenantDetails: NewTenantDetails = {
   accountName: "", contactName: "", contactEmail: "", organizationName: "", slug: "",
-  registeredName: "", ownerName: "", ownerEmail: "", regionCode: "AE",
-  firmKitCode: "design_build", planCode: "starter",
+  registeredName: "", ownerName: "", ownerEmail: "", regionCode: "",
+  firmKitCode: "", planCode: "", seatLimit: null,
 };
+
+/** The first published choice of each kind, so the form starts complete without assuming a country. */
+export function defaultSelections(profiles: SetupProfile[]) {
+  const first = (kind: SetupProfile["kind"]) => profiles.find((profile) => profile.kind === kind)?.code ?? "";
+  return { regionCode: first("region"), firmKitCode: first("firm_kit"), planCode: first("plan") };
+}
+
+export function planSeats(profile: SetupProfile | null) {
+  const value = profile?.configuration.seatLimit;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+}
 
 export function tenantSlug(value: string) {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
@@ -49,6 +62,7 @@ export function validateTenantDetails(input: NewTenantDetails, profiles: SetupPr
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.ownerEmail.trim())) errors.push("Enter a valid owner email.");
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.slug) || input.slug.length > 80) errors.push("Choose a valid login address.");
   if (input.registeredName.trim() && input.registeredName.trim().length < 2) errors.push("Registered name needs at least two characters.");
+  if (input.seatLimit !== null && (!Number.isInteger(input.seatLimit) || input.seatLimit < 1)) errors.push("Seats must be a whole number of at least 1.");
   for (const [kind, code] of [["region", input.regionCode], ["firm_kit", input.firmKitCode], ["plan", input.planCode]] as const) {
     if (!selectedProfile(profiles, kind, code)) errors.push(`Choose an available ${kind.replace("_", " ")}.`);
   }
@@ -89,6 +103,7 @@ export function tenantDraftPayload(input: NewTenantDetails, profiles: SetupProfi
       region: { code: region.code, version: region.version },
       firmKit: { code: firmKit.code, version: firmKit.version },
       plan: { code: plan.code, version: plan.version },
+      ...(input.seatLimit !== null && input.seatLimit !== planSeats(plan) ? { seatLimit: input.seatLimit } : {}),
     },
   };
 }

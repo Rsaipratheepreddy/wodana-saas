@@ -9,6 +9,7 @@ import { CrmLeadsService } from "../leads/crm-leads.service";
 import { CrmNotificationsService } from "../notifications/crm-notifications.service";
 import { validateAutomationDefinition } from "./automation-definition.validator";
 import { AUTOMATION_PRESETS, automationPreset, providerCapability } from "./automation-presets";
+import { chaseSettings, DEFAULT_CHASE } from "../../approvals/approval-chasers";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "./default-automation-templates";
 import { AdvanceAutomationRunDto, ApprovalDecisionDto, AutomationVersionDto, ClaimWorkspaceDto, CompleteAutomationWaitDto, CreateAutomationDto, ExecuteAutomationStepDto, StartAutomationRunDto, UpdateAutomationDto, UpdateAutomationPresetDto } from "./dto/automations.dto";
 
@@ -65,11 +66,13 @@ export class CrmAutomationsService {
           const conditions = policy?.conditions && typeof policy.conditions === "object" ? policy.conditions as Row : {};
           return {
             ...preset,
-            enabled: source?.status === "active",
-            status: source?.status ?? "not_configured",
+            // Approval reminders are on until a workspace turns them off (AU-3).
+            enabled: preset.code === "approval_reminders" && !source ? true : source?.status === "active",
+            status: source?.status ?? (preset.code === "approval_reminders" ? "active" : "not_configured"),
             version: Number(source?.version ?? 0),
             channels: Array.isArray(policy?.channels) ? policy.channels.map(String) : ["in_app"],
             weekday: typeof conditions.weekday === "string" ? conditions.weekday : "friday",
+            ...(preset.code === "approval_reminders" ? (({ remindAfterHours, escalateAfterHours }) => ({ remindAfterHours, escalateAfterHours }))(chaseSettings(policy as never)) : {}),
           };
         }),
         providers: [
@@ -110,7 +113,13 @@ export class CrmAutomationsService {
       const channels = [...new Set(input.channels?.length ? input.channels : ["in_app"])];
       if (channels.some((channel) => !preset.availableChannels.includes(channel as never)))
         throw new BadRequestException("Choose only channels supported by this smart rule");
-      const conditions = preset.code === "weekly_progress" ? { weekday: input.weekday ?? "friday" } : {};
+      const conditions = preset.code === "weekly_progress" ? { weekday: input.weekday ?? "friday" }
+        : preset.code === "approval_reminders" ? (() => {
+          const remindAfterHours = input.remindAfterHours ?? DEFAULT_CHASE.remindAfterHours;
+          const escalateAfterHours = input.escalateAfterHours ?? DEFAULT_CHASE.escalateAfterHours;
+          if (escalateAfterHours < remindAfterHours) throw new BadRequestException("Tell the owners after the reminder, not before.");
+          return { remindAfterHours, escalateAfterHours };
+        })() : {};
       const current = await client.query<Row>(`SELECT * FROM notification_policies WHERE workspace_id=$1 AND event_type=$2 ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`, [workspaceId, preset.eventType]);
       const result = current.rowCount
         ? await client.query<Row>(`UPDATE notification_policies SET name=$1,channels=$2,conditions=$3,status=$4,version=version+1 WHERE workspace_id=$5 AND id=$6 RETURNING id,event_type AS "eventType",name,channels,conditions,status,version`, [preset.name, JSON.stringify(channels), conditions, input.enabled ? "active" : "paused", workspaceId, current.rows[0].id])
@@ -352,7 +361,9 @@ export class CrmAutomationsService {
     });
   }
   async dueWorkspacesInternal() {
-    const result = await this.database.query<{ workspace_id: string }>(`SELECT * FROM list_crm_workspaces_with_due_work()`);
+    // The team inbox keeps its own due work (client files to fetch, scheduled messages) in a sibling function.
+    const result = await this.database.query<{ workspace_id: string }>(
+      `SELECT workspace_id FROM list_crm_workspaces_with_due_work() UNION SELECT workspace_id FROM list_crm_workspaces_with_due_inbox_work()`);
     return { workspaceIds: result.rows.map((row) => row.workspace_id) };
   }
   private async executeAction(client: PoolClient, run: Row, nodeType: string, configuration: Record<string, unknown>, stepKey: string, attempt: number): Promise<Row> {

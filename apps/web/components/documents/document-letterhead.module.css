@@ -1,0 +1,11 @@
+/* The issuing business's letterhead at the top and foot of a printed document. */
+.letterhead { display: grid; justify-items: start; gap: var(--wd-space-1); min-inline-size: 0; }
+.header { display: block; inline-size: 100%; max-block-size: var(--wd-space-24); object-fit: contain; }
+.logo { display: block; block-size: var(--wd-space-12); inline-size: auto; max-inline-size: 12rem; object-fit: contain; }
+.name { font-size: var(--wd-text-lg); font-weight: var(--wd-weight-semibold); }
+.line { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.footer { padding-block-start: var(--wd-space-3); border-block-start: 1px solid var(--wd-color-structural-divider); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); text-align: center; white-space: pre-line; }
+
+@media print {
+  .letterhead, .footer { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}

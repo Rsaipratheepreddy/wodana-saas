@@ -11,6 +11,7 @@ if (!["127.0.0.1", "localhost"].includes(new URL(api).hostname))
 const run = randomUUID();
 const palmFixture = process.env.WODANA_SYNTHETIC_FIXTURE === "palm";
 const palmIntakeProfile = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-crm-intake-profile.json", import.meta.url), "utf8"));
+const servicePathWorkflowFixture = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
 if (process.env.WODANA_SYNTHETIC_FIXTURE && !palmFixture)
   throw new Error("WODANA_SYNTHETIC_FIXTURE only accepts the isolated palm profile.");
 const fixture = palmFixture ? {
@@ -50,6 +51,11 @@ const reviewer = {
   "x-wodana-user-subject": `${fixture.reviewerEmailPrefix}-${run}`,
   "x-wodana-user-email": `${fixture.reviewerEmailPrefix}-${run}@wodana.invalid`,
   "x-wodana-user-name": fixture.reviewerName,
+};
+const operationsApprover = {
+  "x-wodana-user-subject": `funnel-operations-${run}`,
+  "x-wodana-user-email": `funnel-operations-${run}@wodana.invalid`,
+  "x-wodana-user-name": "Funnel Operations approver",
 };
 const internal = {
   "x-wodana-internal-token": process.env.BUSINESS_CORE_INTERNAL_TOKEN ?? "local-development-token",
@@ -202,6 +208,7 @@ const reviewerRole = await request(`/workspaces/${workspaceId}/roles`, {
       "pre_projects.edit",
       "pre_projects.review_designs",
       "commercial.approve",
+      "commercial.estimate",
       "commercial.finance.verify",
     ],
   },
@@ -299,6 +306,13 @@ if (palmFixture) {
   assert.deepEqual(configuredOptions.enquiryTypes.map(option => option.label), palmIntakeProfile.enquiryTypes.map(option => option.label));
   assert.deepEqual(configuredOptions.channels.third_party.map(option => option.label), ["PlyLeads"]);
   assert.deepEqual(configuredOptions.channels.digital_marketing.map(option => option.label), ["Palm Living", "TBD"]);
+} else {
+  await request(`/workspaces/${workspaceId}/crm/taxonomies`, {
+    body: { code: "enquiry_type", name: "Enquiry type", options: [
+      { code: "not_sure", label: "Not Sure Yet", position: 0 },
+      { code: "renovation_fit_out", label: "Renovation / Fit-Out", position: 1 },
+    ] },
+  });
 }
 
 const workflowPath = `/workspaces/${workspaceId}/projects/workflow-templates`;
@@ -344,27 +358,30 @@ assert.equal(archivedWorkflow.status, "archived");
 assert.equal(archivedWorkflow.version, 2);
 assert.equal((await request(workflowPath)).defaultTemplate.source, "built_in");
 const projectWorkflowTemplateId = randomUUID();
-const projectWorkflowStages = workflowFallback.defaultTemplate.stages.map(
+const projectWorkflowStages = palmFixture ? servicePathWorkflowFixture.stages : workflowFallback.defaultTemplate.stages.map(
   (stage, index) => ({
     ...stage,
     visibleName: index === 0 ? "Mobilisation" : stage.visibleName,
   }),
 );
+const projectWorkflowCode = palmFixture ? servicePathWorkflowFixture.code : "tenant_delivery";
+const projectFirstStageName = palmFixture ? "Deal File" : "Mobilisation";
 await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
   method: "PUT",
   body: {
     version: 0,
-    code: "tenant_delivery",
-    name: "Tenant delivery",
+    code: projectWorkflowCode,
+    name: palmFixture ? servicePathWorkflowFixture.name : "Tenant delivery",
     description: "The default frozen by new projects in this workspace.",
     isDefault: true,
     stages: projectWorkflowStages,
   },
 });
 
+// Every workspace is provisioned with a default "sales" pipeline; the smoke keeps its own next to it.
 const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
   body: {
-    code: "sales",
+    code: "smoke_sales",
     name: "Sales",
     isDefault: true,
     stages: [
@@ -376,6 +393,8 @@ const pipeline = await request(`/workspaces/${workspaceId}/crm/pipelines`, {
         forecastCategory: "pipeline",
         entryRequirements: {},
       },
+      { code: "won", name: "Won", position: 2, probability: 100, forecastCategory: "closed", entryRequirements: {} },
+      { code: "lost", name: "Lost", position: 3, probability: 0, forecastCategory: "closed", entryRequirements: {} },
     ],
   },
 });
@@ -383,7 +402,7 @@ const qualificationDraft = await request(`/workspaces/${workspaceId}/crm/qualifi
   body: {
     code: "funnel_qualification",
     name: "Funnel qualification",
-    serviceType: "not_sure",
+    serviceType: "renovation_fit_out",
     questions: [
       { key: "scope_confirmed", label: "Scope confirmed", dataType: "boolean", required: true, position: 1 },
       { key: "property_type", label: "Property type", dataType: "select", required: true, position: 2, configuration: { options: ["villa", "apartment"] } },
@@ -425,7 +444,9 @@ const publicSharedForm = await request(`/public/crm/lead-forms/${sharedForm.toke
 assert.equal(publicSharedForm.branding.displayName, fixture.workspaceName);
 assert.equal(publicSharedForm.source, undefined);
 assert.equal(publicSharedForm.channel, undefined);
-assert(publicSharedForm.questions.every((question) => question.field === undefined));
+// Core field identifiers drive the public emirate/area and phone widgets; routing metadata stays private.
+assert(publicSharedForm.questions.some((question) => question.field === "emirate"));
+assert(publicSharedForm.questions.every((question) => question.field !== "source" && question.field !== "channel"));
 assert.equal(publicSharedForm.consentLabel, "I agree to be contacted about this enquiry.");
 if (palmFixture) {
   assert.equal(publicSharedForm.questions.find(question => question.title === "Email")?.required, true);
@@ -437,6 +458,8 @@ const sharedValues = {
   displayName: "Noor Al Mansoori (synthetic shared link)",
   mobile: "+971500000001",
   email: "noor.shared-link@wodana.invalid",
+  emirate: "dubai",
+  area: "Dubai Hills",
   location: "Dubai Hills (synthetic)",
   serviceType: "not_sure",
   budgetRange: "",
@@ -482,13 +505,27 @@ await request(`/public/crm/lead-forms/${sharedForm.token}`, {
 });
 const duplicateResponses = await request(`/workspaces/${workspaceId}/crm/lead-forms/${sharedForm.id}/responses`);
 assert.equal(duplicateResponses.data.length, 2);
-const duplicateResponse = duplicateResponses.data.find(response => response.status === "duplicate_candidate");
-assert(duplicateResponse, "Repeated unverified contact must remain a duplicate candidate for review.");
+const duplicateResponse = duplicateResponses.data.find(response => response.id !== sharedResponses.data[0].id);
+assert(duplicateResponse, "The repeated contact's form response must be recorded.");
+// S-3: a likely-existing client never parks the enquiry; it is worked at once on a provisional client.
+assert.equal(duplicateResponse.status, "ready", "A repeated unverified contact must become a worked enquiry, not wait in review.");
 assert(duplicateResponse.candidateCount > 0);
 assert.equal(duplicateResponse.consentStatus, "granted");
 const duplicateIntake = await request(`/workspaces/${workspaceId}/crm/intake-events/${duplicateResponse.id}`);
-assert(duplicateIntake.candidates.length > 0);
+assert(duplicateIntake.candidates.some(candidate => candidate.status === "pending"));
 assert.deepEqual(duplicateIntake.payload.formRawAnswers, duplicateAnswers);
+const provisionalList = await request(`/workspaces/${workspaceId}/crm/leads?search=${encodeURIComponent("Noor A.")}`);
+const provisionalLead = provisionalList.data.find(candidate => candidate.partyId === duplicateIntake.resolvedPartyId);
+assert(provisionalLead, "The repeated contact's enquiry must be in the list.");
+assert(provisionalLead.clientMatches > 0, "The enquiry must carry Confirm client.");
+const provisionalDetail = await request(`/workspaces/${workspaceId}/crm/leads/${provisionalLead.id}`);
+assert(provisionalDetail.clientMatches.some(match => match.partyId === sharedLead.partyId));
+const confirmedLead = await request(`/workspaces/${workspaceId}/crm/leads/${provisionalLead.id}/confirm-client`, {
+  body: { version: provisionalDetail.version, decision: "same", partyId: sharedLead.partyId },
+});
+assert.equal(confirmedLead.partyId, sharedLead.partyId, "Confirming the client moves the enquiry onto the existing client.");
+const confirmedIntake = await request(`/workspaces/${workspaceId}/crm/intake-events/${duplicateResponse.id}`);
+assert(!confirmedIntake.candidates.some(candidate => candidate.status === "pending"));
 
 let palmSalesTeam = null;
 let staffAssignedLead = null;
@@ -525,7 +562,8 @@ if (palmFixture) {
   assert(routedQueues.find(queue => queue.id === salesQueue.id).members.some(member =>
     member.membershipId === reviewerMember.id && member.teamId === palmSalesTeam.id));
 
-  const staffName = "Staff-created Palm enquiry (synthetic)";
+  // Staff-typed names are letters and spaces (with hyphen, apostrophe, full stop).
+  const staffName = "Staff created Palm enquiry";
   const staffIntake = await request(`/workspaces/${workspaceId}/crm/intake-events`, {
     headers: { ...owner, "idempotency-key": `palm-staff-${run}`, "x-correlation-id": randomUUID() },
     body: {
@@ -541,6 +579,7 @@ if (palmFixture) {
         preferredTimezone: "Asia/Dubai",
       },
       title: staffName,
+      details: { emirate: "dubai", area: "Dubai Hills" },
       summary: "Synthetic staff-created enquiry assigned to a named eligible team owner.",
       serviceType: "not_sure",
       originalPayload: { method: "manual_staff_entry" },
@@ -674,11 +713,12 @@ const intakeBody = {
   party: {
     displayName: fixture.customerName,
     email: `client-${run}@wodana.invalid`,
-    phone: "+971501234567",
+    mobile: "+971501234567",
     preferredLocale: "en-AE",
     preferredTimezone: "Asia/Dubai",
   },
   title: fixture.enquiryTitle,
+  details: { emirate: "dubai", area: "Dubai Hills" },
   summary: fixture.enquirySummary,
   serviceType: "not_sure",
   originalPayload: { form: "generic-funnel-smoke" },
@@ -729,14 +769,24 @@ await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualify`, {
   body: initialConversion,
   expected: 422,
 });
+const selectedType = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/details`, {
+  method: "PATCH",
+  body: {
+    version: lead.version,
+    serviceType: "renovation_fit_out",
+    summary: fixture.enquirySummary,
+    party: intakeBody.party,
+    details: intakeBody.details,
+  },
+});
 await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, {
   method: "PUT",
-  body: { version: lead.version, values: { scope_confirmed: "yes", property_type: "villa" } },
+  body: { version: selectedType.version, values: { scope_confirmed: "yes", property_type: "villa" } },
   expected: 422,
 });
 const qualifiedLead = await request(`/workspaces/${workspaceId}/crm/leads/${lead.id}/qualification`, {
   method: "PUT",
-  body: { version: lead.version, values: { scope_confirmed: true, property_type: "villa" } },
+  body: { version: selectedType.version, values: { scope_confirmed: true, property_type: "villa" } },
 });
 assert.equal(qualifiedLead.qualificationState.ready, true);
 assert.equal(qualifiedLead.qualificationState.selection, "service_specific");
@@ -848,11 +898,12 @@ assert.equal(held.status, "on_hold");
 assert.equal(held.phase, "define");
 assert.equal(held.isOnHold, true);
 assert.equal(duplicateHolds[1].body.version, held.version);
-await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/rooms`, {
+const heldRoom = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/rooms`, {
   method: "PUT",
-  expected: 409,
-  body: { id: randomUUID(), version: 0, name: "Blocked while held" },
+  expected: 200,
+  body: { id: randomUUID(), version: 0, name: "Survey room while held" },
 });
+assert.equal(heldRoom.name, "Survey room while held");
 const resumed = await request(`/workspaces/${workspaceId}/pre-projects/${caseId}/lifecycle`, {
   body: { requestId: randomUUID(), version: held.version, action: "resume", reason: "Client replied" },
 });
@@ -867,39 +918,32 @@ const reopened = await request(`/workspaces/${workspaceId}/pre-projects/${caseId
 });
 assert.equal(reopened.status, "active");
 assert.equal(reopened.phase, "define");
-const plannedProject = await request(
-  `/workspaces/${workspaceId}/projects/planning`,
-  { body: { caseId } },
-);
 
-const portalSettings = await request(
-  `/workspaces/${workspaceId}/commercial/portal-settings`,
-);
-await request(`/workspaces/${workspaceId}/commercial/portal-settings`, {
-  body: {
-    version: portalSettings.version,
-    enabled: true,
-    brand: palmFixture ? {
-      ...portalSettings.brand,
-      name: "Palm Living",
-      primaryColor: palmLivingBrandFixture.secondaryColor,
-      accentColor: palmLivingBrandFixture.primaryColor,
-      layout: "minimal",
-    } : portalSettings.brand,
-  },
+// The client portal is switched on in Settings → Client portal; its brand is the tenant's own (Appearance).
+const portalPath = `/workspaces/${workspaceId}/client-portal`;
+const portalSettings = await request(`${portalPath}/settings`);
+assert.equal(portalSettings.canManage, true);
+assert.equal(portalSettings.demo, true, "The isolated smoke signs clients in with local test codes only.");
+const enabledPortal = await request(`${portalPath}/settings`, {
+  body: { version: portalSettings.settings.version, enabled: true },
   method: "PUT",
+  expected: 200,
 });
+assert.equal(enabledPortal.settings.enabled, true);
 const commercialPath = `/workspaces/${workspaceId}/commercial/cases/${caseId}`;
-const mobile = `+9715${String(Math.floor(10_000_000 + Math.random() * 89_999_999))}`;
-await request(`${commercialPath}/contacts`, {
+// A real UAE mobile (050 …): staff-saved contacts must be valid mobiles of their country.
+const mobile = `+97150${String(Math.floor(1_000_000 + Math.random() * 8_999_999))}`;
+const portalContacts = await request(`${portalPath}/cases/${caseId}/contacts`, {
   body: {
-    name: fixture.customerName,
+    name: fixture.customerName.replace(/\s*\([^)]*\)/g, ""),
     phone: mobile,
     role: "approver",
     testContact: true,
   },
   method: "PUT",
+  expected: 200,
 });
+assert(portalContacts.contacts.some((contact) => contact.phone === mobile && contact.role === "approver" && contact.testContact));
 
 const roomId = randomUUID();
 const scopeId = randomUUID();
@@ -910,9 +954,16 @@ const designVersionId = randomUUID();
 const measurementId = randomUUID();
 const dimensionId = randomUUID();
 const contentPath = `/workspaces/${workspaceId}/pre-projects/${caseId}`;
+const deliveryCatalogId=randomUUID(),catalogRoomId=randomUUID(),catalogUnitId=randomUUID(),catalogWorkId=randomUUID();
+await request(`/workspaces/${workspaceId}/catalog/collections`,{body:{id:deliveryCatalogId,name:'Synthetic delivery catalog',description:'Isolated source traceability acceptance',starter:false}});
+const catalogRecord=(id,kind,code,name,links=[])=>({id,catalogId:deliveryCatalogId,version:0,kind,code,name,description:'Synthetic local acceptance record',market:'CUSTOM',aliases:[],attributes:[],sizes:[],sources:[],links,specificationStatus:'workspace_verified',dimension:kind==='unit'?'count':'none',...(kind==='unit'?{baseFactor:1}:{})});
+const catalogRoom=catalogRecord(catalogRoomId,'room','DELIVERY_ROOM','Primary bedroom');
+const catalogUnit=catalogRecord(catalogUnitId,'unit','DELIVERY_NOS','Number');
+const catalogWork=catalogRecord(catalogWorkId,'work','DELIVERY_WARDROBE','Built-in wardrobe',[{relation:'unit',targetId:catalogUnitId},{relation:'room',targetId:catalogRoomId}]);
+for(const record of [catalogRoom,catalogUnit,catalogWork]) await request(`/workspaces/${workspaceId}/catalog/records`,{method:'PUT',body:record});
 
 await request(`${contentPath}/rooms`, {
-  body: { id: roomId, version: 0, name: "Primary bedroom" },
+  body: { id: roomId, version: 0, name: "Primary bedroom", catalogRecordId:catalogRoomId },
   method: "PUT",
 });
 await request(`${contentPath}/entries`, {
@@ -933,7 +984,7 @@ await request(`${contentPath}/entries`, {
     avoid: "",
     source: "client",
     assetIds: [],
-    catalogLinks: [],
+    catalogLinks: [{role:'work',recordId:catalogWorkId}],
   },
   method: "PUT",
 });
@@ -944,7 +995,7 @@ assert.deepEqual(
   incompleteReadiness.nextActions.map((next) => next.code),
   [
     "ADD_SITE_PLAN",
-    "COMPLETE_DEFINITION",
+    "PUBLISH_DEFINITION",
     "CREATE_SPECIFICATION",
     "RECORD_MEASUREMENT",
     "LINK_DESIGN_REVISION",
@@ -952,7 +1003,7 @@ assert.deepEqual(
 );
 
 const png = readFileSync(
-  new URL("../../../apps/web/public/brand/wodana/woddy-mark-v4.png", import.meta.url),
+  new URL("../../../apps/web/public/brand/logo/wodana-icon.png", import.meta.url),
 );
 const form = new FormData();
 form.append("file", new Blob([png], { type: "image/png" }), "funnel-plan.png");
@@ -1105,8 +1156,12 @@ const definitionReplay = await request(`${contentPath}/definition-baselines`, {
 assert.equal(definitionReplay.id, definitionBaseline.id);
 assert.equal(definitionReplay.replayed, true);
 
+// The client signs in with a code (the local test contact always gets 123456) and decides with a fresh
+// code bound to the exact record and choice ("definition:<case>:<baseline>:accept").
+const portalSite = await request(`/client-portal/${slug}/site`, { headers: {} });
+assert.equal(portalSite.slug, slug);
 const loginChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: { phone: mobile, purpose: "login" },
+  body: { phone: mobile },
   headers: {},
 });
 const clientToken = (
@@ -1115,36 +1170,32 @@ const clientToken = (
     headers: {},
   })
 ).token;
+assert(clientToken, "The client portal must open a session.");
 const clientHeaders = { authorization: `Bearer ${clientToken}` };
-const definitionPortal = await request(`/client-portal/${slug}/data`, {
+async function portalDecision(action, purpose, body) {
+  const challenge = await request(`/client-portal/${slug}/challenge`, {
+    body: { purpose },
+    headers: clientHeaders,
+  });
+  const command = { commandId: randomUUID(), action, caseId, ...body, challengeId: challenge.challengeId, code: "123456" };
+  const result = await request(`/client-portal/${slug}/command`, { body: command, headers: clientHeaders });
+  assert.equal(result.ok, true);
+  return { command, result };
+}
+const definitionPortal = await request(`/client-portal/${slug}/view`, {
   headers: clientHeaders,
 });
-const portalBaseline = definitionPortal.cases.find((item) => item.id === caseId).definitionBaseline;
+const portalBaseline = definitionPortal.projects.find((item) => item.id === caseId).decisions.definition;
 assert.equal(portalBaseline.id, definitionBaseline.id);
 assert.equal(portalBaseline.canDecide, true);
 assert.equal(JSON.stringify(portalBaseline).includes("objectKey"), false);
-const definitionChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: {
-    phone: mobile,
-    purpose: `definition-decision:${caseId}:${definitionBaseline.id}:accept`,
-  },
-  headers: clientHeaders,
-});
-const definitionDecision = {
-  caseId,
-  action: "definition-decision",
-  baselineId: definitionBaseline.id,
-  decision: "accept",
-  note: "",
-  challengeId: definitionChallenge.challengeId,
-  code: "123456",
-};
-await request(`/client-portal/${slug}/action`, {
-  body: definitionDecision,
-  headers: clientHeaders,
-});
-const definitionDecisionReplay = await request(`/client-portal/${slug}/action`, {
-  body: definitionDecision,
+const definitionDecision = await portalDecision(
+  "definition_decision",
+  `definition:${caseId}:${definitionBaseline.id}:accept`,
+  { baselineId: definitionBaseline.id, decision: "accept", note: "" },
+);
+const definitionDecisionReplay = await request(`/client-portal/${slug}/command`, {
+  body: definitionDecision.command,
   headers: clientHeaders,
 });
 assert.equal(definitionDecisionReplay.replayed, true);
@@ -1214,25 +1265,11 @@ const replacementBaseline = await request(`${contentPath}/definition-baselines`,
 });
 assert.equal(replacementBaseline.number, 2);
 assert.equal(replacementBaseline.supersedesId, definitionBaseline.id);
-const replacementChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: {
-    phone: mobile,
-    purpose: `definition-decision:${caseId}:${replacementBaseline.id}:accept`,
-  },
-  headers: clientHeaders,
-});
-await request(`/client-portal/${slug}/action`, {
-  body: {
-    caseId,
-    action: "definition-decision",
-    baselineId: replacementBaseline.id,
-    decision: "accept",
-    note: "",
-    challengeId: replacementChallenge.challengeId,
-    code: "123456",
-  },
-  headers: clientHeaders,
-});
+await portalDecision(
+  "definition_decision",
+  `definition:${caseId}:${replacementBaseline.id}:accept`,
+  { baselineId: replacementBaseline.id, decision: "accept", note: "" },
+);
 const preparationReadiness = await request(`${contentPath}/readiness?target=pricing`);
 assert.equal(preparationReadiness.ready, true);
 assert.equal(preparationReadiness.summary.evaluatedItemCount, 1);
@@ -1254,6 +1291,10 @@ async function commercial(action, body = {}, headers = owner) {
   });
 }
 
+if (palmFixture) await commercial("set_service_path", { scope: {
+  design: false, mainQuotation: true, materialSelection: false, procurement: true,
+  manufacturing: false, siteWorks: false, installation: true,
+} });
 quoteId = (await commercial("create")).data.quotes[0].id;
 let commercialState = await request(commercialPath);
 const composerPath = `${commercialPath}/quotation-proposals`;
@@ -1267,7 +1308,7 @@ const composerInput = {
 const scopeProposal = await request(composerPath, { body: composerInput });
 assert.equal(scopeProposal.run.proposal.items.length, 1);
 assert.equal(scopeProposal.run.proposal.coverage.linkedSourceIds[0], scopeId);
-assert.equal(scopeProposal.run.duplicates.length, 1);
+assert.equal(scopeProposal.run.duplicates.length, 0);
 const proposalReplay = await request(composerPath, { body: composerInput });
 assert.equal(proposalReplay.replayed, true);
 assert.equal(proposalReplay.run.id, scopeProposal.run.id);
@@ -1281,8 +1322,8 @@ const appliedProposal = await request(
   `${composerPath}/${scopeProposal.run.id}/apply`,
   { body: applyInput },
 );
-assert.equal(appliedProposal.addedItemIds.length, 0);
-assert.equal(appliedProposal.skippedDuplicateItemIds.length, 1);
+assert.equal(appliedProposal.addedItemIds.length, 1);
+assert.equal(appliedProposal.skippedDuplicateItemIds.length, 0);
 const appliedReplay = await request(
   `${composerPath}/${scopeProposal.run.id}/apply`,
   { body: applyInput },
@@ -1306,6 +1347,7 @@ Object.assign(quote.lines[0], {
   finish: "",
   unitCost: 400,
   rate: 750,
+  catalogPriceRequest: { action: 'override', reason: 'Synthetic negotiated wardrobe price including installation' },
 });
 quote.taxRate = 5;
 quote.paymentTerms = [
@@ -1335,27 +1377,18 @@ assert.deepEqual(
     hash: replacementBaseline.snapshotHash,
   },
 );
-await commercial("approve");
+await commercial(palmFixture ? "qs_approve" : "approve", {}, palmFixture ? reviewer : owner);
 commercialState = await request(commercialPath);
 const approverId = commercialState.contacts.find((contact) => contact.phone === mobile).id;
 await commercial("issue", { approverId });
 
-const decisionChallenge = await request(`/client-portal/${slug}/challenge`, {
-  body: { phone: mobile, purpose: `decision:${caseId}:${quoteId}:accept` },
-  headers: clientHeaders,
+const issuedInPortal = (await request(`/client-portal/${slug}/view`, { headers: clientHeaders }))
+  .projects.find((item) => item.id === caseId).decisions.quotes.find((item) => item.id === quoteId);
+assert.equal(issuedInPortal.canDecide, true);
+await portalDecision("quote_decision", `quote:${caseId}:${quoteId}:accept`, {
+  quoteId, decision: "accept", selectedOptionLineIds: [], note: "", hash: issuedInPortal.hash,
 });
-await request(`/client-portal/${slug}/action`, {
-  body: {
-    caseId,
-    action: "decision",
-    quoteId,
-    decision: "accept",
-    note: "",
-    challengeId: decisionChallenge.challengeId,
-    code: "123456",
-  },
-  headers: clientHeaders,
-});
+assert.equal((await request(commercialPath)).data.quotes.find((candidate) => candidate.id === quoteId).status, "accepted");
 
 await commercial("agreement", {
   quoteId,
@@ -1373,8 +1406,22 @@ await commercial("report_payment_receipt", {
   evidence: "Synthetic local-only bank receipt evidence; no provider or real payment.",
 });
 await commercial("verify_payment", { paymentId: releasePayment.id }, reviewer);
+const wonCandidate = await request(`/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`);
+await request(`/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}/transition`, {
+  body: { version: wonCandidate.version, stageId: pipeline.stages.find(stage => stage.code === "won").id, status: "won", reason: "Client accepted the synthetic quotation." },
+});
+if (palmFixture) {
+  await request(`/workspaces/${workspaceId}/roles`, {
+    body: { code: "uat_sales_submitter", name: "UAT Sales submitter", permissionCodes: ["pre_projects.view", "pre_projects.edit"] },
+  });
+}
+const opsInvitation = await request(`/workspaces/${workspaceId}/invitations`, {
+  body: { email: operationsApprover["x-wodana-user-email"], roleCodes: palmFixture ? ["operations_approver", "uat_sales_submitter"] : ["operations_approver"] },
+});
+await request(`/workspaces/invitations/${opsInvitation.id}/accept`, { headers: operationsApprover, method: "POST" });
 await commercial("submit_owner_review", {
-  commission: 0,
+  commissionLines: [{ recipientName: "Synthetic Sales", type: "sales", basis: "amount", value: 10 }],
+  paymentProofUrl: "https://example.com/synthetic-payment-proof",
   checklist: {
     agreement: true,
     boq: true,
@@ -1384,413 +1431,48 @@ await commercial("submit_owner_review", {
     payment: true,
   },
   note: "Accepted scope and commercial evidence checked.",
-});
+}, palmFixture ? operationsApprover : owner);
+await commercial("review_deal_finance", {
+  decision: "confirm",
+  paymentVerified: true,
+  commissionLines: [{ recipientName: "Synthetic Sales", type: "sales", basis: "amount", value: 10 }],
+  note: "Synthetic payment evidence and commission checked.",
+}, reviewer);
 await commercial(
   "decide_owner_review",
-  { decision: "approve", note: "Independent owner review complete." },
-  reviewer,
+  { decision: "approve", note: "Independent Operations review complete." },
+  palmFixture ? owner : operationsApprover,
 );
-const released = await commercial("release", {
-  note: "Approved for delivery planning.",
-});
-const projectId = released.data.release.projectId;
+// The project starts from the accepted quotation (Start project); its scope is sealed there.
+const startPath = `/workspaces/${workspaceId}/project-core/start/${caseId}`;
+const readiness = await request(startPath);
+assert.equal(readiness.quote.id, quoteId);
+assert(readiness.canStart, `Start rules must pass: ${JSON.stringify(readiness.checks)}`);
+const started = await request(startPath, { body: { quoteId, leadMembershipId: ownerMember.id, name: fixture.opportunityTitle } });
+const projectId = started.projectId;
 assert(projectId);
-assert.equal(projectId, plannedProject.id);
-
 commercialState = await request(commercialPath);
-const project = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-);
-const releasedLine = project.data.scope.lines[0];
-assert.equal(project.caseId, caseId);
-assert.deepEqual(project.sites, []);
-assert.equal(project.data.initiation.status, "not_started");
-assert.equal(project.data.initiation.commercial.quoteId, quoteId);
-assert.equal(project.data.initiation.commercial.dealFileId, commercialState.data.dealFile.id);
-assert.equal(project.data.scope.quoteId, quoteId);
-assert.equal(project.data.scope.quoteHash, commercialState.data.dealFile.quoteHash);
-assert.equal(project.data.scope.dealFileId, commercialState.data.dealFile.id);
-assert.equal(project.data.scope.releaseId, commercialState.data.release.id);
-assert.deepEqual(
-  project.data.scope.definitionBaseline,
-  commercialState.data.dealFile.definitionBaseline,
-);
-assert.equal(releasedLine.id, quote.lines[0].id);
-assert.equal(releasedLine.sourceScopeId, scopeId);
-assert.equal(releasedLine.sourceScopeVersion, quote.lines[0].scopeVersion);
-assert.equal(releasedLine.sourceSpecificationVersion, 4);
-assert.equal(releasedLine.rate, 750);
-assert.equal(releasedLine.lineTotal, 1500);
-assert.equal("unitCost" in releasedLine, false);
-assert.equal("photo" in releasedLine, false);
-assert.equal(project.data.workflow.template.id, projectWorkflowTemplateId);
-assert.equal(project.data.workflow.template.version, 1);
-assert.equal(project.data.workflow.template.stages[0].visibleName, "Mobilisation");
-
-await request(`${workflowPath}/${projectWorkflowTemplateId}`, {
-  method: "PUT",
-  body: {
-    version: 1,
-    code: "tenant_delivery",
-    name: "Tenant delivery",
-    description: "Updated for future projects only.",
-    isDefault: true,
-    stages: projectWorkflowStages.map((stage, index) => ({
-      ...stage,
-      visibleName: index === 0 ? "Future planning" : stage.visibleName,
-    })),
-  },
-});
-assert.equal(
-  (
-    await request(
-      `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-    )
-  ).data.workflow.template.stages[0].visibleName,
-  "Mobilisation",
-);
-
-async function projectCommand(action, body = {}, expected = 201) {
-  const state = await request(
-    `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-  );
-  return request(
-    `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-    {
-      expected,
-      body: {
-        action,
-        revision: state.data.revision,
-        requestId: randomUUID(),
-        ...body,
-      },
-    },
-  );
-}
-
-const initiationDay = new Date().toISOString().slice(0, 10);
-await projectCommand("project_initiation", {
-  initiation: {
-    projectOwnerId: ownerMember.id,
-    teamMemberIds: [ownerMember.id],
-    roleAssignments: [{ role: "project_manager", memberId: ownerMember.id }],
-    siteReadiness: "to_confirm",
-    siteIds: [],
-    objective: "Deliver the accepted design and scope.",
-    clientPromise: "Confirm the site plan before mobilising.",
-    clientContactName: "QA contact",
-    clientContactPhone: "",
-    clientContactEmail: "",
-    accessNotes: "Site access remains to be confirmed.",
-    operationalStart: initiationDay,
-    targetCompletion: initiationDay,
-    handoverDate: "",
-  },
-});
-const initiated = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-assert.equal(initiated.data.initiation.status, "confirmed");
-assert.equal(initiated.data.initiation.baseline.projectOwnerId, ownerMember.id);
-assert.equal(initiated.data.initiation.commercial.quoteId, quoteId);
-await projectCommand("project_roles", {
-  assignments: [{ role: "project_manager", memberId: reviewerMember.id }],
-}, 409);
-await projectCommand("project_roles", {
-  assignments: [{ role: "project_manager", memberId: ownerMember.id }],
-});
-const designResourceId = randomUUID();
-await projectCommand("resource", {
-  resource: {
-    id: designResourceId,
-    name: "Design Team",
-    kind: "crew",
-    members: [ownerMember.id],
-    active: true,
-    businessUnitId: designUnit.id,
-    capacityMode: "exclusive",
-    capacity: 1,
-    timezone: "Asia/Dubai",
-    calendar: {
-      weekdays: [1, 2, 3, 4, 5],
-      startTime: "08:00",
-      endTime: "18:00",
-      holidays: [],
-    },
-  },
-});
-const deliveryTaskId = randomUUID();
-await projectCommand("task", {
-  task: {
-    id: deliveryTaskId,
-    parentId: "",
-    package: "Delivery planning",
-    title: "Coordinate accepted scope",
-    description: "API workflow transition fixture.",
-    area: "Project-wide",
-    location: "office",
-    ownerId: ownerMember.id,
-    assigneeIds: [],
-    resourceId: designResourceId,
-    start: "2026-09-16",
-    end: "2026-09-17",
-    predecessors: [],
-    quantity: 1,
-    unit: "item",
-    weight: 1,
-    priority: "normal",
-    inspectionRequired: false,
-    scopeIds: [releasedLine.id],
-    drawingId: "",
-    readiness: { scope: true, access: true, materials: true },
-  },
-});
-await projectCommand("milestone", {
-  milestone: {
-    id: randomUUID(),
-    title: "Design coordination complete",
-    dueDate: "2026-09-17",
-    ownerId: ownerMember.id,
-    taskIds: [deliveryTaskId],
-    visibleToClient: true,
-  },
-});
-let scheduleState = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/execution`,
-);
-const bookingRequestId = randomUUID();
-const bookingInput = {
-  taskId: deliveryTaskId,
-  status: "confirmed",
-  units: 1,
-  startTime: "09:00",
-  endTime: "12:00",
-  note: "Design capacity confirmed for delivery planning.",
-};
-const bookingPreview = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: bookingInput },
-);
-assert.equal(bookingPreview.canConfirm, true);
-assert.equal(bookingPreview.blockers.length, 0);
-const savedBooking = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings`,
-  {
-    method: "PUT",
-    body: {
-      ...bookingInput,
-      projectRevision: scheduleState.data.revision,
-      bookingVersion: 0,
-      requestId: bookingRequestId,
-    },
-  },
-);
-assert.equal(savedBooking.status, "confirmed");
-assert.equal(savedBooking.version, 1);
-assert.equal(
-  (
-    await request(`/workspaces/${workspaceId}/projects/${projectId}/bookings`, {
-      method: "PUT",
-      body: {
-        ...bookingInput,
-        projectRevision: scheduleState.data.revision,
-        bookingVersion: 0,
-        requestId: bookingRequestId,
-      },
-    })
-  ).id,
-  savedBooking.id,
-);
-const availability = await request(
-  `/workspaces/${workspaceId}/projects/schedule/availability?from=2026-09-16&to=2026-09-17&businessUnitId=${designUnit.id}`,
-);
-assert.equal(availability.resources.length, 1);
-assert(availability.availability[0].segments.some((segment) =>
-  segment.confirmed === 1 && segment.remaining === 0));
-const projectCalendar = await request(
-  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&businessUnitId=${designUnit.id}`,
-);
-assert.equal(projectCalendar.events.length, 2);
-assert(projectCalendar.events.every((event) => event.department.color === "#DC2626"));
-assert(projectCalendar.items.some((item) => item.kind === "milestone" && item.projectId === projectId));
-const alternateResourceId = randomUUID();
-await projectCommand("resource", {
-  resource: {
-    id: alternateResourceId,
-    name: "Alternate Design Team",
-    kind: "crew",
-    members: [ownerMember.id],
-    active: true,
-    businessUnitId: designUnit.id,
-    capacityMode: "exclusive",
-    capacity: 1,
-    timezone: "Asia/Dubai",
-    calendar: {
-      weekdays: [1, 2, 3, 4, 5],
-      startTime: "08:00",
-      endTime: "18:00",
-      holidays: [],
-    },
-  },
-});
-const overlappingTaskId = randomUUID();
-await projectCommand("task", {
-  task: {
-    id: overlappingTaskId,
-    parentId: "",
-    package: "Delivery planning",
-    title: "Overlapping design review",
-    description: "Confirms member-level capacity across two crews.",
-    area: "Project-wide",
-    location: "office",
-    ownerId: ownerMember.id,
-    assigneeIds: [],
-    resourceId: alternateResourceId,
-    start: "2026-09-16",
-    end: "2026-09-17",
-    predecessors: [],
-    quantity: 1,
-    unit: "item",
-    weight: 1,
-    priority: "normal",
-    inspectionRequired: false,
-    scopeIds: [releasedLine.id],
-    drawingId: "",
-    readiness: { scope: true, access: true, materials: true },
-  },
-});
-const hardConflict = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: { taskId: overlappingTaskId, status: "confirmed", startTime: "10:00", endTime: "11:00" } },
-);
-assert.equal(hardConflict.canConfirm, false);
-assert(hardConflict.blockers.some((message) => message.includes("team member")));
-const tentativePreview = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: { taskId: overlappingTaskId, status: "tentative", startTime: "10:00", endTime: "11:00" } },
-);
-assert.equal(tentativePreview.blockers.length, 0);
-assert(tentativePreview.warnings.some((message) => message.includes("team member")));
-scheduleState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-const tentativeBooking = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings`,
-  {
-    method: "PUT",
-    body: {
-      taskId: overlappingTaskId,
-      status: "tentative",
-      startTime: "10:00",
-      endTime: "11:00",
-      note: "Awaiting final design allocation.",
-      units: 1,
-      projectRevision: scheduleState.data.revision,
-      bookingVersion: 0,
-      requestId: randomUUID(),
-    },
-  },
-);
-assert.equal(tentativeBooking.status, "tentative");
-const activeCalendar = await request(
-  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&bookingStatus=active`,
-);
-assert.equal(activeCalendar.events.length, 4);
-assert(activeCalendar.events.some((event) => event.bookingStatus === "tentative"));
-const cancelledTentative = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/${overlappingTaskId}/cancel`,
-  {
-    body: {
-      bookingVersion: tentativeBooking.version,
-      requestId: randomUUID(),
-      reason: "Design allocation changed after capacity review.",
-    },
-  },
-);
-assert.equal(cancelledTentative.status, "cancelled");
-let workflowState = await projectCommand("workflow_transition", {
-  toStageKey: "delivery",
-  note: "Delivery plan and ownership reviewed.",
-});
-assert.equal(workflowState.data.workflow.currentStageKey, "delivery");
-assert.equal(workflowState.data.workflow.history.at(-1).action, "advanced");
-
-workflowState = await projectCommand("project_controls", {
-  controls: {
-    ...workflowState.data.controls,
-    onHold: true,
-    holdReason: "Awaiting client access",
-    holdOwnerId: ownerMember.id,
-  },
-});
-assert.equal(workflowState.data.holdHistory.at(-1).action, "placed");
-const holdPreview = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/preview`,
-  { body: { taskId: overlappingTaskId, status: "confirmed", startTime: "10:00", endTime: "11:00" } },
-);
-assert(holdPreview.blockers.some((message) => message.includes("project hold")));
-await projectCommand(
-  "workflow_transition",
-  { toStageKey: "handover", note: "" },
-  409,
-);
-workflowState = await projectCommand("project_controls", {
-  controls: {
-    ...workflowState.data.controls,
-    onHold: false,
-    holdReason: "",
-    holdOwnerId: "",
-  },
-});
-assert.equal(workflowState.data.holdHistory.at(-1).action, "released");
-assert.equal(
-  workflowState.data.holdHistory.at(-1).reason,
-  "Awaiting client access",
-);
-
-const releasedBooking = await request(
-  `/workspaces/${workspaceId}/projects/${projectId}/bookings/${deliveryTaskId}/cancel`,
-  {
-    body: {
-      bookingVersion: savedBooking.version,
-      requestId: randomUUID(),
-      reason: "Release capacity before the concurrency check.",
-    },
-  },
-);
-assert.equal(releasedBooking.status, "cancelled");
-scheduleState = await request(`/workspaces/${workspaceId}/projects/${projectId}/execution`);
-const parallelConfirm = (taskId) => fetch(
-  `${api}/workspaces/${workspaceId}/projects/${projectId}/bookings`,
-  {
-    method: "PUT",
-    headers: { ...owner, "content-type": "application/json" },
-    body: JSON.stringify({
-      taskId,
-      status: "confirmed",
-      units: 1,
-      startTime: "10:00",
-      endTime: "11:00",
-      note: "Concurrent capacity verification.",
-      projectRevision: scheduleState.data.revision,
-      bookingVersion: 0,
-      requestId: randomUUID(),
-    }),
-  },
-);
-const parallelResults = await Promise.all([
-  parallelConfirm(deliveryTaskId),
-  parallelConfirm(overlappingTaskId),
-]);
-assert.deepEqual(parallelResults.map((response) => response.status).sort(), [200, 409]);
-const confirmedResponse = parallelResults.find((response) => response.status === 200);
-assert(confirmedResponse);
-const concurrentlyConfirmed = await confirmedResponse.json();
-await projectCommand("task_status", {
-  id: concurrentlyConfirmed.taskId,
-  status: "cancelled",
-  note: "Cancellation verifies task and booking lifecycle stay aligned.",
-});
-const calendarAfterTaskCancellation = await request(
-  `/workspaces/${workspaceId}/projects/calendar?from=2026-09-16&to=2026-09-17&bookingStatus=active`,
-);
-assert.equal(calendarAfterTaskCancellation.events.length, 0);
+const projectDetail = await request(`/workspaces/${workspaceId}/project-core/projects/${projectId}`);
+assert.match(projectDetail.project.reference, /^PRJ-\d{4}$/);
+assert.equal(projectDetail.stages[0].status, "current");
+const liveScope = await request(`/workspaces/${workspaceId}/project-core/projects/${projectId}/scope`);
+assert.equal(liveScope.lines.length, liveScope.seals.length ? liveScope.lines.length : 0);
+assert(liveScope.lines.length > 0);
+const sealPath = `/workspaces/${workspaceId}/project-core/projects/${projectId}/seals/${liveScope.seals[0].id}`;
+const sealed = await request(sealPath);
+assert.equal(sealed.intact, true);
+const sealedLine = sealed.snapshot.lines[0];
+assert.equal(sealedLine.id, quote.lines[0].id);
+assert.equal(Number(sealedLine.rate), 750);
+assert.equal(Number(sealedLine.net), 1500);
+assert.equal("unitCost" in sealedLine, false);
+// Editing the reusable master must not rewrite the captured requirement or the sealed scope.
+await request(`/workspaces/${workspaceId}/catalog/records`,{method:'PUT',body:{...catalogWork,version:1,name:'Updated master wardrobe'}});
+const capturedSpecification=await request(`${contentPath}/specifications/${scopeId}`);
+assert(capturedSpecification.items[0].requirement.catalogLinks.some(link=>link.recordId===catalogWorkId&&link.snapshot.name==='Built-in wardrobe'));
+const afterCatalogEdit=await request(sealPath);
+assert.deepEqual(afterCatalogEdit.snapshot,sealed.snapshot);
+assert.equal(afterCatalogEdit.contentHash,sealed.contentHash);
 
 const linkedOpportunity = await request(
   `/workspaces/${workspaceId}/crm/opportunities/${opportunity.id}`,
@@ -1798,16 +1480,11 @@ const linkedOpportunity = await request(
 assert.equal(linkedOpportunity.lead_id ?? linkedOpportunity.leadId, lead.id);
 assert.equal(linkedOpportunity.projectLink.projectId, projectId);
 assert.equal((await request(`/workspaces/${workspaceId}/pre-projects/${caseId}`)).status, "released");
-assert.equal(
-  (await request(`/workspaces/${workspaceId}/projects/from-pre-project`, {
-    body: { caseId },
-  })).id,
-  projectId,
-);
+assert.deepEqual(await request(startPath, { body: { quoteId, leadMembershipId: ownerMember.id } }), { projectId, existing: true });
 
 const changeCreated = await commercial("create_change_case", {
   kind: "replacement",
-  sourceLineIds: [releasedLine.id],
+  sourceLineIds: [sealedLine.id],
   title: "Replace the approved wardrobe",
   detail: "Use the newly selected finish while preserving the accepted history.",
   owner: fixture.ownerName,
@@ -1817,22 +1494,24 @@ const changeId = changeCreated.data.requests.at(-1).id;
 const changeAssessed = await commercial("assess_change_case", { requestId: changeId });
 const impact = changeAssessed.data.requests.find((item) => item.id === changeId).control.impact;
 assert.equal(impact.projectId, projectId);
-assert(impact.targets.length > 0);
+// The new project has no packages or orders yet (they arrive with the Scope phase), so nothing is affected.
+assert(Array.isArray(impact.targets));
 const dispositions = impact.targets.map((target) => ({
   targetKind: target.kind,
   targetId: target.id,
   action: "hold_and_replan",
   note: "Pause this affected record and replan after client acceptance.",
 }));
-await commercial("set_change_dispositions", { requestId: changeId, dispositions });
+if (dispositions.length) await commercial("set_change_dispositions", { requestId: changeId, dispositions });
 const changePrepared = await commercial("prepare_change_variations", { requestId: changeId });
 const controlled = changePrepared.data.requests.find((item) => item.id === changeId).control;
 assert.equal(controlled.quoteIds.length, 2);
 assert.deepEqual(controlled.quoteIds.map((id) => changePrepared.data.quotes.find((quote) => quote.id === id).direction), ["deduction", "addition"]);
 
 const jobs = await request(`/workspaces/${workspaceId}/jobs`);
-assert.equal(jobs.total, palmFixture ? 3 : 2);
-assert.equal(jobs.items.length, palmFixture ? 3 : 2);
+// The repeated form contact is a worked enquiry of its own now (S-3), so it has a Job too.
+assert.equal(jobs.total, palmFixture ? 4 : 3);
+assert.equal(jobs.items.length, palmFixture ? 4 : 3);
 assert(jobs.items.every((item) => /^J-\d{6,}$/.test(item.reference)));
 const projectJobSummary = jobs.items.find((item) => item.links.some((link) => link.type === "project" && link.id === projectId));
 const sharedJobSummary = jobs.items.find((item) => item.links.some((link) => link.type === "enquiry" && link.id === sharedLead.enquiryId));
@@ -1897,7 +1576,7 @@ assert.deepEqual(
 );
 assert(reviewerSearch.items.some((item) => item.kind === "room" && item.id === roomId));
 assert(reviewerSearch.items.some((item) => item.kind === "quotation" && item.id === quoteId));
-assert.equal((await rawRequest(`/workspaces/${workspaceId}/projects/${projectId}/execution`, { headers: reviewer, method: "GET" })).status, 403);
+assert([403, 404].includes((await rawRequest(`/workspaces/${workspaceId}/project-core/projects/${projectId}`, { headers: reviewer, method: "GET" })).status));
 assert.equal((await rawRequest(`/workspaces/${workspaceId}/pre-projects/${caseId}/brief`, { headers: reviewer, method: "GET" })).status, 200);
 
 await request(`/workspaces/${workspaceId}/teams/${reviewerTeam.id}/archive`, {
@@ -1926,7 +1605,7 @@ for (const [person, roleCode, permissionCodes] of [
   await request(`/workspaces/invitations/${invite.id}/accept`, { headers: person, method: "POST" });
 }
 const viewerJobs = await request(`/workspaces/${workspaceId}/jobs`, { headers: jobViewer });
-assert.equal(viewerJobs.total, palmFixture ? 3 : 2);
+assert.equal(viewerJobs.total, palmFixture ? 4 : 3);
 const viewerProjectJob = viewerJobs.items.find((item) => item.jobId === projectJobSummary.jobId);
 assert(viewerProjectJob);
 assert.deepEqual(viewerProjectJob.links.map((link) => link.type).sort(), ["enquiry", "lead"]);
@@ -1962,8 +1641,8 @@ if (process.env.DATABASE_URL) {
       "SELECT id,reference FROM job_identities WHERE workspace_id=$1",
       [workspaceId],
     );
-    assert.equal(jobs.rowCount, palmFixture ? 3 : 2,
-      "the shared-link, staff-created Palm enquiry, and qualified enquiry must each retain a Job");
+    assert.equal(jobs.rowCount, palmFixture ? 4 : 3,
+      "the shared-link, repeated-contact, staff-created Palm and qualified enquiries must each retain a Job");
     assert(jobs.rows.every((row) => /^J-\d{6,}$/.test(row.reference)));
     const projectJob = await database.query(
       `SELECT job_id FROM job_identity_links

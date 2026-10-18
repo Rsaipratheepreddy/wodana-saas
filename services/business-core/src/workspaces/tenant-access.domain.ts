@@ -14,6 +14,19 @@ export type AccessEntitlement = {
   modules: readonly string[];
 } | null;
 
+export function effectiveTenantPermissionCodes(input: {
+  status: string;
+  grantedPermissions: readonly string[];
+  entitlements: AccessEntitlement;
+}) {
+  if (input.status !== "active") return [];
+  const entitledModules = input.entitlements
+    ? new Set(input.entitlements.status === "active" ? ["workspace", ...input.entitlements.modules] : ["workspace"])
+    : null;
+  return [...new Set(input.grantedPermissions)].sort().filter((permission) =>
+    !entitledModules || entitledModules.has(tenantModuleForPermission(permission)));
+}
+
 export function explainTenantMemberAccess(input: {
   status: string;
   directRoles: DirectRoleSource[];
@@ -21,13 +34,7 @@ export function explainTenantMemberAccess(input: {
   grantedPermissions: string[];
   entitlements: AccessEntitlement;
 }) {
-  const entitledModules = input.entitlements
-    ? new Set(input.entitlements.status === "active" ? ["workspace", ...input.entitlements.modules] : ["workspace"])
-    : null;
-  const effectivePermissions = input.status === "active"
-    ? [...new Set(input.grantedPermissions)].sort().filter((permission) =>
-        !entitledModules || entitledModules.has(tenantModuleForPermission(permission)))
-    : [];
+  const effectivePermissions = effectiveTenantPermissionCodes(input);
   const effectiveModules = [...new Set(effectivePermissions.map(tenantModuleForPermission))]
     .sort() as TenantModule[];
 

@@ -1,15 +1,17 @@
 import {describe,it,expect,vi} from 'vitest';
-import {validateDesignTransition,DesignService,nextIncludedClientRounds,clientReviewExpiry,clientRoundOverrideRequired} from './design.service';
+import {validateDesignTransition,designFileReview,DesignService,nextIncludedClientRounds,clientReviewExpiry,clientRoundOverrideRequired} from './design.service';
 import {BriefService} from './brief.service';
 import {plainToInstance} from 'class-transformer';
 import {validate} from 'class-validator';
 import {SaveBriefEntryDto} from './brief.dto';
-import {AddDesignVersionDto,SaveDesignFolderDto,UploadDesignFilesDto} from './design.dto';
+import {CreateDesignThreadDto,AddDesignVersionDto,SaveDesignFolderDto,UploadDesignFilesDto} from './design.dto';
 import type {WorkspaceAccessService} from '../workspaces/workspace-access.service';
 import type {CrmEventsService} from '../crm/shared/crm-events.service';
 import type {BrandAssetStorageService} from '../workspaces/brand-asset-storage.service';
 import type {RequestActor} from '../auth/actor';
 const actor={} as RequestActor;
+// Cases without design stages (no journey): the internal review stays as it was.
+const noJourney=(sql:string)=>(String(sql).includes('FROM design_journeys')?{rowCount:0,rows:[]}:null);
 describe('design decisions',()=>{
  it.each([['draft','internal_review'],['internal_review','internal_approved'],['internal_approved','client_review'],['client_review','approved']])('allows %s → %s', (from,to)=>expect(()=>validateDesignTransition(from,to,'Confirmed in meeting','Client')).not.toThrow());
  it.each([['draft','approved'],['changes_requested','internal_review'],['approved','client_review'],['internal_review','client_review']])('prevents skipping review: %s → %s',(from,to)=>expect(()=>validateDesignTransition(from,to,'note','Client')).toThrow());
@@ -17,6 +19,20 @@ describe('design decisions',()=>{
  it('requires client attribution and evidence for a recorded decision',()=>{expect(()=>validateDesignTransition('client_review','approved','Approved','')).toThrow('client name');expect(()=>validateDesignTransition('client_review','changes_requested','','Client')).toThrow();});
  it('allows comments without changing an approved version',()=>expect(()=>validateDesignTransition('approved','comment','Installation note','')).not.toThrow());
  it('rejects empty comments',()=>expect(()=>validateDesignTransition('draft','comment','   ','')).toThrow());
+ // PLM-145: on a package without a review role the lead designer shares the file with the client directly.
+ it('shares straight with the client when the package has no internal review, and offers no review',()=>{
+  expect(()=>validateDesignTransition('draft','client_review','','',false)).not.toThrow();
+  expect(()=>validateDesignTransition('draft','internal_review','','',false)).toThrow('no internal review');
+  // A file already in review before the change still gets its decision.
+  expect(()=>validateDesignTransition('internal_review','internal_approved','','',false)).not.toThrow();
+  expect(()=>validateDesignTransition('draft','client_review','','',true)).toThrow();
+ });
+ it('keeps the internal review where the package names a review role, and on cases without design stages',async()=>{
+  const query=(rows:Array<{role:string|null}>)=>({query:vi.fn(async()=>({rows,rowCount:rows.length}))}) as never;
+  expect(await designFileReview(query([{role:'creative_director'}]),'w','c')).toEqual({internal:true,role:'creative_director'});
+  expect(await designFileReview(query([{role:null}]),'w','c')).toEqual({internal:false,role:null});
+  expect(await designFileReview(query([]),'w','c')).toEqual({internal:true,role:null});
+ });
 });
 describe('design organization contracts',()=>{
  const id='e56299c6-3da3-402a-a9ac-3995bb37b9d4';
@@ -70,7 +86,7 @@ describe('folder and file write safeguards',()=>{
 describe('design revision round policy',()=>{
  it('pins the carried allowance onto a newly uploaded revision',async()=>{
   const design={id:'design',version:4,archivedAt:null,versions:[{id:'current',number:2,status:'changes_requested',includedClientRounds:2,asset:{id:'old'},note:'Old'}],activity:[],threads:[]};
-  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const query=vi.fn(async(sql:string)=>noJourney(sql)??{rowCount:1,rows:[design]});
   const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
   const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
   await service.addVersion(actor,'workspace','case','design',{id:'revision',version:4,assetId:'asset',note:'Changed joinery'});
@@ -78,16 +94,16 @@ describe('design revision round policy',()=>{
  });
 });
 describe('case write safeguards',()=>{
- it('requires both viewing and editing permissions, and rejects released cases',async()=>{const query=vi.fn(async()=>({rowCount:1,rows:[{status:'released'}]}));const withPermissions=vi.fn(async(_a,_w,_p,work)=>work({query},{userId:'user'}));const service=new BriefService({withPermissions} as unknown as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);const write=vi.fn();await expect(service.edit(actor,'workspace','case',write)).rejects.toThrow('read-only');expect(withPermissions).toHaveBeenCalledWith(actor,'workspace',['pre_projects.view','pre_projects.edit'],expect.any(Function));expect(write).not.toHaveBeenCalled();});
+ it.each(['active','on_hold','released','cancelled'])('requires permissions while keeping %s working records editable',async(status)=>{const query=vi.fn(async()=>({rowCount:1,rows:[{status}]}));const withPermissions=vi.fn(async(_a,_w,_p,work)=>work({query},{userId:'user'}));const service=new BriefService({withPermissions} as unknown as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);const write=vi.fn();await service.edit(actor,'workspace','case',write);expect(withPermissions).toHaveBeenCalledWith(actor,'workspace',['pre_projects.view','pre_projects.edit'],expect.any(Function));expect(write).toHaveBeenCalled();});
  it('rejects a stale revision instead of overwriting',()=>{const service=new BriefService({} as WorkspaceAccessService,{} as CrmEventsService,{} as BrandAssetStorageService);expect(()=>service.version(3,2)).toThrow('Someone updated');});
  it('validates duplicate catalog roles',async()=>{const dto=plainToInstance(SaveBriefEntryDto,{catalogLinks:[{role:'work',recordId:'e56299c6-3da3-402a-a9ac-3995bb37b9d4'},{role:'work',recordId:'11911234-8004-4d49-b101-a9743f5ac28e'}]});const errors=await validate(dto);expect(errors.some(e=>e.property==='catalogLinks'&&e.constraints?.arrayUnique)).toBe(true);});
- it('prevents reviewing an older file version',async()=>{const oldId='old';const design={id:'design',version:4,versions:[{id:'current',status:'draft'},{id:oldId,status:'draft'}],activity:[]};const query=vi.fn(async()=>({rowCount:1,rows:[design]}));const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{} as CrmEventsService);await expect(service.activity(actor,'workspace','case','design',{id:'new',version:4,versionId:oldId,action:'internal_review',note:'',decisionBy:'',contextConfirmed:true})).rejects.toThrow('latest version');expect(query.mock.calls.some(([sql])=>String(sql).startsWith('UPDATE'))).toBe(false);});
+ it('prevents reviewing an older file version',async()=>{const oldId='old';const design={id:'design',version:4,versions:[{id:'current',status:'draft'},{id:oldId,status:'draft'}],activity:[]};const query=vi.fn(async(sql:string)=>noJourney(sql)??{rowCount:1,rows:[design]});const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{} as CrmEventsService);await expect(service.activity(actor,'workspace','case','design',{id:'new',version:4,versionId:oldId,action:'internal_review',note:'',decisionBy:'',contextConfirmed:true})).rejects.toThrow('latest version');expect(query.mock.calls.some(([sql])=>String(sql).startsWith('UPDATE'))).toBe(false);});
 });
 
 describe('assigned design review',()=>{
  const make=(permission:boolean,reviewerId:string|null='reviewer')=>{
   const design={id:'design',version:4,versions:[{id:'current',status:'internal_review',reviewerId,createdAt:'2026-01-01T00:00:00Z'}],activity:[]};
-  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const query=vi.fn(async(sql:string)=>noJourney(sql)??{rowCount:1,rows:[design]});
   const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
   const access={hasPermission:vi.fn(async()=>permission)};
   return {service:new DesignService(access as unknown as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService),query};
@@ -103,7 +119,7 @@ describe('assigned design review',()=>{
 describe('recorded client decision permissions',()=>{
  it('does not let an editor record a client decision without the dedicated permission',async()=>{
   const design={id:'design',version:4,versions:[{id:'current',status:'client_review',createdAt:'2026-01-01T00:00:00Z'}],activity:[]};
-  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const query=vi.fn(async(sql:string)=>noJourney(sql)??{rowCount:1,rows:[design]});
   const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
   const access={hasPermission:vi.fn(async()=>false)};
   const service=new DesignService(access as unknown as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
@@ -112,28 +128,24 @@ describe('recorded client decision permissions',()=>{
  });
  it('rejects a client-review deadline on an unrelated transition',async()=>{
   const design={id:'design',version:4,versions:[{id:'current',status:'draft',createdAt:'2026-01-01T00:00:00Z'}],activity:[]};
-  const query=vi.fn(async()=>({rowCount:1,rows:[design]}));
+  const query=vi.fn(async(sql:string)=>noJourney(sql)??{rowCount:1,rows:[design]});
   const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
   const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
   await expect(service.activity(actor,'workspace','case','design',{id:'activity',version:4,versionId:'current',action:'internal_review',note:'',decisionBy:'',reviewerId:'reviewer',contextConfirmed:true,reviewExpiresAt:new Date(Date.now()+24*60*60*1000).toISOString()})).rejects.toThrow('deadline belongs only');
  });
 });
 
-describe('client portal handoff readiness',()=>{
+describe('presenting a design to the client',()=>{
  const make=(portal:{enabled:boolean;hasApprover:boolean}|null,rounds={used:0,included:null as number|null})=>{
   const design={id:'design',version:4,clientRoundsUsed:rounds.used,versions:[{id:'current',status:'internal_approved',includedClientRounds:rounds.included}],activity:[]};
-  const query=vi.fn(async(sql:string)=>sql.startsWith('SELECT s.enabled')?{rows:portal?[portal]:[],rowCount:portal?1:0}:{rowCount:1,rows:[design]});
+  const query=vi.fn(async(sql:string)=>noJourney(sql)??(sql.startsWith('SELECT s.enabled')?{rows:portal?[portal]:[],rowCount:portal?1:0}:{rowCount:1,rows:[design]}));
   const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user'),version:vi.fn()};
   return {service:new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService),query};
  };
  const input={id:'activity',version:4,versionId:'current',action:'client_review',note:'',decisionBy:''};
- it.each([null,{enabled:false,hasApprover:true}])('blocks handoff when the portal is not enabled',async portal=>{
-  const {service,query}=make(portal);await expect(service.activity(actor,'w','c','design',input)).rejects.toThrow('Enable the client portal');
-  expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE'))).toBe(false);
- });
- it('requires an active client approver',async()=>{
-  const {service,query}=make({enabled:true,hasApprover:false});await expect(service.activity(actor,'w','c','design',input)).rejects.toThrow('active client approver');
-  expect(query.mock.calls.some(([sql])=>sql.startsWith('UPDATE'))).toBe(false);
+ it.each([null,{enabled:false,hasApprover:false}])('presents an internally approved revision without the portal (staff record the decision)',async portal=>{
+  const {service,query}=make(portal);await service.activity(actor,'w','c','design',input);
+  expect(query).toHaveBeenCalledWith(expect.stringContaining('SET status=$4'),['w','design','current','client_review',expect.any(String)]);
  });
  it('shares an internally approved revision when the portal is ready',async()=>{
   const {service,query}=make({enabled:true,hasApprover:true});await service.activity(actor,'w','c','design',input);
@@ -147,3 +159,23 @@ describe('client portal handoff readiness',()=>{
   expect(query).toHaveBeenCalledWith(expect.stringContaining('client_review_expires_at'),['w','design','current','client_review',reviewExpiresAt]);
  });
 });
+
+describe('design comment pins',()=>{
+ const base={id:'e56299c6-3da3-402a-a9ac-3995bb37b9d4',versionId:'e56299c6-3da3-402a-a9ac-3995bb37b9d4',title:'Change finish',body:'Use oak',blocking:false};
+ it('accepts normalized pin coordinates and member tags',async()=>{expect(await validate(plainToInstance(CreateDesignThreadDto,{...base,anchor:{x:.25,y:.75},mentions:[base.id]}))).toHaveLength(0);});
+ it('rejects out of bounds pins and invalid member IDs',async()=>{expect((await validate(plainToInstance(CreateDesignThreadDto,{...base,anchor:{x:2,y:-1},mentions:['invalid']}))).length).toBeGreaterThan(0);});
+});
+
+describe('comment pin persistence',()=>{
+ it.each([undefined,{x:.25,y:.75}])('stores an optional anchor correctly: %j',async anchor=>{
+  const design={id:'design',threads:[],versions:[{id:'revision',status:'draft'}],activity:[]};
+  const query=vi.fn(async(_sql:string,_params?:unknown[])=>noJourney(_sql)??{rowCount:1,rows:[design]});
+  const brief={edit:async(_a:unknown,_w:string,_c:string,work:Function)=>work({query},'user')};
+  const service=new DesignService({} as WorkspaceAccessService,brief as unknown as BriefService,{record:vi.fn()} as unknown as CrmEventsService);
+  vi.spyOn(service as any,'commentAccess').mockImplementation((_a:any,_w:any,_c:any,_id:any,work:any)=>work({query},'user'));
+  await service.createThread(actor,'w','c','design',{id:'thread',versionId:'revision',title:'Comment',body:'Comment',blocking:false,anchor});
+  const insert=query.mock.calls.find(([sql])=>sql.startsWith('INSERT INTO pre_project_design_threads'));
+  expect(insert?.[1]?.[8]).toEqual(anchor?JSON.stringify(anchor):null);
+ });
+});
+

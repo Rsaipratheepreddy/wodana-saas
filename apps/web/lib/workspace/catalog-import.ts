@@ -123,10 +123,10 @@ export function prepareCatalogImport(table:ImportTable,header:number,mapping:str
    if(record.attributes.length>30||record.attributes.some(a=>a.name.length>80||a.value.length>1000))throw new Error('Keep at most 30 specifications, with headings up to 80 and values up to 1,000 characters.');
    if(options.kind==='unit'){
     record.dimension=value(cells,'dimension').toLowerCase();
-    if(!['length','area','volume','mass','count','time','pack'].includes(record.dimension))throw new Error('Units need an explicit measurement type: length, area, volume, mass, count, time or pack.');
+    if(!['length','area','volume','mass','count','time','pack','reference'].includes(record.dimension))throw new Error('Units need an explicit measurement type: length, area, volume, mass, count, time, pack or reference.');
     const factor=value(cells,'baseFactor');record.baseFactor=factor?numeric(factor,'Conversion factor'):undefined;
-    if(record.dimension==='pack'&&record.baseFactor!==undefined)throw new Error('Packs cannot have a universal conversion factor. Define quantities on the product.');
-    if(record.dimension!=='pack'&&!(record.baseFactor!>0))throw new Error('A positive conversion factor is required.');
+    if(['pack','reference'].includes(record.dimension)&&record.baseFactor!==undefined)throw new Error('Pack and reference units cannot have a universal conversion factor. Define pack quantities on the product.');
+    if(!['pack','reference'].includes(record.dimension)&&!(record.baseFactor!>0))throw new Error('A positive conversion factor is required.');
    }
    for(const field of catalogStructure[options.kind].fields){const v=value(cells,`config:${field.key}`);if(v)record.configuration![field.key]=field.type==='number'?numeric(v,field.label):v;}
    if(['material','sku'].includes(options.kind)&&sizeFields.some(k=>value(cells,`size:${k}`))){

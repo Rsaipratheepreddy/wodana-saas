@@ -11,6 +11,7 @@ const details = {
   ...emptyTenantDetails, accountName: "Palm Group", contactName: "Contract Contact",
   contactEmail: "CONTACT@example.test", organizationName: "Palm Living",
   slug: "palm-living", ownerName: "Workspace Owner", ownerEmail: "OWNER@example.test",
+  regionCode: "AE", firmKitCode: "design_build", planCode: "starter",
 };
 
 describe("operator provisioning payload", () => {
@@ -28,5 +29,11 @@ describe("operator provisioning payload", () => {
     expect(validateTenantDetails({ ...details, firmKitCode: "blank" }, profiles)).toContain("Choose an available firm kit.");
     expect(validateTenantDetails({ ...details, slug: "bad slug" }, profiles)).toContain("Choose a valid login address.");
     expect(validateTenantDetails(details, profiles)).toEqual([]);
+  });
+
+  it("sends seats only when they differ from the plan and never assumes a country", () => {
+    expect(emptyTenantDetails.regionCode).toBe("");
+    expect(tenantDraftPayload({ ...details, seatLimit: 5 }, profiles, "k").defaults).not.toHaveProperty("seatLimit");
+    expect(tenantDraftPayload({ ...details, seatLimit: 12 }, profiles, "k").defaults).toMatchObject({ seatLimit: 12 });
   });
 });

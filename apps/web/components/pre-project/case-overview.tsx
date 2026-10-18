@@ -1,189 +1,315 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { RecordHistory } from "../history/record-history";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Badge, Button, Callout, ControlledModalDialog, Form, MenuButton, SelectField, StageTracker, TextAreaField, TextInput, type ActionItem, type WorkflowStage } from "@/design-system";
-import { qualificationEvidenceRows, qualificationEvidenceSnapshot } from "@/lib/crm/qualification-fields";
-import { caseRequest } from "@/lib/pre-project/content";
-import type { DefinitionPageData, ReadinessState } from "@/lib/pre-project/definition";
-import type { PreProjectCase } from "@/lib/pre-project/types";
+import { CalendarClock, CircleDollarSign, Flag, TriangleAlert, UserRound, UserRoundCheck, Wallet } from "lucide-react";
+import {
+  Badge, Button, Card, EditableField, EditableFieldList, EmptyState, FactRow, FormDialog, IconMenuButton, InlineNotice, KpiStrip, KpiTile, PersonName, SelectField, Skeleton, TextAreaField,
+  type ActionItem,
+} from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
+import { caseApi, caseRequest } from "@/lib/pre-project/content";
+import type { DefinitionPageData } from "@/lib/pre-project/definition";
+import type { JourneyView } from "@/lib/pre-project/design-workspace";
+import { caseHref, type PreProjectCase } from "@/lib/pre-project/types";
+import {
+  casePhases, casePhaseText, effectivePhase, caseFiles, caseMoney, caseNextStep, caseOverdue, casePosition, caseTeam, caseTimeline,
+  type CaseCommand, type CaseNextStep, type Message,
+} from "@/lib/pre-project/case-record";
 import type { CommercialState } from "@/lib/commercial/types";
-import styles from "./case-overview.module.css";
+import { projectApi } from "@/lib/project-core/client";
+import type { ProjectDetail } from "@/lib/project-core/types";
+import { valueEngineeringApi, type ValueEngineeringView } from "@/lib/value-engineering/client";
+import { NextStepCard, RecordColumns, RecordFrame, RecordHeader, RecordPanel, SectionTabs, SideSection, useSectionTabs } from "@/components/record/record-layout";
+import { FactList, FileList, PeopleList, PersonChip, PersonRow, RecordTimeline } from "@/components/record/record-parts";
+import { SiteLocation } from "@/components/ui/site-location";
+import { useProjectFormat } from "@/components/project-core/format";
+import { DesignJourney } from "./design-journey";
+import { ClientCallsSection } from "./client-calls";
+import { casePriorityLabel, caseRiskLabel, caseStatusLabel, caseStatusTone } from "./case-spine";
 
 type Action = "hold" | "resume" | "cancel" | "reopen" | "set_phase";
+type Member = { id: string; displayName: string; email?: string | null };
 const phases = ["discover", "define", "design", "price", "agree", "release"] as const;
-const phaseLabel: Record<(typeof phases)[number], string> = { discover: "Discovery", define: "Define scope", design: "Design", price: "Price", agree: "Agreement", release: "Release" };
-const actionLabel: Record<Action, string> = { hold: "Put on hold", resume: "Resume", cancel: "Cancel case", reopen: "Reopen case", set_phase: "Change stage" };
+const actionLabel: Record<Action, MessageKey> = { hold: tKey("Put on hold"), resume: tKey("Resume"), cancel: tKey("Cancel planning"), reopen: tKey("Reopen planning"), set_phase: tKey("Change stage") };
+const actionNotice: Record<Action, MessageKey> = { hold: tKey("Put on hold recorded."), resume: tKey("Resume recorded."), cancel: tKey("Cancel planning recorded."), reopen: tKey("Reopen planning recorded."), set_phase: tKey("Change stage recorded.") };
 
-type ReadinessAction = NonNullable<ReadinessState["blockers"][number]["action"]>;
-
-function readinessHref(caseId: string, action?: ReadinessAction) {
-  const root = `/workspace/pre-projects/cases/${caseId}`;
-  if (!action) return `${root}/requirements`;
-  if (action.targetType === "engagement") return `${root}/overview#case-controls`;
-  if (action.targetType === "definition") return `${root}/definition`;
-  if (action.targetType === "design") return `${root}/designs`;
-  if (action.targetType === "site") return `${root}/site`;
-  if (["RECORD_MEASUREMENT", "VERIFY_MEASUREMENT", "ADD_MEASUREMENT_EVIDENCE"].includes(action.code))
-    return `${root}/requirements?tab=measurements`;
-  return `${root}/requirements`;
+/** A message from the record logic in the person's language; a stage name inside it is translated too. */
+export function say(t: Translate, message: Message | { text: string } | null | undefined) {
+  if (!message) return "";
+  if ("text" in message) return message.text;
+  const values = message.values ? Object.fromEntries(Object.entries(message.values).map(([key, value]) => [key, key === "stage" || key === "section" ? t(String(value) as MessageKey) : value])) : undefined;
+  return t(message.key, values);
 }
 
-function preparationStages(definition: Extract<DefinitionPageData, { workspaceId: string }>): WorkflowStage[] {
-  const { readiness } = definition;
-  const requirementsComplete = readiness.summary.includedItemCount > 0
-    && readiness.summary.readyItemCount === readiness.summary.includedItemCount;
-  const scopeConfirmed = definition.definition.confirmed;
-  return [
-    { id: "requirements", label: "Requirements", state: requirementsComplete ? "complete" : "current" },
-    { id: "confirmation", label: "Client confirmation", state: scopeConfirmed ? "complete" : requirementsComplete ? "current" : "upcoming" },
-    { id: "pricing", label: "Ready to price", state: readiness.ready ? "complete" : scopeConfirmed ? "current" : "upcoming" },
-  ];
-}
-
-export function CaseOverview({ record: initial, workspaceId, members, progress, commercial, onUpdated }: {
+/**
+ * A planning case's Overview (§5c D.7): the case in one header, where it stands in one strip, the one next step
+ * computed from its real state with the stages under it and the latest activity, and the sidebar's Overview
+ * (team, site, dates, money) · Details · Files. The section tabs stay the case's navigation.
+ */
+export function CaseOverview({ record: initial, workspaceId, members, commercial, onUpdated }: {
   record: PreProjectCase;
   workspaceId: string;
-  members: { id: string; displayName: string }[];
+  members: Member[];
   progress?: DefinitionPageData;
   commercial?: CommercialState;
   onUpdated: (record: PreProjectCase) => void;
 }) {
+  const t = useT();
+  const format = useProjectFormat();
   const [record, setRecord] = useState(initial);
-  const [editing, setEditing] = useState(false);
-  const [owner, setOwner] = useState(initial.ownerMembershipId ?? "");
-  const [targetDate, setTargetDate] = useState(initial.targetDate ?? "");
-  const [priority, setPriority] = useState(initial.priority);
-  const [risk, setRisk] = useState(initial.riskLevel);
   const [action, setAction] = useState<Action | null>(null);
   const [phase, setPhase] = useState<PreProjectCase["phase"]>(initial.phase);
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const changed = owner !== (record.ownerMembershipId ?? "") || targetDate !== (record.targetDate ?? "") || priority !== record.priority || risk !== record.riskLevel;
+  const [journey, setJourney] = useState<JourneyView | null | undefined>(undefined);
+  const [project, setProject] = useState<ProjectDetail | null | undefined>(record.projectId ? undefined : null);
+  const [starting, setStarting] = useState(false);
+  // PLM-147: an open value engineering round is the job's step (a failure leaves it out).
+  const [valueEngineering, setValueEngineering] = useState<ValueEngineeringView | null>(null);
+  useEffect(() => {
+    let alive = true;
+    valueEngineeringApi(workspaceId, initial.id).view().then((next) => { if (alive) setValueEngineering(next); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [workspaceId, initial.id]);
+
+  // What the next step needs beyond the case: its design stages, and the project it opened. A failure leaves the part out.
+  const loadJourney = useCallback(() => caseRequest<JourneyView>(workspaceId, initial.id, "design-journey").then(setJourney).catch(() => setJourney(null)), [workspaceId, initial.id]);
+  useEffect(() => { queueMicrotask(() => void loadJourney()); }, [loadJourney]);
+  useEffect(() => {
+    if (!record.projectId) return;
+    projectApi(workspaceId).get(record.projectId).then(setProject).catch(() => setProject(null));
+  }, [workspaceId, record.projectId]);
+
   const phaseIndex = phases.indexOf(record.phase);
   const chosenPhaseIndex = phases.indexOf(phase);
   const reasonRequired = action === "hold" || action === "cancel" || action === "reopen" || (action === "set_phase" && (chosenPhaseIndex < phaseIndex || chosenPhaseIndex > phaseIndex + 1));
   const active = record.status === "active";
-  const manageable = Boolean(record.canManageLifecycle) && ["draft", "active", "on_hold"].includes(record.status);
-  const qualificationEvidence = qualificationEvidenceSnapshot(record.qualificationEvidence);
-  const qualificationRows = qualificationEvidenceRows(qualificationEvidence);
-  void commercial;
-  const preparation = progress && !("error" in progress) ? progress : null;
-  const readiness = preparation?.readiness;
-  const firstBlocker = readiness?.blockers[0];
-  const nextAction = firstBlocker?.action;
-  const nextActionAllowed = nextAction?.targetType !== "engagement" || Boolean(record.canManageLifecycle);
-  const preparationTitle = readiness?.ready
-    ? "Ready to build the quotation"
-    : readiness?.summary.includedItemCount === 0
-      ? "Add the first scope item"
-      : `${readiness?.summary.blockerCount ?? 0} blocker${readiness?.summary.blockerCount === 1 ? "" : "s"} before pricing`;
-
+  const manageable = Boolean(record.canEditDetails ?? record.canManageLifecycle) && ["draft", "active", "on_hold"].includes(record.status);
   const caseActions: ActionItem[] = record.canManageLifecycle && record.status !== "released" ? [
-    ...(active ? [{ id: "set_phase", label: "Change stage" }, { id: "hold", label: "Put on hold" }] : []),
-    ...(record.status === "on_hold" ? [{ id: "resume", label: "Resume" }] : []),
-    ...(record.status === "cancelled" ? [{ id: "reopen", label: "Reopen" }] : []),
-    ...(["draft", "active", "on_hold"].includes(record.status) ? [{ id: "cancel", label: "Cancel case", tone: "danger" as const }] : []),
+    ...(active ? [{ id: "set_phase", label: t("Change stage") }, { id: "hold", label: t("Put on hold") }] : []),
+    ...(record.status === "on_hold" ? [{ id: "resume", label: t("Resume") }] : []),
+    ...(record.status === "cancelled" ? [{ id: "reopen", label: t("Reopen") }] : []),
+    ...(["draft", "active", "on_hold"].includes(record.status) ? [{ id: "cancel", label: t("Cancel planning"), tone: "danger" as const }] : []),
   ] : [];
 
   function update(next: PreProjectCase) {
-    const updated = { ...next, canManageLifecycle: record.canManageLifecycle };
+    const updated = { ...next, canManageLifecycle: record.canManageLifecycle, canEditDetails: record.canEditDetails };
     setRecord(updated);
-    setOwner(next.ownerMembershipId ?? "");
-    setTargetDate(next.targetDate ?? "");
-    setPriority(next.priority);
-    setRisk(next.riskLevel);
     setPhase(next.phase);
     onUpdated(updated);
   }
 
-  async function saveProfile(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!changed || !manageable) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const next = await caseRequest<PreProjectCase>(workspaceId, record.id, "profile", "PATCH", {
-        requestId: crypto.randomUUID(), version: record.version,
-        ...(owner && owner !== record.ownerMembershipId ? { ownerMembershipId: owner } : {}),
-        targetDate: targetDate || null, priority, riskLevel: risk,
-      });
-      update(next); setEditing(false); setNotice("Case details updated.");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not update the case."); }
-    finally { setBusy(false); }
+  // One detail changes in place; the others are sent as saved, with the case's version.
+  async function saveProfile(changes: { ownerMembershipId?: string; targetDate?: string | null; priority?: PreProjectCase["priority"]; riskLevel?: PreProjectCase["riskLevel"] }) {
+    setNotice("");
+    const next = await caseRequest<PreProjectCase>(workspaceId, record.id, "profile", "PATCH", {
+      requestId: crypto.randomUUID(), version: record.version,
+      targetDate: record.targetDate ?? null, priority: record.priority, riskLevel: record.riskLevel,
+      ...changes,
+    });
+    update(next);
   }
 
-  async function transition(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function transition() {
     if (!action || !record.canManageLifecycle || (reasonRequired && !reason.trim())) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const next = await caseRequest<PreProjectCase>(workspaceId, record.id, "lifecycle", "POST", {
-        requestId: crypto.randomUUID(), version: record.version, action,
-        ...(action === "set_phase" ? { phase } : {}),
-        ...(reason.trim() ? { reason: reason.trim() } : {}),
-      });
-      update(next); setAction(null); setReason(""); setEditing(false); setNotice(`${actionLabel[action]} recorded.`);
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not change the case."); }
-    finally { setBusy(false); }
+    setError(""); setNotice("");
+    const next = await caseRequest<PreProjectCase>(workspaceId, record.id, "lifecycle", "POST", {
+      requestId: crypto.randomUUID(), version: record.version, action,
+      ...(action === "set_phase" ? { phase } : {}),
+      ...(reason.trim() ? { reason: reason.trim() } : {}),
+    });
+    update(next); setAction(null); setReason(""); setNotice(t(actionNotice[action]));
   }
 
-  return <div className={styles.page}>
-    {error && !action ? <p role="alert" className={styles.error}>{error}</p> : null}
-    {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
-    <div className={styles.identity}>
-      <div><h2>{record.title}</h2><span>{manageable ? "Case details" : "View only · ask a case manager to change details"}</span></div>
-      {manageable && !editing ? <div className={styles.identityActions}>
-        <Button size="compact" onPress={() => { setError(""); setEditing(true); }}>Edit details</Button>
-        {caseActions.length ? <MenuButton items={caseActions} label="Case actions" onAction={(id) => { setError(""); if (id === "set_phase") setPhase(record.phase); setAction(id as Action); }} /> : null}
-      </div> : null}
-    </div>
-    {editing ? <Form className={styles.form} onSubmit={(event) => void saveProfile(event)}>
-      {members.length ? <SelectField label="Case owner" items={members.map((member) => ({ id: member.id, label: member.displayName }))} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} isRequired /> : null}
-      <TextInput label="Target date" inputType="date" value={targetDate} onChange={setTargetDate} />
-      <SelectField label="Priority" items={["low", "normal", "high", "urgent"].map((value) => ({ id: value, label: value[0].toUpperCase() + value.slice(1) }))} selectedKey={priority} onSelectionChange={(key) => setPriority(String(key) as PreProjectCase["priority"])} />
-      <SelectField label="Risk" items={["none", "low", "medium", "high", "critical"].map((value) => ({ id: value, label: value[0].toUpperCase() + value.slice(1) }))} selectedKey={risk} onSelectionChange={(key) => setRisk(String(key) as PreProjectCase["riskLevel"])} />
-      <div className={styles.formActions}><Button size="compact" onPress={() => setEditing(false)} isDisabled={busy}>Cancel</Button><Button type="submit" size="compact" variant="primary" isDisabled={!changed} isLoading={busy}>Save case</Button></div>
-    </Form> : <dl className={styles.facts}>
-      <div><dt>Owner</dt><dd>{record.engagementOwnerName ?? "Unassigned"}</dd></div>
-      <div><dt>Target</dt><dd>{record.targetDate ? new Date(`${record.targetDate}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Not set"}</dd></div>
-      <div><dt>Priority</dt><dd>{record.priority}</dd></div>
-      <div><dt>Risk</dt><dd>{record.riskLevel}</dd></div>
-      <div><dt>Stage</dt><dd>{phaseLabel[record.phase]}</dd></div>
-      <div><dt>Status</dt><dd>{record.status.replaceAll("_", " ")}</dd></div>
-    </dl>}
-    {record.holdReason ? <p className={styles.context}>On hold: {record.holdReason}</p> : null}
-    {record.cancellationReason ? <p className={styles.context}>Cancelled: {record.cancellationReason}</p> : null}
-    {record.description ? <p className={styles.context}>{record.description}</p> : null}
-    {progress && "error" in progress ? <Callout tone="warning" title="Preparation status unavailable">{progress.error}</Callout> : null}
-    {preparation && readiness ? <section className={styles.pulse} aria-labelledby="preparation-pulse-title">
-      <div className={styles.pulseHeading}>
-        <div><span className={styles.kicker}>Next step</span><h2 id="preparation-pulse-title">{preparationTitle}</h2></div>
-        <Badge tone={readiness.ready ? "success" : "warning"}>{readiness.ready ? "Pricing ready" : "Action needed"}</Badge>
-      </div>
-      <StageTracker ariaLabel="Pre-execution preparation path" stages={preparationStages(preparation)} />
-      <dl className={styles.pulseFacts}>
-        <div><dt>Included scope</dt><dd>{readiness.summary.includedItemCount || "None"}</dd></div>
-        <div><dt>Items ready</dt><dd>{readiness.summary.readyItemCount} of {readiness.summary.includedItemCount}</dd></div>
-        <div><dt>Open warnings</dt><dd>{readiness.summary.warningCount}</dd></div>
-        <div><dt>Client scope</dt><dd>{preparation.definition.confirmed ? "Confirmed" : preparation.definition.current?.status.replaceAll("_", " ") ?? "Not sent"}</dd></div>
-      </dl>
-      {!readiness.ready && readiness.blockers.length ? <ol className={styles.blockers} aria-label="Preparation blockers">{readiness.blockers.slice(0, 3).map((blocker, index) => <li key={`${blocker.code}-${blocker.scopeItemId ?? index}`}><span>{index + 1}</span><div><strong>{blocker.label}</strong><p>{blocker.detail}</p></div></li>)}</ol> : null}
-      <div className={styles.pulseAction}>{readiness.ready ? <Link href={`/workspace/pre-projects/cases/${record.id}/quotations`}>Open quotations</Link> : nextActionAllowed ? <Link href={readinessHref(record.id, nextAction)}>{nextAction?.label ?? "Open requirements"}</Link> : <span>Ask a case manager to {nextAction?.label.toLocaleLowerCase()}.</span>}{readiness.blockers.length > 3 ? <span>+{readiness.blockers.length - 3} more in scope confirmation</span> : null}</div>
-    </section> : null}
-    {qualificationEvidence ? <details className={styles.handoff}>
-      <summary><span>Qualification answers from CRM</span><small>{qualificationRows.length} answer{qualificationRows.length === 1 ? "" : "s"} · {qualificationEvidence.form?.name ?? "No configured form"}</small></summary>
-      {qualificationRows.length ? <dl className={styles.handoffFacts}>{qualificationRows.map(answer => <div key={answer.key}><dt>{answer.label}</dt><dd>{answer.value}</dd></div>)}</dl> : <p className={styles.context}>No qualification answers were required for this enquiry.</p>}
-      <div className={styles.links}>{record.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>Original enquiry</Link> : null}<Link href={`/workspace/crm/opportunities?record=${record.opportunityId}`}>CRM opportunity</Link></div>
-    </details> : null}
-    <span id="case-controls" />
-    <ControlledModalDialog isOpen={Boolean(action)} title={action ? actionLabel[action] : "Case action"} isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) { setAction(null); setReason(""); } }} footer={<div className={styles.formActions}><Button isDisabled={busy} onPress={() => { setAction(null); setReason(""); }}>Close</Button><Button type="submit" form="case-lifecycle" variant="primary" isLoading={busy} isDisabled={action === "set_phase" && phase === record.phase}>{action ? actionLabel[action] : "Save"}</Button></div>}>
-      <Form id="case-lifecycle" className={styles.form} onSubmit={(event) => void transition(event)}>
-        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-        {action === "set_phase" ? <SelectField label="Stage" items={phases.map((value) => ({ id: value, label: phaseLabel[value] }))} selectedKey={phase} onSelectionChange={(key) => setPhase(String(key) as PreProjectCase["phase"])} /> : null}
-        {action === "hold" || action === "cancel" || action === "reopen" || action === "set_phase" ? <TextAreaField label="Reason" value={reason} onChange={setReason} isRequired={reasonRequired} maxLength={500} /> : null}
-      </Form>
-    </ControlledModalDialog>
-  </div>;
+  async function command(id: CaseCommand) {
+    setError("");
+    if (id === "resume" || id === "reopen") { setAction(id); return; }
+    setStarting(true);
+    try { setJourney(await caseRequest<JourneyView>(workspaceId, record.id, "design-journey/start", "POST", {})); setNotice(journey?.startsAs === "site_and_materials" ? t("Site visit started.") : t("Design stages started.")); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : t("The design stages could not start.")); }
+    finally { setStarting(false); }
+  }
+
+  const closeAction = () => { setAction(null); setReason(""); };
+  const date = (value: string) => format.day(value);
+  const loading = journey === undefined || project === undefined;
+  const portal = <Link className="wd-button" data-size="compact" data-variant="secondary" href={`/workspace/pre-projects/cases/${record.id}/client-portal`}><UserRoundCheck aria-hidden="true" size={15} />{t("Client access")}</Link>;
+  const menu = caseActions.length ? <IconMenuButton ariaLabel={t("Project actions")} items={caseActions} onAction={(id) => { setError(""); if (id === "set_phase") setPhase(record.phase); setAction(id as Action); }} /> : null;
+  // The journey's own list (schedule, assign, close a stage) while the design stages run.
+  const journeySlot = journey?.journey && !["released", "cancelled"].includes(record.status) ? <DesignJourney workspaceId={workspaceId} caseId={record.id} members={members} /> : null;
+
+  const details = <>
+    {!manageable && record.status !== "released" ? <p className="wd-visually-hidden">{t("View only · the case owner or an admin can change details")}</p> : null}
+    <EditableFieldList>
+      {members.length ? <EditableField canEdit={manageable} kind="select" label={t("Owner")} value={record.ownerMembershipId ?? ""} display={<PersonName person={record.engagementOwnerName} fallback={t("Unassigned")} />}
+        items={members.map((member) => ({ id: member.id, label: member.displayName }))} onSave={(ownerMembershipId) => saveProfile({ ownerMembershipId })} />
+        : <FactRow label={t("Owner")}><PersonName person={record.engagementOwnerName} fallback={t("Unassigned")} /></FactRow>}
+      <EditableField canEdit={manageable} kind="date" label={t("Target")} value={record.targetDate ?? ""} display={record.targetDate ? date(record.targetDate) : undefined} placeholder={t("Not set")}
+        onSave={(targetDate) => saveProfile({ targetDate: targetDate || null })} />
+      <EditableField canEdit={manageable} kind="select" label={t("Priority")} value={record.priority} items={(["low", "normal", "high", "urgent"] as const).map((value) => ({ id: value, label: t(casePriorityLabel[value]) }))}
+        onSave={(priority) => saveProfile({ priority: priority as PreProjectCase["priority"] })} />
+      <EditableField canEdit={manageable} kind="select" label={t("Risk")} value={record.riskLevel} items={(["none", "low", "medium", "high", "critical"] as const).map((value) => ({ id: value, label: t(caseRiskLabel[value]) }))}
+        onSave={(riskLevel) => saveProfile({ riskLevel: riskLevel as PreProjectCase["riskLevel"] })} />
+    </EditableFieldList>
+  </>;
+
+  return <>
+    {error ? <InlineNotice tone="error" message={error} /> : null}
+    {notice ? <InlineNotice tone="success" message={notice} /> : null}
+    <CaseRecordView record={record} commercial={commercial} journey={journey ?? null} project={project ?? null} valueEngineering={valueEngineering} members={members} today={format.today()} loading={loading}
+      historySlot={<RecordHistory workspaceId={workspaceId} recordType="planning_case" recordId={record.id} />}
+      busy={starting} onCommand={(id) => void command(id)} actions={<>{portal}{menu}</>} details={details} journeySlot={journeySlot}
+      callsSlot={<ClientCallsSection workspaceId={workspaceId} caseId={record.id} />}
+      assetHref={(assetId) => caseApi(workspaceId, record.id, `assets/${assetId}`)} />
+    <FormDialog isOpen={Boolean(action)} title={action ? t(actionLabel[action]) : t("Case action")} onClose={closeAction} isDirty={Boolean(reason.trim())}
+      submitLabel={action ? t(actionLabel[action]) : t("Save")} submitVariant={action === "cancel" ? "danger" : "primary"} isSubmitDisabled={action === "set_phase" && phase === record.phase}
+      onSubmit={transition}>
+      {action === "set_phase" ? <SelectField label={t("Stage")} isRequired items={casePhases(record.plan).map((value) => ({ id: value, label: t(casePhaseText(value, record.plan).stage) }))} selectedKey={phase} onSelectionChange={(key) => setPhase(String(key) as PreProjectCase["phase"])} /> : null}
+      {action === "hold" || action === "cancel" || action === "reopen" || action === "set_phase" ? <TextAreaField label={t("Reason")} value={reason} onChange={setReason} isRequired={reasonRequired} maxLength={500} /> : null}
+    </FormDialog>
+  </>;
+}
+
+/** The case record itself, from data only: header, strip, next step, stages, activity and the sidebar. */
+export function CaseRecordView({ record, commercial, journey, project, valueEngineering = null, members, today, loading = false, busy = false, onCommand, actions, details, journeySlot, callsSlot, historySlot, assetHref }: {
+  record: PreProjectCase; commercial?: CommercialState | null; journey: JourneyView | null; project: ProjectDetail | null; members: Member[]; today: string;
+  /** PLM-147: the job's value engineering (an open round is its step). */
+  valueEngineering?: Pick<ValueEngineeringView, "open"> | null;
+  loading?: boolean; busy?: boolean; onCommand?: (command: CaseCommand) => void; actions?: ReactNode; details?: ReactNode; journeySlot?: ReactNode;
+  /** The recurring client update call (PLM-046), in the sidebar. */
+  callsSlot?: ReactNode;
+  /** The case's History (the shared component), in the sidebar. */
+  historySlot?: ReactNode;
+  assetHref: (assetId: string) => string;
+}) {
+  const t = useT();
+  // The first sub-tab until someone picks one; the Stage tile opens Stages.
+  const sections = useSectionTabs("");
+  const format = useProjectFormat();
+  const input = useMemo(() => ({ record, commercial, journey, project, today, valueEngineering }), [record, commercial, journey, project, today, valueEngineering]);
+  const next = useMemo(() => caseNextStep(input), [input]);
+  const money = useMemo(() => caseMoney(commercial), [commercial]);
+  const overdue = caseOverdue(input);
+  const steps = caseTimeline(input);
+  const people = caseTeam(input, members);
+  const files = caseFiles(record, commercial, assetHref);
+  const day = (value?: string | null) => (value ? format.short(value.length > 10 ? format.dayOf(value) : value) : "");
+  const until = (value?: string | null) => (value ? format.until(value.length > 10 ? format.dayOf(value) : value) : null);
+  const position = casePosition(record, commercial);
+  const currentStage = project?.stages.find((stage) => stage.status === "current");
+  const reference = record.reference ?? commercial?.opportunityReference ?? null;
+  // When the work should be done: the case's target while it is planned, the project's handover while the project runs.
+  const completeBy = record.projectId ? (project && ["active", "on_hold"].includes(project.project.status) ? project.project.promiseDate : null) : record.status === "released" ? null : record.targetDate;
+  const completeUntil = until(completeBy);
+  const value = money?.agreed ? { label: t("Agreed value"), amount: money.agreed } : money?.quoted ? { label: t("Quoted"), amount: money.quoted } : record.amount ? { label: t("Estimated value"), amount: record.amount } : null;
+  const currency = money?.currency ?? record.currencyCode ?? commercial?.currency ?? "";
+  // The stage by name, and where it sits in the line ("Stage 3 of 6") under it.
+  const stage = record.projectId && project
+    ? project.project.status === "completed" ? { name: t("Project completed"), position: null }
+      : currentStage ? { name: t(currentStage.name as MessageKey), position: t("Stage {number} of {total}", { number: currentStage.position + 1, total: project.stages.length }) }
+      : { name: t("Released"), position: null }
+    : { name: t(casePhaseText(effectivePhase(record, commercial), record.plan).stage), position: t("Stage {number} of {total}", { number: position.position, total: position.count }) };
+  const site = record.siteAddress || record.siteLatitude != null ? record : null;
+  const quote = commercial?.data.quotes.find((item) => item.status === "issued");
+  const dates = [
+    record.activatedAt ? { label: t("Started"), value: day(record.activatedAt) } : null,
+    record.targetDate ? { label: t("Target"), value: day(record.targetDate) } : null,
+    quote?.validUntil ? { label: t("Quotation valid until"), value: day(quote.validUntil) } : null,
+    commercial?.data.agreement?.executedAt ? { label: t("Agreement signed"), value: day(commercial.data.agreement.executedAt) } : null,
+    record.releasedAt ? { label: t("Released"), value: day(record.releasedAt) } : null,
+    project?.project.promiseDate && project.project.status !== "completed" ? { label: t("Handover"), value: day(project.project.promiseDate) } : null,
+    project?.project.status === "completed" && project.project.closedAt ? { label: t("Completed"), value: day(project.project.closedAt) } : null,
+  ];
+
+  const overview = <RecordPanel>
+    <SideSection title={t("Team")}>
+      <PeopleList label={t("Team")}>
+        {people.client ? <PersonRow id={people.client.id} name={people.client.name} role={t("Client")} phone={people.client.phone} email={people.client.email} /> : null}
+        {people.team.map((person) => <PersonRow key={person.id} id={person.id} name={person.name} role={person.roles.map((role) => t(role)).join(" · ")} email={person.email} />)}
+      </PeopleList>
+    </SideSection>
+    {/* PLM-046: the Account Manager's recurring client update call. */}
+    {callsSlot}
+    {site ? <SideSection title={t("Site")}><SiteLocation address={site.siteAddress} latitude={site.siteLatitude} longitude={site.siteLongitude} /></SideSection> : null}
+    {dates.some(Boolean) ? <SideSection title={t("Key dates")}><FactList facts={dates} /></SideSection> : null}
+    {money ? <SideSection title={t("Money")}>
+      <FactList facts={[
+        money.quoted ? { label: t("Quoted"), value: format.money(money.quoted, money.currency) } : null,
+        money.agreed ? { label: t("Agreed"), value: format.money(money.agreed, money.currency) } : null,
+        money.paid ? { label: t("Paid"), value: format.money(money.paid, money.currency), tone: "success" } : null,
+        money.outstanding && Number(money.outstanding) > 0 ? { label: t("Outstanding"), value: format.money(money.outstanding, money.currency) } : null,
+      ]} />
+    </SideSection> : null}
+  </RecordPanel>;
+
+  const detailsPanel = <RecordPanel>
+    {details ? <SideSection title={t("Details")}>{details}</SideSection> : null}
+    <SideSection title={t("Enquiry")}>
+      <FactList facts={[
+        reference ? { label: t("Reference"), value: <Link href={`/workspace/crm/opportunities?record=${record.opportunityId}`}>{reference}</Link> } : null,
+        record.enquiryTypeName ? { label: t("Enquiry type"), value: record.enquiryTypeName } : null,
+        { label: t("Created"), value: day(record.createdAt) },
+        project ? { label: t("Project"), value: <Link href={`/workspace/projects/${project.project.id}`}>{project.project.reference}</Link> } : null,
+      ]} />
+    </SideSection>
+  </RecordPanel>;
+
+  const filesPanel = files.length ? <RecordPanel><FileList label={t("Files")} items={files.map((file) => ({ ...file, meta: file.at ? day(file.at) : null }))} /></RecordPanel>
+    : <EmptyState illustration={null} title={t("No files yet")} action={<Link className="wd-button" data-size="compact" data-variant="secondary" href={caseHref(record.id, new URLSearchParams(), "quotations")}>{t("Open quotations")}</Link>} />;
+
+  return <RecordFrame tour="case-record">
+    <RecordHeader title={<h2>{record.title}</h2>} actions={actions} meta={<>
+      <span>{record.customerName}</span>
+      {reference ? <span>{reference}</span> : null}
+      {record.enquiryTypeName ? <span>{record.enquiryTypeName}</span> : null}
+      <Badge data-chip="" tone={caseStatusTone(record.status)}>{t(caseStatusLabel(record.status))}</Badge>
+    </>} />
+    {/* Where the case stands, as tiles: the stage (n of N), its owner, when it is due (late in danger), what is overdue, the value and the share paid. */}
+    <KpiStrip label={t("Where the case stands")}>
+      <KpiTile icon={<Flag size={13} />} label={t("Stage")} value={stage.name} detail={stage.position} onPress={() => sections.open("stages")} />
+      {record.engagementOwnerName ? <KpiTile icon={<UserRound size={13} />} label={t("Owner")} value={<PersonChip id={record.ownerMembershipId ?? "owner"} name={record.engagementOwnerName} />} /> : null}
+      {completeBy ? <KpiTile icon={<CalendarClock size={13} />} label={t("Complete by")} value={day(completeBy)} detail={completeUntil?.text} tone={completeUntil?.late ? "danger" : undefined} /> : null}
+      {overdue ? <KpiTile icon={<TriangleAlert size={13} />} label={t("Overdue")} value={overdue} tone="danger" /> : null}
+      {value ? <KpiTile icon={<CircleDollarSign size={13} />} label={value.label} value={format.money(value.amount, currency)} /> : null}
+      {money?.paidShare !== null && money?.paidShare !== undefined ? <KpiTile icon={<Wallet size={13} />} label={t("Paid")} value={t("{percent}%", { percent: money.paidShare })}
+        tone={money.paidShare >= 100 ? "success" : undefined} /> : null}
+    </KpiStrip>
+    <RecordColumns sideLabel={t("Case overview")} tabs={[
+      { id: "overview", label: t("Overview"), panel: overview },
+      { id: "details", label: t("Details"), panel: detailsPanel },
+      { id: "files", label: t("Files"), panel: filesPanel },
+    ]}
+      next={<>
+        {loading ? <Skeleton lines={3} shape="facts" /> : <CaseNextStepCard next={next} busy={busy} onCommand={onCommand} />}
+        {/* The long lists as sub-tabs under the next step (the design journey first while it runs), each in its card. */}
+        <SectionTabs tab={sections.tab} onTabChange={sections.setTab} tabsRef={sections.ref} tabs={[
+          ...(journeySlot ? [{ id: "design", label: t("Design"), panel: journeySlot }] : []),
+          { id: "stages", label: t("Stages"), panel: <Card>
+            <RecordTimeline label={t("Stages")} steps={steps.map((step) => ({
+              id: step.id, label: say(t, step.label), state: step.state, people: step.people,
+              date: step.doneAt ? day(step.doneAt) : null, detail: step.detail ? say(t, step.detail) : null,
+            }))} />
+          </Card> },
+          ...(historySlot ? [{ id: "history", label: t("History"), panel: <Card>{historySlot}</Card> }] : []),
+        ]} />
+      </>} />
+  </RecordFrame>;
+}
+
+/** The next step as the action card: what, why, who, by when, and the one action. */
+function CaseNextStepCard({ next, busy, onCommand }: { next: CaseNextStep; busy: boolean; onCommand?: (command: CaseCommand) => void }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const due = next.due ? (next.due.length > 10 ? format.dayOf(next.due) : next.due) : null;
+  const action = next.action;
+  return <NextStepCard title={say(t, next.title)} why={next.why ? say(t, next.why) : null} status={next.status} tour="case-next" meta={<>
+    {next.owner ? <PersonChip id={`next-${next.owner}`} name={next.owner} /> : null}
+    {due ? <Badge tone={next.overdue ? "danger" : "neutral"}>{next.overdue ? t("Overdue · {date}", { date: format.short(due) }) : t("Due {date}", { date: format.short(due) })}</Badge> : null}
+    {action?.href ? <Link className="wd-button" data-variant="primary" data-size="compact" href={action.href}>{say(t, action.label)}</Link>
+      : action?.command && onCommand ? <Button size="compact" variant="primary" isLoading={busy} onPress={() => onCommand(action.command!)}>{say(t, action.label)}</Button> : null}
+  </>} />;
 }

@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 
-export const WODDY_MARK_SRC = "/brand/wodana/woddy-mark-v4.png";
 export const IDENTITY_VARIANT_COUNT = 6;
 
 type IdentityImageOptions = {
@@ -34,5 +33,7 @@ export function identityStyle(identity: string, imageUrl?: string, options: Iden
 }
 
 export function identityInitials(name: string): string {
-  return name.trim().split(/\s+/u).slice(0, 2).map((part) => Array.from(part)[0] ?? "").join("").toUpperCase() || "?";
+  // Brackets, quotes and other marks never become an initial: "Sara (Account Manager)" is "SA".
+  return name.trim().split(/\s+/u).map((part) => part.replace(/^[^\p{L}\p{N}]+/u, "")).filter(Boolean)
+    .slice(0, 2).map((part) => Array.from(part)[0] ?? "").join("").toUpperCase() || "?";
 }

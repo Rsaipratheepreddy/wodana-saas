@@ -9,7 +9,7 @@ function client(input: {
 }) {
   const query = vi.fn(async (sql: string) => {
     if (sql.includes("SELECT enquiry.service_type")) {
-      return { rows: [{ service_type: input.serviceType ?? null }], rowCount: 1 };
+      return { rows: [{ service_type: input.serviceType === undefined ? "interior_design" : input.serviceType }], rowCount: 1 };
     }
     if (sql.includes("FROM crm_qualification_forms")) {
       return input.form ? { rows: [input.form], rowCount: 1 } : { rows: [], rowCount: 0 };
@@ -86,6 +86,15 @@ describe("CRM qualification evidence", () => {
     const result = await evaluateQualification(db as never, "workspace", "lead", {}, true);
     expect(result).toMatchObject({ ready: true, evidence: { selection: "none", form: null } });
     expect(result.evidence.answers[0]).toMatchObject({ questionKey: "notes", value: "Verified by phone" });
+  });
+
+  it.each([null, "not_sure"])('requires a specific enquiry type before qualification when type is %s', async serviceType => {
+    const db = client({ serviceType });
+    expect(await evaluateQualification(db as never, "workspace", "lead")).toMatchObject({
+      ready: false, missingRequired: ["serviceType"],
+    });
+    await expect(evaluateQualification(db as never, "workspace", "lead", {}, true))
+      .rejects.toThrow("Choose a specific enquiry type");
   });
 });
 

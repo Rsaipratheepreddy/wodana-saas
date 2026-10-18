@@ -57,6 +57,14 @@ export class UpdateTenantDataPolicyDto {
   @IsBoolean() exportBeforeErasure!: boolean;
 }
 
+/** The account's sign-in security: whether administrators, or everyone, need an authenticator. Left out, unchanged. */
+export class UpdateAccountSecurityPolicyDto {
+  @IsInt() @Min(1) expectedVersion!: number;
+  @IsOptional() @IsBoolean() requireMfaForAdmins?: boolean;
+  @IsOptional() @IsBoolean() requireMfaForAllUsers?: boolean;
+  @Transform(trim) @IsString() @MinLength(10) @MaxLength(500) reason!: string;
+}
+
 export class RequestTenantSupportSessionDto {
   @IsIn(["read_only", "limited_write"]) accessLevel!: "read_only" | "limited_write";
   @Type(() => Number) @IsInt() @Min(15) @Max(480) durationMinutes!: number;

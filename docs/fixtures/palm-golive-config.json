@@ -1,0 +1,382 @@
+{
+  "description": "Palm Living go-live configuration (plan §0.5 items 12-13; deploy checklist 6 Oct). Apply with: node dist/ops/ops-cli.js configure --workspace <slug> --as <member> --profile palm-golive-config.json [--apply]. Values marked TBC by Palm are left out or null.",
+  "_enquiryTypes": "PLM-173 (15 Oct 2026): Renovation is on hold until Palm confirms, so it takes no new enquiries; existing ones are kept.",
+  "enquiryTypes": {
+    "archive": [
+      "concepts_early_ideas",
+      "renovation_fit_out"
+    ]
+  },
+  "vehicles": [
+    {
+      "name": "Peugeot Partner",
+      "plate": "Z18436"
+    },
+    {
+      "name": "HiAce Van",
+      "plate": "S/79121",
+      "type": "Van"
+    },
+    {
+      "name": "Peugeot Boxer",
+      "plate": "CC98435"
+    },
+    {
+      "name": "Jetour T2",
+      "plate": "CC96859"
+    },
+    {
+      "name": "Defender",
+      "plate": "BB85164"
+    },
+    {
+      "name": "Chevrolet",
+      "plate": "N 97453"
+    },
+    {
+      "name": "New Bus",
+      "plate": "DD70969",
+      "type": "Bus"
+    },
+    {
+      "name": "Ashok Partner (Pick up)",
+      "plate": "69912 Private G",
+      "type": "Pick-up"
+    },
+    {
+      "name": "Ford Ranger Raptor",
+      "plate": "EE55362"
+    }
+  ],
+  "routes": [
+    {
+      "default": true,
+      "addStages": [
+        {
+          "name": "Permit collection",
+          "key": "permit",
+          "ownerRole": "installation_lead",
+          "before": "Delivery and installation",
+          "checks": [
+            "permit_collected"
+          ]
+        }
+      ],
+      "addChecks": [
+        {
+          "stage": "Technical drawings",
+          "checks": [
+            "technical_measure_done",
+            "drawings_uploaded",
+            "drawings_design_checked",
+            "drawings_client_approved",
+            "factory_slot_booked"
+          ]
+        },
+        {
+          "stage": "Delivery and installation",
+          "checks": [
+            "installation_scheduled",
+            "goods_delivered",
+            "installation_done"
+          ]
+        },
+        {
+          "_note": "PLM-174 (path E): on a bespoke job production waits for the technical handover accepted (PLM-165), every custom line's factory requirements confirmed (PLM-166) and the QS step; on other jobs these checks pass by themselves.",
+          "stage": "Production",
+          "checks": [
+            "technical_handover_accepted",
+            "factory_requirements_confirmed",
+            "qs_approved",
+            "everything_made"
+          ]
+        }
+      ],
+      "_removeChecks": "PLM-149: the technical measure comes before the drawings and the lead designer's design check replaces the site check; the client's approval is recorded, not ticked by hand.",
+      "removeChecks": [
+        {
+          "stage": "Technical drawings",
+          "checks": [
+            "drawings_site_checked",
+            { "kind": "confirm", "label": "Client approved the drawings" }
+          ]
+        }
+      ]
+    }
+  ],
+  "_projects": "PLM-149: the lead designer sends the drawings to the client and records the approval (switch to the Lead Interior Designer role key once PLM-151 adds it); the technical measure is due 5 working days after its task opens (to confirm with Palm). PLM-161 / PLM-167 / PLM-168 (15 Oct 2026): the project (and its draft BOQ) starts by itself once Proposal 2 is accepted and the upfront payment is verified by Finance; the technical team verifies the BOQ and the QS approves it (BOQ R-n) before ordering; the technical designer role verifies it unless Palm names another.",
+  "_projectStart": "Palm (15 Oct 2026): a project starts only after the owner approved the deal (Settings › Projects › Starting a project › Deal approved).",
+  "projects": {
+    "drawingsClientRole": "designer",
+    "technicalMeasureDays": 5,
+    "boqReview": true,
+    "autoStartOnPayment": true,
+    "requireApproval": true
+  },
+  "_purchasing": "PLM-159 / PLM-163 / PLM-169 (15 Oct 2026): nothing is ordered before the technical drawings are verified, the BOQ is QS-approved, the client approved any revised price, the QS signed off the order form and confirmed the material list. Someone who approves orders can mark a check not applicable on one order, with a reason.",
+  "purchasing": {
+    "requireDrawingsVerified": true,
+    "requireBoqApproved": true,
+    "requirePriceApproval": true,
+    "requireQsSignoff": true,
+    "requireMaterialListConfirmed": true
+  },
+  "factory": {
+    "productionSteps": [
+      "Scheduled",
+      "In Production",
+      "Quality Check",
+      "Ready"
+    ],
+    "clientPaymentReminderDays": 7,
+    "permits": {
+      "requiredForDeliveriesAndInstallations": true,
+      "furnitureDeliveriesNeedOne": true,
+      "missingAlertWorkingDays": 3,
+      "expiryReminderDays": 7
+    },
+    "inspections": {
+      "_source": "PLM-150 (13 Oct 2026): two design inspections per joinery / bespoke furniture item; the Lead Interior Designer inspects, the Creative Director on Designed by the Creative Director projects. Days to inspect are TBC by Palm (the default of 2 working days applies).",
+      "enabled": true,
+      "stages": [
+        { "kind": "raw", "label": "Inspection 1 (raw material)" },
+        { "kind": "final", "label": "Inspection 2 (finished)" }
+      ],
+      "trades": [
+        "Joinery",
+        "Bespoke furniture"
+      ],
+      "inspectorRole": "designer",
+      "directorRole": "creative_director",
+      "directorPackages": [
+        "creative_director"
+      ]
+    },
+    "release": {
+      "_source": "PLM-174 (path E, 15 Oct 2026): before a work order on a bespoke job is released, the technical handover pack is accepted, the line's factory requirements are confirmed (or its recipe verified) and the quotation passed QS.",
+      "technicalHandover": true,
+      "factoryRequirements": true,
+      "qsApproved": true
+    }
+  },
+  "quotations": {
+    "validityDays": 7,
+    "qsReview": true,
+    "qsPrices": "lines",
+    "qsWorkPackages": [
+      "Joinery",
+      "Bespoke furniture"
+    ],
+    "valueEngineeringFreeRounds": 2
+  },
+  "firstResponse": {
+    "minutes": 60,
+    "workingCalendar": {
+      "days": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "start": "09:00",
+      "end": "18:00"
+    }
+  },
+  "financeRequests": {
+    "inbox": "accounts@palmlivingae.com",
+    "paymentMethods": [
+      {
+        "name": "Bank transfer / card",
+        "refundDays": null
+      },
+      {
+        "name": "Stripe",
+        "refundDays": null
+      },
+      {
+        "name": "Tabby",
+        "refundDays": null
+      }
+    ]
+  },
+  "approvals": {
+    "payableRequest": {
+      "firstApproverRole": "finance",
+      "secondApproverRole": null,
+      "thresholdAmount": null
+    }
+  },
+  "rolePermissions": [
+    {
+      "roles": [
+        "administrator",
+        "team_ops_admin"
+      ],
+      "permissions": [
+        "reports.management.view",
+        "reports.management.targets"
+      ]
+    },
+    {
+      "_note": "PLM-137: the WhatsApp inbox is the Sales Admin's intake (the unassigned chats and the Sales team's, crm.inbox.team), and only the Sales Admin sends Closing the chat.",
+      "roles": [
+        "team_sales_admin"
+      ],
+      "permissions": [
+        "crm.inbox.team",
+        "crm.inbox.close_chats"
+      ]
+    }
+  ],
+  "design": {
+    "renderInternalDays": 35,
+    "renderClientDays": 56,
+    "revisionsIncluded": 2,
+    "_steps": "PLM-140 to PLM-144 (13 Oct 2026): team allocated the day the fee is paid; first concept 7 days after the kick-off (4-7, set per job by the lead designer); site measure within 3 days of the kick-off; design development 2-8 weeks for the client (7 days per room between them, an assumption until Palm confirms); samples collected within a week and the sample meeting the week after; 1 or 2 concept options. The kick-off within 5 days of inspiration ending is an assumption until Palm confirms.",
+    "steps": {
+      "allocationDays": 1,
+      "kickoffDays": 5,
+      "conceptDays": 7,
+      "siteMeasureDays": 3,
+      "developmentMinDays": 14,
+      "developmentMaxDays": 56,
+      "developmentDaysPerRoom": 7,
+      "sampleCollectionDays": 7,
+      "sampleMeetingDays": 7,
+      "conceptOptionsMax": 2
+    },
+    "team": {
+      "lead_designer": "designer",
+      "junior_designer": "junior_designer",
+      "sales_admin": "sales_admin",
+      "visualiser": "visualiser",
+      "draftsman": "draftsman",
+      "material_coordinator": "material_coordinator",
+      "technicalLeadRoleCode": "technical_lead"
+    },
+    "projectRoles": [
+      { "key": "designer", "label": "Lead Interior Designer" },
+      { "key": "junior_designer", "label": "Junior Interior Designer" },
+      { "key": "sales_admin", "label": "Sales Admin" },
+      { "key": "visualiser", "label": "Visualiser" },
+      { "key": "draftsman", "label": "Draftsman" },
+      { "key": "material_coordinator", "label": "Material Coordinator" },
+      { "key": "creative_director", "label": "Creative Director" }
+    ]
+  },
+  "_clientUpdates": "PLM-179: each job's weekly client update is a call with the Account Manager or a written progress update in the client portal, whichever they do; no call is booked by default.",
+  "clientUpdates": {
+    "mode": "either",
+    "frequency": "weekly"
+  },
+  "clientPortal": {
+    "_source": "PLM-170 (15 Oct 2026): clients of fit-out, ID & furniture, renovation and bespoke joinery jobs see the bill of quantities at selling rates in their portal; never cost or margin.",
+    "sections": { "boq": true },
+    "boqEnquiryTypes": ["full_fit_out", "interior_design_furniture", "renovation_fit_out", "bespoke"]
+  },
+  "orderPaths": [
+    {
+      "enquiryType": "interior_design_furniture",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "full_fit_out",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "renovation_fit_out",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "interior_design",
+      "path": null,
+      "boqRequired": true
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "take_home_now",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "in_stock_delivery",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "supplier_order",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "core_collection_factory",
+      "boqRequired": false
+    },
+    {
+      "enquiryType": "furniture_only",
+      "path": "bespoke",
+      "boqRequired": true
+    }
+  ],
+  "catalogCategories": [
+    {
+      "_note": "Core Collection import (5 Oct) made its block titles categories in capitals beside the catalogue's own. Merge runs first, then empty duplicates go, then renames and parents.",
+      "catalog": "Palm Living Core Collection",
+      "merge": [
+        { "from": "BED & MATTRESS", "into": "Beds & Mattress" }
+      ],
+      "deleteEmptyDuplicates": true,
+      "rename": [
+        { "from": "DINING CHAIRS", "to": "Dining Chairs" },
+        { "from": "LOUNGE CHAIRS", "to": "Lounge Chairs" }
+      ],
+      "parent": [
+        { "category": "Dining Chairs", "parent": "Chairs" },
+        { "category": "Lounge Chairs", "parent": "Chairs" }
+      ]
+    }
+  ],
+  "_finishes": "PLM-146, PLM-148, PLM-156, PLM-157 (13 Oct 2026): the finishes schedule's categories (Palm's batch sheet: hard and soft finishes, whitegoods, sanitary ware, lighting, sockets); the client signs the physical samples and data sheets of sanitary ware and whitegoods before procurement orders; the final quotation (Proposal 2) waits for the final specification (samples approved and the finishes sent to QS); the lead and junior interior designers and the Sales Admin edit the quotation's material column. The 3 days to send the finishes to QS and the sample library's price bands (names only, no amounts yet) are assumptions until Palm confirms.",
+  "finishes": {
+    "categories": [
+      { "key": "hard_finishes", "label": "Hard finishes" },
+      { "key": "soft_finishes", "label": "Soft finishes" },
+      { "key": "whitegoods", "label": "Whitegoods", "clientSignature": true },
+      { "key": "sanitary_ware", "label": "Sanitary ware", "clientSignature": true },
+      { "key": "lighting", "label": "Lighting" },
+      { "key": "sockets", "label": "Sockets and switches" }
+    ],
+    "specificationGate": true,
+    "finishesToQsDays": 3,
+    "materialEditors": ["lead_designer", "junior_designer", "sales_admin"],
+    "priceBands": [
+      { "label": "Entry" },
+      { "label": "Mid range" },
+      { "label": "Premium" },
+      { "label": "Luxury" }
+    ]
+  },
+  "inbox": {
+    "_note": "PLM-137: Palm's three closing messages (English). {{form_link}} is left to the firm's published enquiry form until Palm gives a link.",
+    "closingMessages": {
+      "received": "Thank you, {{name}}! Your enquiry is now with our team. An Account Manager will contact you shortly. \u2013 Palm Living Interiors",
+      "form": "Hi {{name}}, to take your enquiry forward, please complete this short form: {{form_link}}. Once we receive it, our team will be in touch.",
+      "closing": "Hi {{name}}, we haven't heard back from you, so we'll close this chat for now. If you'd like to continue with your project, simply message us here anytime and we'll be happy to help. \u2013 Palm Living Interiors"
+    },
+    "closingAfterHours": 3
+  },
+  "sales": {
+    "_note": "PLM-155: timeline questions go to the design team and Production. New enquiries and chats go round-robin, not to the lightest load. PLM-180: hand-offs keep rotating; an enquiry nobody picks up within a working day goes back to Unassigned and the Owners are told.",
+    "timelineCheckTeams": ["INTERIOR_DESIGN", "PRODUCTION", "PRODUCTION_LEAD"],
+    "assignmentMode": "round_robin",
+    "unassignAfterWorkingDay": true
+  },
+  "enquiryRequirements": [
+    { "_note": "PLM-096 / PLM-155: location and the client's target completion before the Intro (plot size and floor plan are already required to book it).", "field": "area", "requiredAt": "book_intro" },
+    { "field": "targetCompletion", "requiredAt": "book_intro" }
+  ]
+}

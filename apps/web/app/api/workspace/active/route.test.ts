@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/i18n/server", async () => { const { translator } = await import("@/lib/i18n/messages"); return { getServerT: async () => translator("en"), getServerLanguage: async () => "en" }; });
 import { NextResponse } from "next/server";
 
 vi.mock("@/lib/auth/server", () => ({ ACTIVE_WORKSPACE_COOKIE: "wodana_workspace", authCookieOptions: { httpOnly: true, path: "/", sameSite: "lax" } }));

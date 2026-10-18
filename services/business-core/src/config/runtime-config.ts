@@ -1,3 +1,5 @@
+import { DeliveryAllowlist } from "../notifications/delivery-allowlist";
+
 export function validateRuntimeConfig(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -92,6 +94,36 @@ export function validateRuntimeConfig(
     if (/\r|\n/.test(String(config.MAILGUN_FROM ?? ""))) {
       throw new Error("MAILGUN_FROM cannot contain line breaks");
     }
+  }
+
+  const inboundDomain = String(config.INBOUND_EMAIL_DOMAIN ?? "").trim();
+  if (inboundDomain && !/^(?=.{3,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(inboundDomain.replace(/^@/, ""))) {
+    throw new Error("INBOUND_EMAIL_DOMAIN must be a domain name, e.g. in.example.com");
+  }
+
+  const sesFrom = String(config.SES_FROM ?? "");
+  if (/\r|\n/.test(sesFrom)) {
+    throw new Error("SES_FROM cannot contain line breaks");
+  }
+  const emailProvider = String(config.EMAIL_PROVIDER ?? "").trim().toLowerCase();
+  if (emailProvider && !["mailgun", "ses"].includes(emailProvider)) {
+    throw new Error("EMAIL_PROVIDER must be mailgun or ses");
+  }
+  if (emailProvider === "ses" && !sesFrom.trim()) {
+    throw new Error("EMAIL_PROVIDER=ses requires SES_FROM");
+  }
+  // The outbound email limit (every send of this process takes a slot) and the reminder sweep's email cap.
+  for (const key of ["EMAIL_SEND_PER_SECOND", "EMAIL_SEND_PER_MINUTE", "REMINDERS_SWEEP_EMAIL_CAP"] as const) {
+    const text = String(config[key] ?? "").trim();
+    if (text && !(/^\d+$/.test(text) && Number(text) > 0)) {
+      throw new Error(`${key} must be a positive whole number`);
+    }
+  }
+
+  // The delivery guard is for local and UAT only: in production it would silently drop real messages.
+  const allowlist = DeliveryAllowlist.parse(String(config.DELIVERY_ALLOWLIST ?? ""));
+  if (allowlist.enabled && String(config.ENVIRONMENT ?? "").trim().toLowerCase() === "production") {
+    throw new Error("DELIVERY_ALLOWLIST is for local and UAT environments; remove it in production (ENVIRONMENT=production)");
   }
   return config;
 }

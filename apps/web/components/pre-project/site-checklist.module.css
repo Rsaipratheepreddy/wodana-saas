@@ -1,0 +1,19 @@
+/* The question list and checklists of a job: general questions by section, then each checklist. */
+.list { display: flex; flex-direction: column; gap: var(--wd-space-5); }
+.group { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.groupHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2) var(--wd-space-3); }
+.groupHead > :last-child:not(:first-child) { margin-inline-start: auto; }
+.groupTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
+.muted { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.question { margin: 0; font-size: var(--wd-text-sm); }
+
+/* A checklist line: its text, its status and its requirement or reference; a pending line stands out. */
+.check { display: flex; flex-direction: column; gap: var(--wd-space-2); padding-block: var(--wd-space-2); padding-inline-start: var(--wd-space-3);
+  border-inline-start: 2px solid var(--wd-color-structural-divider); }
+.check[data-pending] { border-inline-start-color: var(--wd-color-warning); }
+
+.answers { display: flex; flex-direction: column; gap: var(--wd-space-3); margin: 0; }
+.answer { display: flex; flex-direction: column; gap: var(--wd-space-1); padding-inline-start: var(--wd-space-3); border-inline-start: 2px solid var(--wd-color-structural-divider); }
+.answer[data-pending] { border-inline-start-color: var(--wd-color-warning); background: var(--wd-color-warning-subtle); }
+.answer dt { font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+.answer dd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); margin: 0; font-size: var(--wd-text-sm); }

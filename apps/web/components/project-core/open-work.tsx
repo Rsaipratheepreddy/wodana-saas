@@ -1,0 +1,104 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Avatar, EmptyState, ErrorState, GroupedTable, isNoAccessError, ListTabs, NoAccessState, MenuButton, NoResultsState, PageShell, SearchInput, SegmentedControl, Skeleton, useDesignSystem, type GroupedTableColumn, type GroupedTableSection } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
+import { projectApi } from "@/lib/project-core/client";
+import type { OpenWork as OpenWorkState, OpenWorkItem, WorkBoard } from "@/lib/project-core/types";
+import { useProjectFormat } from "./format";
+import { StatusLabel, TypeIcon, useWorkLabels } from "./work-labels";
+import { TeamInsights } from "./team-insights";
+import { WorkSheet } from "./work-sheet";
+import styles from "./work.module.css";
+
+type View = "mine" | "all" | "team";
+type Bucket = "late" | "today" | "week" | "later" | "none";
+
+/**
+ * Open work across every project the person is on, by when it's due: their own, or everyone's; and,
+ * for someone who oversees every project, the team's workload and how work has gone. A row opens the
+ * item's panel in place.
+ */
+export function OpenWork({ workspaceId }: { workspaceId: string }) {
+  const t = useT();
+  const format = useProjectFormat();
+  const labels = useWorkLabels();
+  const { timeZone } = useDesignSystem();
+  const api = useMemo(() => projectApi(workspaceId), [workspaceId]);
+  const [view, setView] = useState<View>("mine");
+  const [data, setData] = useState<OpenWorkState | null>(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [who, setWho] = useState<{ id: string | null; name: string } | null>(null);
+  const [canSeeTeam, setCanSeeTeam] = useState(false);
+  const [days, setDays] = useState<30 | 90>(30);
+  const [opened, setOpened] = useState<{ projectId: string; itemId: string; board: WorkBoard | null; error?: string } | null>(null);
+
+  // Only the latest request shows: switching Mine / All quickly never lets an older answer overwrite the newer one.
+  const latest = useRef(0);
+  const load = useCallback(async () => {
+    if (view === "team") return;
+    const request = ++latest.current;
+    try { const next = await api.openWork(view); if (request !== latest.current) return; setData(next); setCanSeeTeam(next.canSeeTeam); setError(""); }
+    catch (cause) { if (request === latest.current) setError(cause instanceof Error ? cause.message : t("Your work didn't load.")); }
+  }, [api, view, t]);
+  useEffect(() => { queueMicrotask(() => void load()); }, [load]);
+
+  const open = async (item: OpenWorkItem) => {
+    setOpened({ projectId: item.projectId, itemId: item.id, board: null });
+    try { const board = await api.work(item.projectId); setOpened((current) => (current?.itemId === item.id ? { ...current, board } : current)); }
+    catch (cause) { setOpened((current) => (current?.itemId === item.id ? { ...current, error: cause instanceof Error ? cause.message : t("This item didn't load.") } : current)); }
+  };
+
+  const today = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()), [timeZone]);
+  const weekEnd = useMemo(() => { const date = new Date(`${today}T00:00:00Z`); date.setUTCDate(date.getUTCDate() + 7); return date.toISOString().slice(0, 10); }, [today]);
+  const bucket = (due: string | null): Bucket => (!due ? "none" : due < today ? "late" : due === today ? "today" : due <= weekEnd ? "week" : "later");
+  const bucketLabels: Record<Bucket, string> = { late: t("Late"), today: t("Today"), week: t("Next 7 days"), later: t("Later"), none: t("No due date") };
+
+  const tabs = <ListTabs label={t("Whose work")} value={view} onChange={(value) => { setView(value); if (value !== "team") setData(null); }}
+    items={[{ id: "mine", label: t("Mine") }, { id: "all", label: t("Everyone") }, ...(canSeeTeam ? [{ id: "team" as const, label: t("Team") }] : [])]} />;
+  if (error && !data) return <PageShell title={t("Tasks")} tabs={tabs}>{isNoAccessError(error) ? <NoAccessState area={t("Projects")} /> : <ErrorState description={error} onRetry={() => void load()} />}</PageShell>;
+  const needle = search.trim().toLocaleLowerCase();
+  const people = [...new Map((data?.items ?? []).map((item) => [item.assigneeId ?? "none", { id: item.assigneeId, name: item.assigneeName ?? t("No one") }])).values()]
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const items = (data?.items ?? []).filter((item) => (!needle || `${item.title} ${item.projectName} ${item.projectReference}`.toLocaleLowerCase().includes(needle))
+    && (view !== "all" || !who || item.assigneeId === who.id));
+  const sections: GroupedTableSection<OpenWorkItem>[] = (Object.keys(bucketLabels) as Bucket[])
+    .map((id) => ({ id, label: bucketLabels[id], rows: items.filter((item) => bucket(item.dueDate) === id), emptyMessage: "" }))
+    .filter((section) => section.rows.length)
+    .map((section) => ({ ...section, label: `${section.label} · ${section.rows.length}` }));
+  const columns: GroupedTableColumn<OpenWorkItem>[] = [
+    { id: "title", label: t("Title"), width: view === "mine" ? "44%" : "36%", render: (item) => <span className={styles.titleCell}>
+      <span><TypeIcon type={item.type} label={labels.type[item.type]} /><span className={styles.number}>#{item.number}</span>{item.title}</span>
+      {item.blockedBy.length ? <small><span className={styles.blocked}>{t("Blocked by {items}", { items: item.blockedBy.map((ref) => `#${ref.number}`).join(", ") })}</span></small> : null}
+    </span> },
+    { id: "project", label: t("Project"), width: "24%", mobileHidden: true, render: (item) => <span className={styles.projectCell}><span>{item.projectName}</span><small>{item.projectReference}</small></span> },
+    ...(view === "all" ? [{ id: "assignee", label: t("Assignee"), width: "16%", mobileHidden: true, render: (item: OpenWorkItem) => item.assigneeName
+      ? <span className={styles.person}><Avatar name={item.assigneeName} size="sm" />{item.assigneeName}</span> : <span className={styles.muted}>—</span> }] : []),
+    { id: "due", label: t("Due"), width: "12%", render: (item) => <span className={styles.muted} data-late={bucket(item.dueDate) === "late" || undefined}>{item.dueDate ? format.day(item.dueDate) : "—"}</span> },
+    { id: "status", label: t("Status"), width: "14%", mobileHidden: true, render: (item) => <StatusLabel status={item.status} /> },
+  ];
+
+  return <PageShell title={t("Tasks")} tabs={tabs} toolbar={<div className={styles.toolbarGroup}>
+      {view === "team" ? <SegmentedControl label={t("Period")} value={String(days)} onChange={(value) => setDays(value === "90" ? 90 : 30)}
+        options={[{ id: "30", label: t("Last 30 days") }, { id: "90", label: t("Last 90 days") }]} /> : <>
+        <SearchInput label={t("Search work")} placeholder={t("Search")} value={search} onChange={setSearch} />
+        {view === "all" ? <MenuButton size="compact" label={who ? who.name : t("Everyone")} onAction={(id) => setWho(id === "everyone" ? null : people.find((person) => (person.id ?? "none") === id) ?? null)}
+          items={[{ id: "everyone", label: t("Everyone") }, ...people.map((person) => ({ id: person.id ?? "none", label: person.name }))]} /> : null}</>}
+    </div>}>
+    {view === "team" ? <TeamInsights api={api} days={days} onPerson={(id, name) => { setWho({ id, name }); setView("all"); setData(null); }} />
+      : !data ? <Skeleton lines={6} shape="rows" />
+      : !data.items.length ? <EmptyState illustration={null} title={view === "mine" ? t("Nothing on your plate") : t("No open work")}
+          description={view === "mine" ? t("Work given to you on any project shows here.") : undefined}
+          action={<Link className="wd-button" data-size="compact" data-variant="secondary" href="/workspace/projects">{t("Open projects")}</Link>} />
+      : !items.length ? <NoResultsState onClear={() => { setSearch(""); setWho(null); }} />
+      : <GroupedTable<OpenWorkItem> ariaLabel={t("Open work")} columns={columns} sections={sections} selectable={false} getRowId={(item) => item.id}
+          getRowLabel={(item) => `#${item.number} ${item.title}`} onRowAction={(item) => void open(item)} />}
+    {opened?.error ? <ErrorState description={opened.error} onRetry={() => setOpened(null)} /> : null}
+    {opened?.board ? <WorkSheet key={opened.itemId} api={api} projectId={opened.projectId} itemId={opened.itemId} board={opened.board}
+      onBoard={(board) => setOpened((current) => (current ? { ...current, board } : current))}
+      onOpenItem={(itemId) => setOpened((current) => (current ? { ...current, itemId } : current))}
+      onClose={() => { setOpened(null); void load(); }} /> : null}
+  </PageShell>;
+}

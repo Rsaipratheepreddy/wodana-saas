@@ -1,0 +1,68 @@
+/* Ledger area: the report picker, statement rows, the journal sheet and the print layout (PDF via the browser). */
+.area { display: contents; }
+.picker { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--wd-space-3); margin-block-end: var(--wd-phi-2); }
+.picker > * { min-inline-size: calc(var(--wd-space-24) + var(--wd-space-16)); flex: 0 1 auto; }
+.picker > .pickerActions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; margin-inline-start: auto; }
+.sourceLine { margin: 0; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.chart { padding: var(--wd-space-4); border: 1px solid var(--wd-color-border); border-radius: var(--wd-table-frame-radius); background: var(--wd-color-surface); }
+
+/* The Ledger home: figures with their six-month trend, then what needs someone and the latest journals. */
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--wd-space-24) * 2), 1fr)); gap: var(--wd-space-3); }
+/* One tile anatomy: label, value, sub-line, then the chart at the foot, so every chart sits on the same line (UX-060). */
+.figures > :global(.wd-kpi-figure) { align-content: space-between; }
+.home { display: grid; gap: var(--wd-phi-3); }
+.columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(var(--wd-space-24) * 3), 1fr)); gap: var(--wd-phi-3); align-items: start; }
+.panel { display: grid; gap: var(--wd-space-2); min-inline-size: 0; }
+.panelHead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-space-2); }
+.list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--wd-color-border); border-radius: var(--wd-table-frame-radius); background: var(--wd-color-surface); }
+.list > li { display: flex; align-items: center; gap: var(--wd-space-3); min-block-size: var(--wd-space-12); padding-block: var(--wd-space-2); padding-inline: var(--wd-space-3); }
+.list > li + li { border-block-start: 1px solid var(--wd-color-structural-divider); }
+.listMain { display: grid; flex: 1 1 auto; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.listMain small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.listEnd { flex: 0 0 auto; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.quiet { margin: 0; padding: var(--wd-space-3); color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.stack { display: grid; gap: var(--wd-phi-2); }
+.money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.muted { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-sm); }
+.danger { color: var(--wd-color-danger); }
+.link { color: var(--wd-color-link); text-decoration: none; font-weight: var(--wd-weight-medium); }
+.link:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.linkButton { padding: 0; border: 0; background: none; color: var(--wd-color-link); font: inherit; text-align: start; cursor: pointer; }
+.linkButton:hover { color: var(--wd-color-link-hover); text-decoration: underline; }
+.linkButton:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: var(--wd-space-0-5); border-radius: var(--wd-radius-xs); }
+.cell { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; white-space: normal; }
+.cell small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+/* Statement rows: a section heading, its accounts indented, and its total. */
+.row { display: block; min-inline-size: 0; }
+.row[data-depth="1"] { padding-inline-start: var(--wd-space-4); }
+.row[data-depth="2"] { padding-inline-start: var(--wd-space-8); }
+.row[data-depth="3"] { padding-inline-start: var(--wd-space-12); }
+.row[data-kind="section"] { font-weight: var(--wd-weight-semibold); color: var(--wd-color-text-secondary); }
+.row[data-kind="total"] { font-weight: var(--wd-weight-semibold); }
+.row[data-kind="result"] { font-weight: var(--wd-weight-bold); }
+
+.summary { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-space-6); margin: 0; font-size: var(--wd-text-sm); }
+.summary > div { display: grid; gap: var(--wd-space-0-5); }
+.summary dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.sheet { display: grid; gap: var(--wd-space-4); }
+.facts { display: grid; gap: var(--wd-space-1); margin: 0; }
+.facts > div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); align-items: baseline; font-size: var(--wd-text-sm); }
+.facts dt { color: var(--wd-color-text-tertiary); }
+.facts dd { margin: 0; min-inline-size: 0; overflow-wrap: anywhere; }
+.subhead { margin: 0; font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); color: var(--wd-color-text); }
+.panelLink { font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); color: var(--wd-color-text-secondary); text-decoration: none; }
+.panelLink:hover { color: var(--wd-color-text); text-decoration: underline; }
+.printTitle { display: none; }
+
+@media print {
+  :global(body):has(.area) * { visibility: hidden; }
+  .area, .area * { visibility: visible; }
+  .area { display: block; position: absolute; inset-block-start: 0; inset-inline: 0; }
+  .noPrint { display: none !important; }
+  .area [role="tablist"] { display: none !important; }
+  .chart { break-inside: avoid; }
+  .printTitle { display: block; margin-block: 0 var(--wd-space-4); font-size: var(--wd-text-sm); color: var(--wd-color-text-secondary); }
+}

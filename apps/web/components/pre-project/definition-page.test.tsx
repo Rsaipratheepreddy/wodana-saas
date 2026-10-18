@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesignSystemProvider } from "@/design-system";
@@ -21,15 +21,42 @@ describe("scope confirmation", () => {
     render(<DesignSystemProvider><DefinitionPage initial={initial} /></DesignSystemProvider>);
     const openedAt = new Date("2026-09-17T12:15:31Z").getTime();
     clock.mockReturnValue(openedAt);
-    await userEvent.click(screen.getByRole("button", { name: "Record offline decision" }));
-    const expected = new Date(openedAt - new Date().getTimezoneOffset() * 60_000 + 999).toISOString().slice(0, 19);
-    expect((screen.getByLabelText("When received") as HTMLInputElement).value).toContain(expected);
-    expect(screen.getByLabelText("When received")).toHaveAttribute("step", "1");
+    await userEvent.click(screen.getByRole("button", { name: "Record the client's answer" }));
+    const expected = new Date(openedAt).toISOString();
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) => ({ok:true,json:async()=> options?.method === "POST" ? {} : String(_url).includes("readiness") ? initial.readiness : initial.definition}) as Response);
+    await userEvent.type(screen.getByRole("textbox", {name:"Client name"}), "Sample client");
+    await userEvent.type(screen.getByRole("textbox", {name:"Evidence"}), "Test meeting record");
+    await userEvent.click(screen.getByRole("button", {name:"Save"}));
+    await waitFor(() => expect(request).toHaveBeenCalled());
+    const call=request.mock.calls.find(([,options])=>options?.method === "POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({decidedAt:expected,decisionBy:"Sample client",evidence:"Test meeting record"});
   });
-  it('shows a plain-language diff when the requirements changed after publication',()=>{
-    const changed=structuredClone(initial);if('error' in changed)throw new Error('fixture');changed.definition.current!.current=false;changed.definition.draft.changes={briefChanged:true,rooms:{added:['Study'],changed:['Bedroom → Primary bedroom'],removed:['Nursery']},items:{added:['Desk'],changed:['Wardrobe'],removed:[]},total:6};
+  it('marks what changed since the version the client saw',()=>{
+    const changed=structuredClone(initial);if('error' in changed)throw new Error('fixture');changed.definition.current!.current=false;
+    changed.definition.draft.items=[{id:'desk',title:'Desk',roomName:'Study',scopeStatus:'included',quantity:1,unit:'nos'},{id:'wardrobe',title:'Wardrobe',roomName:null,scopeStatus:'included',quantity:null,unit:'nos'}];
+    changed.definition.draft.changes={briefChanged:false,rooms:{added:['Study'],changed:[],removed:[]},items:{added:['Desk'],changed:['Wardrobe'],removed:[]},total:3};
     render(<DesignSystemProvider><DefinitionPage initial={changed}/></DesignSystemProvider>);
-    expect(screen.getByRole('region',{name:'Changes since published scope'})).toHaveTextContent('Rooms updated · Bedroom → Primary bedroom');
-    expect(screen.getByRole('region',{name:'Changes since published scope'})).toHaveTextContent('Scope added · Desk');
+    expect(screen.getByText('Changed since version 1 was sent')).toBeInTheDocument();
+    expect(screen.getByRole('row',{name:/Desk/})).toHaveTextContent('New');
+    expect(screen.getByRole('row',{name:/Wardrobe/})).toHaveTextContent('Changed');
+    expect(screen.getByRole('button',{name:'Send the updated scope'})).toBeInTheDocument();
   });
+  it('keeps the client decision draft after a rejected save',async()=>{
+    vi.spyOn(globalThis,'fetch').mockResolvedValue({ok:false,json:async()=>({message:'This scope changed. Refresh before recording a decision.'})} as Response);
+    render(<DesignSystemProvider><DefinitionPage initial={initial}/></DesignSystemProvider>);
+    const user=userEvent.setup();
+    await user.click(screen.getByRole('button',{name:"Record the client's answer"}));
+    await user.type(screen.getByRole('textbox',{name:'Client name'}),'Sample client');
+    await user.type(screen.getByRole('textbox',{name:'Evidence'}),'Meeting record');
+    await user.click(screen.getByRole('button',{name:'Save'}));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This scope changed');
+    expect(screen.getByRole('textbox',{name:'Client name'})).toHaveValue('Sample client');
+    expect(screen.getByRole('textbox',{name:'Evidence'})).toHaveValue('Meeting record');
+  });
+  it('does not expose publishing or decision controls to viewers',()=>{
+    render(<DesignSystemProvider><DefinitionPage initial={{...initial,definition:{...initial.definition,canPublish:false,canRecordClientDecision:false}}}/></DesignSystemProvider>);
+    expect(screen.queryByRole('button',{name:'Send the updated scope'})).not.toBeInTheDocument();
+    expect(screen.queryByRole('button',{name:"Record the client's answer"})).not.toBeInTheDocument();
+  });
+
 });

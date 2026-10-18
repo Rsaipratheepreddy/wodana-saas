@@ -1,6 +1,9 @@
 export type TenantModuleId = "workspace" | "crm" | "pre-project" | "projects" | "hrms";
 
 /** Effective role grants, not a commercial entitlement. Contract-level module gates are CP04. */
+/** Permissions every active member holds whatever their roles: their own attendance and leave. */
+export const MEMBER_PERMISSIONS = ["hrms.self"] as const;
+
 export function allowedTenantModules(permissionCodes: readonly string[]): TenantModuleId[] {
   const allowed = new Set<TenantModuleId>(["workspace"]);
   for (const code of permissionCodes) {

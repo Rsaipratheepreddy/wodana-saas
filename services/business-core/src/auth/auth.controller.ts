@@ -14,6 +14,7 @@ import {
   LocalLoginDto,
   LogoutDto,
   RefreshSessionDto,
+  ResolveOrganizationDto,
   ResetPasswordDto,
   VerifyMfaChallengeDto,
 } from "./dto/local-auth.dto";
@@ -29,6 +30,13 @@ export class AuthController {
   @ApiOkResponse()
   branding(@Param("loginSlug") loginSlug: string) {
     return this.auth.getTenantBranding(loginSlug);
+  }
+
+  @Post("organization/resolve")
+  @ApiOperation({ summary: "Find public sign-in branding by organization name, slug, or ID" })
+  @ApiCreatedResponse()
+  resolveOrganization(@Body() input: ResolveOrganizationDto) {
+    return this.auth.resolveOrganization(input.identifier);
   }
 
   @Get("tenant-host/:hostname")

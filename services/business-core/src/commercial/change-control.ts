@@ -9,7 +9,7 @@ import type {
   QuoteLine,
 } from "./commercial.types";
 import type { ProjectData } from "../projects/execution.types";
-import { acceptedQuoteLines, freezeHash } from "./commercial.domain";
+import { acceptedQuoteLines, matchesQuoteSnapshot } from "./commercial.domain";
 
 export const controlledChangeKinds: readonly ControlledChangeKind[] = [
   "addition",
@@ -232,7 +232,7 @@ export function acceptedVariationSnapshotIsCurrent(quote: Quote) {
       quote.hash &&
       quote.clientDecision?.decision === "accept" &&
       quote.clientDecision.quoteHash === quote.hash &&
-      freezeHash(quote) === quote.hash,
+      matchesQuoteSnapshot(quote),
   );
 }
 

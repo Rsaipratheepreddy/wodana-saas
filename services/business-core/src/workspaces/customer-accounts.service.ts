@@ -419,6 +419,7 @@ export class CustomerAccountsService {
           before.configuration,
           before.requestedBy,
           before.accountId,
+          input.defaults,
         );
         const updated = await client.query<OrganizationRequestRow>(
           `UPDATE organization_requests
@@ -446,7 +447,7 @@ export class CustomerAccountsService {
           action: "customer_account.organization_approved",
           entityId: requestId,
           before: this.mapRequest(before),
-          after: { ...response, organizationLimit },
+          after: { ...response, organizationLimit, setupVersions: input.defaults ?? null },
         });
         return { ...response, organization, organizationLimit, replayed: false };
       });

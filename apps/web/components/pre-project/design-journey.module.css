@@ -1,0 +1,43 @@
+.journey { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.package { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.progress { display: inline-flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); font-variant-numeric: tabular-nums; }
+.empty { margin: 0; color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.step { --marker-center: calc(var(--wd-space-2) + var(--wd-space-1) + var(--wd-space-5) / 2); position: relative; display: grid; grid-template-columns: var(--wd-space-6) minmax(0, 1fr); column-gap: var(--wd-space-3); padding-block: var(--wd-space-2); }
+.step::before { content: ""; position: absolute; inset-inline-start: calc(var(--wd-space-6) / 2 - 1px); inset-block: 0; inline-size: 2px; background: var(--wd-color-border); }
+.step:first-child::before { inset-block-start: var(--marker-center); }
+.step:last-child::before { inset-block-end: auto; block-size: var(--marker-center); }
+.step:only-child::before { display: none; }
+.step[data-status="done"]::before { background: var(--wd-color-text); }
+.marker { position: relative; z-index: 1; align-self: start; justify-self: center; margin-block-start: var(--wd-space-1); display: grid; place-items: center; inline-size: var(--wd-space-5); block-size: var(--wd-space-5); border-radius: var(--wd-radius-round); border: 2px solid var(--wd-color-border-strong); background: var(--wd-color-surface); color: var(--wd-color-text-inverse); }
+.step[data-status="done"] .marker { background: var(--wd-color-text); border-color: var(--wd-color-text); }
+.step[data-status="active"] .marker { border-color: var(--wd-color-action-primary); box-shadow: inset 0 0 0 3px var(--wd-color-surface), inset 0 0 0 8px var(--wd-color-action-primary); }
+.step[data-overdue] .marker { border-color: var(--wd-color-danger); box-shadow: inset 0 0 0 3px var(--wd-color-surface), inset 0 0 0 8px var(--wd-color-danger); }
+
+.body { display: flex; flex-direction: column; gap: var(--wd-space-1); min-inline-size: 0; padding-block: var(--wd-space-1); }
+.step[data-status="active"] .body { padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+.titleRow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }
+.title { font-size: var(--wd-text-md); font-weight: 500; }
+.step[data-status="locked"] .title { color: var(--wd-color-text-secondary); font-weight: 400; }
+.step[data-status="done"] .titleRow .meta { margin-inline-start: auto; }
+.meta { margin: 0; display: flex; flex-wrap: wrap; gap: var(--wd-space-1) var(--wd-space-3); color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--wd-space-2); padding-block-start: var(--wd-space-2); }
+
+.muted { color: var(--wd-color-text-secondary); font-size: var(--wd-text-sm); }
+.measurements { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--wd-space-1); }
+.measurements li { display: flex; justify-content: space-between; gap: var(--wd-space-3); font-size: var(--wd-text-sm); }
+.measurements small { color: var(--wd-color-text-secondary); }
+
+/* PLM-154: the site visit questions at the kick-off, by scope. */
+.questionGroup { display: flex; flex-direction: column; gap: var(--wd-space-3); }
+.groupTitle { margin: 0; font-size: var(--wd-text-sm); font-weight: 600; }
+
+/* PLM-151: the design team of the job, one line per part. */
+.team { display: flex; flex-direction: column; gap: var(--wd-space-2); padding: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-surface-subtle); }
+/* One grid for the whole list (the rows subgrid its columns), so the people line up whether or not a row has a Change button. */
+.teamList { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto; row-gap: var(--wd-space-1); column-gap: var(--wd-space-3); }
+.teamList li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; row-gap: var(--wd-space-1); font-size: var(--wd-text-sm); }
+.teamRole { color: var(--wd-color-text-secondary); }
+.teamPerson { min-inline-size: 0; }
+@media (max-width: 42rem) { .teamList { grid-template-columns: minmax(0, 1fr) auto; } .teamRole { grid-column: 1 / -1; } }

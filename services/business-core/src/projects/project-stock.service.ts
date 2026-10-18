@@ -1,3 +1,4 @@
+import { materialInventory } from "./project-inventory";
 import {
   BadRequestException,
   ConflictException,
@@ -26,12 +27,7 @@ const uuid = (v: unknown) => {
     throw new BadRequestException("Choose a valid stock record.");
   return id;
 };
-const balance = (m: Material) =>
-  m.movements.reduce(
-    (s, x) =>
-      s + (["receive", "return"].includes(x.kind) ? x.quantity : -x.quantity),
-    0,
-  ) - (m.reservations ?? []).reduce((s, x) => s + x.quantity, 0);
+const balance = (m: Material) => materialInventory(m).available;
 @Injectable()
 export class ProjectStockService {
   constructor(
@@ -54,7 +50,7 @@ export class ProjectStockService {
     ).rows.map((r) => r.content);
     const projects = (
       await ctx.client.query(
-        `SELECT e.project_id AS id,p.name,e.content FROM project_execution e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id WHERE e.workspace_id=$1 AND ( $3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=e.workspace_id AND a.project_id=e.project_id AND a.membership_id=$2 AND a.active)) AND p.status<>'archived'`,
+        `SELECT e.project_id AS id,p.name,e.content FROM project_execution_view e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id WHERE e.workspace_id=$1 AND ( $3 OR EXISTS(SELECT 1 FROM project_assignments a WHERE a.workspace_id=e.workspace_id AND a.project_id=e.project_id AND a.membership_id=$2 AND a.active)) AND p.status<>'archived'`,
         [
           ctx.workspaceId,
           ctx.membershipId,
@@ -319,6 +315,13 @@ export class ProjectStockService {
             );
           if (t.status !== "requested")
             throw new ConflictException("Approve a requested transfer.");
+          if(t.destination.kind==="project") {
+            const destinationData=await project(t.destination.id);
+            const material=get(destinationData.materials,t.destination.materialId);
+            const incoming=(await ctx.client.query<{content:StockTransfer}>("SELECT content FROM project_stock_transfers WHERE workspace_id=$1 AND content->'destination'->>'id'=$2",[w,t.destination.id])).rows.map(row=>row.content).filter(row=>row.id!==t.id);
+            if(t.quantity>materialInventory(material,destinationData.orders,incoming,destinationData.supplierReturns).shortfall+0.000001)
+              throw new ConflictException("Existing stock, orders or transfers already cover this requirement. Reduce the transfer quantity.");
+          }
           await reserve(t.source, t.quantity, t);
           t.status = "approved";
           t.approvedBy = ctx.membershipId;

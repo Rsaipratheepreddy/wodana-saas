@@ -1,22 +1,13 @@
 "use client";
 
+import { useT } from "@/lib/i18n/i18n-provider";
 import { useMemo, useState } from "react";
-import {
-  Badge,
-  Button,
-  Callout,
-  ControlledModalDialog,
-  DataGrid,
-  DesignSystemProvider,
-  SearchInput,
-  SelectField,
-  formatDate,
-  type DataGridColumn,
-} from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, DataGrid, DesignSystemProvider, SearchInput, SelectField, SettingsPage, formatDate, useDesignSystem, type DataGridColumn } from "@/design-system";
+import { tKey, type MessageKey, type Translate } from "@/lib/i18n/keys";
 import type { AuditEvent, AuditLogPageData } from "@/lib/workspace/audit-log";
 import styles from "./audit-log-page.module.css";
 
-const DUBAI_FORMAT = { locale: "en-GB", timeZone: "Asia/Dubai" };
+const SOURCE_LABELS: Record<string, MessageKey> = { user: tKey("User"), system: tKey("System"), integration: tKey("Integration"), automation: tKey("Automation") };
 
 function humanize(value: string) {
   return value
@@ -27,14 +18,35 @@ function humanize(value: string) {
     .join(" ");
 }
 
+/** Internal table and module names → the words the product uses for the same records. */
+const PRODUCT_WORDS: Array<[RegExp, string]> = [
+  [/\bpre project cases\b/g, "planning cases"], [/\bpre project case\b/g, "planning case"], [/\bpre projects?\b/g, "planning"],
+  [/\bcrm leads\b/g, "enquiries"], [/\bcrm lead\b/g, "enquiry"], [/\bleads\b/g, "enquiries"], [/\blead\b/g, "enquiry"],
+  [/\bcrm opportunit(y|ies)\b/g, "opportunit$1"], [/\bcrm parties\b/g, "customers"], [/\bcrm party\b/g, "customer"],
+  [/\bworkspace invitations?\b/g, "invitation"], [/\bworkspace memberships?\b/g, "member"], [/\bworkspace members?\b/g, "member"],
+  [/\bdelivery projects?\b/g, "project"], [/\bcommercial cases?\b/g, "deal"], [/\bview as sessions?\b/g, "view as"], [/\b(crm|hrms)\b/g, ""],
+];
+
+/** An event or record name in the product's words, in sentence case ("Planning case started", "Enquiry"). */
+function productLabel(value: string) {
+  let text = value.replace(/\.v\d+$/i, "").split(/[._-]+/).filter(Boolean).join(" ").toLowerCase();
+  for (const [pattern, word] of PRODUCT_WORDS) text = text.replace(pattern, word);
+  text = text.replace(/\s+/g, " ").trim();
+  return text ? text[0].toUpperCase() + text.slice(1) : humanize(value);
+}
+
 function actionLabel(action: string) {
   const words = action.replace(/\.v\d+$/i, "").split(".");
   const broadModules = new Set(["automation", "crm", "integration", "notification", "security", "workspace"]);
-  return humanize(words.length > 1 && broadModules.has(words[0] ?? "") ? words.slice(1).join(" ") : action);
+  return productLabel(words.length > 1 && broadModules.has(words[0] ?? "") ? words.slice(1).join(" ") : action);
 }
 
-function timestamp(value: string) {
-  return formatDate(value, DUBAI_FORMAT, { dateStyle: "medium", timeStyle: "short" });
+function sourceLabel(source: string, t: Translate) {
+  return SOURCE_LABELS[source] ? t(SOURCE_LABELS[source]) : humanize(source);
+}
+
+function timestamp(value: string, format: { locale: string; timeZone: string }) {
+  return formatDate(value, format, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function sourceTone(source: string) {
@@ -55,6 +67,8 @@ function responseMessage(response: Response, fallback: string) {
 }
 
 export function AuditLogPage({ initialData }: { initialData: AuditLogPageData }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const [items, setItems] = useState(initialData.items);
   const [nextCursor, setNextCursor] = useState(initialData.nextCursor);
@@ -67,9 +81,9 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
   const [failure, setFailure] = useState("");
 
   const sourceItems = useMemo(() => [
-    { id: "all", label: "All sources" },
-    ...Array.from(new Set(items.map((item) => item.source))).sort().map((value) => ({ id: value, label: humanize(value) })),
-  ], [items]);
+    { id: "all", label: t("All sources") },
+    ...Array.from(new Set(items.map((item) => item.source))).sort().map((value) => ({ id: value, label: sourceLabel(value, t) })),
+  ], [items, t]);
 
   const visibleItems = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -78,28 +92,29 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
       if (source !== "all" && item.source !== source) return false;
       if (minimum && Date.parse(item.occurredAt) < minimum) return false;
       if (!normalized) return true;
-      return `${item.action} ${item.entityType} ${item.entityId ?? ""} ${item.actorName ?? ""} ${item.actorEmail ?? ""} ${item.source} ${JSON.stringify(item.before)} ${JSON.stringify(item.after)}`
+      // Found by the names shown (Leave decided, View as) as well as the stored codes.
+      return `${actionLabel(item.action)} ${productLabel(item.entityType)} ${item.action} ${item.entityType} ${item.entityId ?? ""} ${item.actorName ?? ""} ${item.actorEmail ?? ""} ${item.source} ${JSON.stringify(item.before)} ${JSON.stringify(item.after)}`
         .toLowerCase()
         .includes(normalized);
     });
   }, [items, loadedAt, period, query, source]);
   const columns: DataGridColumn<AuditEvent>[] = [
-    { id: "event", accessorFn: (item) => actionLabel(item.action), header: "Event", size: 230, meta: { primary: true } },
-    { id: "actor", accessorFn: (item) => item.actorName ?? "System", header: "Actor", size: 215, cell: ({ row }) => <span className={styles.actor}><span>{row.original.actorName ?? "System"}</span>{row.original.actorEmail ? <small>{row.original.actorEmail}</small> : null}</span> },
-    { id: "source", accessorFn: (item) => humanize(item.source), header: "Source", size: 115 },
-    { id: "record", accessorFn: (item) => humanize(item.entityType), header: "Record", size: 165 },
-    { id: "occurred", accessorFn: (item) => item.occurredAt, header: "Date & time", size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt)}</time> },
-    { id: "action", header: "Action", size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={`View ${actionLabel(row.original.action)} details`} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">View</Button> },
+    { id: "event", accessorFn: (item) => actionLabel(item.action), header: t("Event"), size: 230, meta: { primary: true } },
+    { id: "actor", accessorFn: (item) => item.actorName ?? t("System"), header: t("Actor"), size: 215, cell: ({ row }) => <span className={styles.actor}><span>{row.original.actorName ?? t("System")}</span>{row.original.actorEmail ? <small>{row.original.actorEmail}</small> : null}</span> },
+    { id: "source", accessorFn: (item) => sourceLabel(item.source, t), header: t("Source"), size: 115 },
+    { id: "record", accessorFn: (item) => productLabel(item.entityType), header: t("Record"), size: 165 },
+    { id: "occurred", accessorFn: (item) => item.occurredAt, header: t("Date & time"), size: 195, cell: ({ row }) => <time dateTime={row.original.occurredAt}>{timestamp(row.original.occurredAt, { locale, timeZone })}</time> },
+    { id: "action", header: t("Action"), size: 90, enableSorting: false, cell: ({ row }) => <Button aria-label={t("View {event} details", { event: actionLabel(row.original.action) })} onPress={() => setSelectedEvent(row.original)} size="compact" variant="quiet">{t("View")}</Button> },
   ];
 
   const exportAudit = () => {
     const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const csv = [
-      ["Date and time", "Action", "Actor", "Email", "Source", "Record type", "Record ID", "Correlation ID"].map(quote).join(","),
+      [t("Date and time"), t("Action"), t("Actor"), t("Email"), t("Source"), t("Record type"), t("Record ID"), t("Correlation ID")].map(quote).join(","),
       ...visibleItems.map((item) => [
         item.occurredAt,
         item.action,
-        item.actorName ?? "System",
+        item.actorName ?? t("System"),
         item.actorEmail ?? "",
         item.source,
         item.entityType,
@@ -122,63 +137,65 @@ export function AuditLogPage({ initialData }: { initialData: AuditLogPageData })
     try {
       const params = new URLSearchParams({ workspaceId: initialData.workspaceId, cursor: nextCursor });
       const response = await fetch(`/api/workspace/audit-events?${params}`);
-      if (!response.ok) throw new Error(await responseMessage(response, "More audit events could not be loaded."));
+      if (!response.ok) throw new Error(await responseMessage(response, t("More audit events could not be loaded.")));
       const page = await response.json() as { items: AuditEvent[]; nextCursor: string | null };
       setItems((current) => [...current, ...page.items.filter((item) => !current.some((existing) => existing.id === item.id))]);
       setNextCursor(page.nextCursor);
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : "More audit events could not be loaded.");
+      setFailure(error instanceof Error ? error.message : t("More audit events could not be loaded."));
     } finally {
       setLoadingMore(false);
     }
   };
 
   return <DesignSystemProvider className={styles.provider} portalContainer={portalContainer} ref={setPortalContainer}>
-    <section aria-label="Audit logs" className={styles.page}>
-      {!initialData.canView ? <Callout title="Audit log access is restricted" tone="warning">Ask a workspace owner or administrator for audit viewing permission.</Callout> : <>
-        <section aria-label="Audit filters" className={styles.filters}>
+    <SettingsPage aria-label={t("Audit logs")} title={t("Audit history")} width="wide">
+      {!initialData.canView ? <Callout title={t("Audit log access is restricted")} tone="warning">{t("Ask a workspace owner or administrator for audit viewing permission.")}</Callout> : <>
+        <section aria-label={t("Audit filters")} className={styles.filters}>
           <div className={styles.filterControls}>
-            <div className={styles.searchField}><SearchInput label="Search audit log" onChange={setQuery} placeholder="Search actions, people, or records…" value={query} /></div>
+            <div className={styles.searchField}><SearchInput label={t("Search audit log")} onChange={setQuery} placeholder={t("Search actions, people, or records…")} value={query} /></div>
             <div className={styles.selectField}>
-              <SelectField accent="neutral" aria-label="Audit source" items={sourceItems} label={<span className={styles.visuallyHidden}>Source</span>} onSelectionChange={(key) => key && setSource(String(key))} selectedKey={source} />
+              <SelectField accent="neutral" aria-label={t("Audit source")} items={sourceItems} label={<span className={styles.visuallyHidden}>{t("Source")}</span>} onSelectionChange={(key) => key && setSource(String(key))} selectedKey={source} />
             </div>
             <div className={styles.selectField}>
-              <SelectField accent="neutral" aria-label="Audit period" items={[{ id: "all", label: "All time" }, { id: "7d", label: "Last 7 days" }, { id: "30d", label: "Last 30 days" }]} label={<span className={styles.visuallyHidden}>Period</span>} onSelectionChange={(key) => key && setPeriod(String(key))} selectedKey={period} />
+              <SelectField accent="neutral" aria-label={t("Audit period")} items={[{ id: "all", label: t("All time") }, { id: "7d", label: t("Last 7 days") }, { id: "30d", label: t("Last 30 days") }]} label={<span className={styles.visuallyHidden}>{t("Period")}</span>} onSelectionChange={(key) => key && setPeriod(String(key))} selectedKey={period} />
             </div>
-            <Button isDisabled={!visibleItems.length} onPress={exportAudit}>Export</Button>
+            <Button isDisabled={!visibleItems.length} onPress={exportAudit}>{t("Export")}</Button>
           </div>
         </section>
 
-        {failure ? <Callout title="Audit log could not be updated" tone="danger">{failure}</Callout> : null}
+        {failure ? <Callout title={t("Audit log could not be updated")} tone="danger">{failure}</Callout> : null}
 
-        <DataGrid ariaLabel="Workspace audit log" appearance="flush" columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">Load more</Button> : undefined} emptyTitle="No audit events found" emptyDescription="Try a different source, period, or search." />
+        <DataGrid ariaLabel={t("Workspace audit log")} columns={columns} data={visibleItems} getRowId={(item) => item.id} selectable={false} rowNumbers={false} showToolbar={false} pageSize={25} hasMoreRows={Boolean(nextCursor)} footerActions={nextCursor ? <Button isLoading={loadingMore} onPress={() => void loadMore()} size="compact">{t("Load more")}</Button> : undefined} emptyTitle={t("No audit events found")} emptyDescription={t("Try a different source, period, or search.")} />
       </>}
-    </section>
+    </SettingsPage>
 
     <AuditEventDialog event={selectedEvent} onClose={() => setSelectedEvent(null)} />
   </DesignSystemProvider>;
 }
 
 function AuditEventDialog({ event, onClose }: { event: AuditEvent | null; onClose: () => void }) {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
   const fields = event ? changedFields(event) : [];
   return <ControlledModalDialog
-    description={event ? `${humanize(event.entityType)} · ${event.entityId?.slice(0, 8) ?? "No record ID"}` : undefined}
-    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>Done</Button></div>}
+    description={event ? `${productLabel(event.entityType)} · ${event.entityId?.slice(0, 8) ?? t("No record ID")}` : undefined}
+    footer={<div className="wd-dialog-actions"><Button onPress={onClose}>{t("Done")}</Button></div>}
     isOpen={Boolean(event)}
     onOpenChange={(open) => { if (!open) onClose(); }}
-    title={event ? actionLabel(event.action) : "Audit event"}
+    title={event ? actionLabel(event.action) : t("Audit event")}
   >
     {event ? <div className={styles.eventDetails}>
       <dl>
-        <div><dt>Actor</dt><dd>{event.actorName ?? "Wodana system"}<small>{event.actorEmail}</small></dd></div>
-        <div><dt>Date &amp; time</dt><dd>{timestamp(event.occurredAt)}</dd></div>
-        <div><dt>Source</dt><dd><Badge tone={sourceTone(event.source)}>{humanize(event.source)}</Badge></dd></div>
-        <div><dt>Correlation ID</dt><dd><code>{event.correlationId}</code></dd></div>
+        <div><dt>{t("Actor")}</dt><dd>{event.actorName ?? t("Wodana system")}<small>{event.actorEmail}</small></dd></div>
+        <div><dt>{t("Date & time")}</dt><dd>{timestamp(event.occurredAt, { locale, timeZone })}</dd></div>
+        <div><dt>{t("Source")}</dt><dd><Badge tone={sourceTone(event.source)}>{sourceLabel(event.source, t)}</Badge></dd></div>
+        <div><dt>{t("Correlation ID")}</dt><dd><code>{event.correlationId}</code></dd></div>
       </dl>
-      <section className={styles.changedFields}><strong>Changed fields</strong><div>{fields.length ? fields.map((field) => <Badge key={field}>{humanize(field)}</Badge>) : <span>No field-level changes recorded.</span>}</div></section>
+      <section className={styles.changedFields}><strong>{t("Changed fields")}</strong><div>{fields.length ? fields.map((field) => <Badge key={field}>{humanize(field)}</Badge>) : <span>{t("No field-level changes recorded.")}</span>}</div></section>
       <div className={styles.changeGrid}>
-        <section><strong>Before</strong><pre>{event.before ? JSON.stringify(event.before, null, 2) : "No previous value"}</pre></section>
-        <section><strong>After</strong><pre>{event.after ? JSON.stringify(event.after, null, 2) : "No resulting value"}</pre></section>
+        <section><strong>{t("Before")}</strong><pre>{event.before ? JSON.stringify(event.before, null, 2) : t("No previous value")}</pre></section>
+        <section><strong>{t("After")}</strong><pre>{event.after ? JSON.stringify(event.after, null, 2) : t("No resulting value")}</pre></section>
       </div>
     </div> : null}
   </ControlledModalDialog>;

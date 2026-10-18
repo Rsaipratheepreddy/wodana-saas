@@ -1,3 +1,4 @@
+import { tKey } from "@/lib/i18n/keys";
 import type { RoomSuggestion } from './quotation-assist';
 
 export type ScopeReference = { id: string; name: string; kind: 'room' | 'requirement' | 'measurement' };
@@ -20,7 +21,7 @@ export function planningCoverage(raw: unknown, rooms: RoomSuggestion[], expected
   }
   const proposed = Array.isArray(data.rooms) ? data.rooms.map(object) : [];
   if (proposed.length > rooms.length || proposed.reduce((n, r) => n + (Array.isArray(r.items) ? r.items.length : 0), 0) > rooms.reduce((n, r) => n + r.items.length, 0)) {
-    review.push('Some suggestions had missing or incompatible Master Data links. They were not added; review the requirements and item links.');
+    review.push(tKey('Some suggestions had missing or incompatible Master Data links. They were not added; review the requirements and item links.'));
   }
   return { coverage: { total: expected.length, linked: expected.length - missing.length }, review: [...new Set(review)] };
 }

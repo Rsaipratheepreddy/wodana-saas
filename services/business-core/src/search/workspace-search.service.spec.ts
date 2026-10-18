@@ -20,7 +20,7 @@ function harness(permissionCodes: string[], entitledPermissionCodes = permission
     if (statement.includes("FROM pre_project_rooms room")) {
       return { rows: [{ id: "room-1", name: "Living room", caseId: "case-1", caseTitle: "Villa interiors", customer: "Amira Hassan" }] };
     }
-    if (statement.includes("FROM commercial_cases commercial")) {
+    if (statement.includes("FROM commercial_quotes quote")) {
       return { rows: [{ id: "quote-1", title: "Villa proposal", number: "Q-001", status: "issued", caseId: "case-1", customer: "Amira Hassan" }] };
     }
     if (statement.includes("FROM delivery_projects project")) {
@@ -45,7 +45,8 @@ describe("WorkspaceSearchService", () => {
     expect(result.searchedKinds).toEqual(["customer", "job", "room", "quotation", "project"]);
     expect(result.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "customer", route: "/workspace/crm/customers?record=customer-1" }),
-      expect.objectContaining({ kind: "job", reference: "J-000001", route: "/workspace/crm/jobs/job-1" }),
+      // The subtitle doesn't repeat the kind: every list shows it as the result's own label (m10).
+      expect.objectContaining({ kind: "job", reference: "J-000001", route: "/workspace/crm/jobs/job-1", subtitle: "Amira Hassan" }),
       expect.objectContaining({ kind: "room", route: "/workspace/pre-projects/cases/case-1/requirements?room=room-1" }),
       expect.objectContaining({ kind: "quotation", reference: "Q-001", route: "/workspace/pre-projects/cases/case-1/quotations?quote=quote-1" }),
       expect.objectContaining({ kind: "project", route: "/workspace/projects/project-1/overview" }),
@@ -82,9 +83,9 @@ describe("WorkspaceSearchService", () => {
     await service.search(actor, "workspace-1", "villa");
     const quotationSql = query.mock.calls
       .map(([statement]) => String(statement))
-      .find((statement) => statement.includes("FROM commercial_cases commercial"));
-    expect(quotationSql).toContain("quote.data->>'kind'='quotation'");
-    expect(quotationSql).toContain("NULLIF(quote.data->>'id','') IS NOT NULL");
+      .find((statement) => statement.includes("FROM commercial_quotes quote"));
+    // Quotes are rows with a primary key; variations are a separate kind.
+    expect(quotationSql).toContain("quote.kind='quotation'");
   });
 
   it("returns no records for a one-character query and rejects unsafe windows", async () => {

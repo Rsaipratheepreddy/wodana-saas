@@ -11,6 +11,6 @@ describe("project schedule information items", () => {
     data.commissioning = [{ id: "i1", title: "Lighting inspection", taskId: "", area: "Villa", system: "Lighting", ownerId: "owner", dueDate: "2026-09-21", readings: [], status: "draft", evidence: "", note: "", authorId: "owner" }];
     const items = projectScheduleItems({ id: "project", name: "Villa", dealReference: "DEAL-1", clientName: "Client", data }, [], "2026-09-17", "2026-09-20");
     expect(items.map((item) => item.kind)).toEqual(["milestone", "next_action", "delivery", "target_completion"]);
-    expect(items[0].title).toBe("DEAL-1 — Client — Design sign-off");
+    expect(items[0].title).toBe("DEAL-1 · Client · Design sign-off");
   });
 });

@@ -1,20 +1,33 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { Callout, DesignSystemProvider } from "@/design-system";
+import { useCallback, useState, type ReactNode } from "react";
+import { DesignSystemProvider, NoAccessState, PageShell, useDesignSystem, type PageKind } from "@/design-system";
+import { useT } from "@/lib/i18n/i18n-provider";
 import base from "./crm-screen-page.module.css";
 import styles from "./crm-product.module.css";
 import workspaceColors from "./crm-workspace-colors.module.css";
-import { useWorkspaceFocus } from "@/components/workspace/workspace-focus";
 
-export function CrmProductShell({ title, description, canView, actions, children, compact = false, useWorkspaceColors = false, headerClassName }: { title: string; description: string; canView: boolean; actions?: ReactNode; children: ReactNode; compact?: boolean; useWorkspaceColors?: boolean; headerClassName?: string }) {
-  useWorkspaceFocus(title === "Automations" ? title : undefined);
+/**
+ * A Sales page on the shared anatomy (§5c D): PageShell with one title, at most one primary action top-end, tabs
+ * under the title and an optional toolbar, then the page. `compact` fills the viewport (the board and the Inbox).
+ */
+export function CrmProductShell({ title, canView, actions, tabs, toolbar, children, compact = false, bare = false, kind = "list", useWorkspaceColors = false }: {
+  title: string; /** Ignored: a title carries no description (§5c D1). */ description?: string; canView: boolean; actions?: ReactNode; tabs?: ReactNode; toolbar?: ReactNode;
+  children: ReactNode; compact?: boolean; kind?: PageKind; useWorkspaceColors?: boolean;
+  /** A full-height work surface (the Inbox): no page header block; the page carries its own controls and the title stays for screen readers. */
+  bare?: boolean;
+}) {
+  const t = useT();
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   return <DesignSystemProvider className={[base.provider, useWorkspaceColors && workspaceColors.theme].filter(Boolean).join(" ")} portalContainer={portal} ref={setPortal}>
-    <section className={compact ? styles.focusedPage : base.page} aria-label={`${title} workspace`}>
-      {!compact ? <header className={[base.pageHeading, headerClassName].filter(Boolean).join(" ")}><div><h1>{title}</h1>{description ? <p>{description}</p> : null}</div>{canView && actions ? <div className={styles.actions}>{actions}</div> : null}</header> : null}
-      {canView ? children : <Callout title={`${title} access is restricted`} tone="warning">Ask an administrator for the required CRM permission.</Callout>}
-    </section>
+    {bare ? <section aria-label={t("{title} workspace", { title })} className={styles.barePage}>
+      <h1 className="wd-visually-hidden">{title}</h1>
+      {canView ? children : <NoAccessState area={t(title as never)} />}
+    </section> : <div className={compact ? styles.focusedPage : undefined}>
+      <PageShell aria-label={t("{title} workspace", { title })} kind={kind} title={title} action={canView ? actions : undefined} tabs={canView ? tabs : undefined} toolbar={canView ? toolbar : undefined}>
+        {canView ? children : <NoAccessState area={t(title as never)} />}
+      </PageShell>
+    </div>}
   </DesignSystemProvider>;
 }
 
@@ -27,6 +40,15 @@ export function crmRecordLink(item: Record<string, unknown>) {
   return `/workspace/crm/${String(item.kind).includes("reply") ? "conversations" : String(item.kind).includes("lead") || item.kind === "sla_breach" ? "leads" : String(item.kind).includes("opportunity") ? "opportunities" : "follow-ups"}`;
 }
 
-export function crmTime(value: unknown) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dubai", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "Not scheduled";
+/** A CRM date and time in the given locale and time zone; `empty` is shown when there is no date. */
+export function crmTime(value: unknown, context: { locale?: string; timeZone?: string; empty?: string } = {}) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat(context.locale, { timeZone: context.timeZone, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : context.empty ?? "Not scheduled";
+}
+
+/** `crmTime` in the workspace's locale and time zone, with the empty text in the person's language. */
+export function useCrmTime() {
+  const t = useT();
+  const { locale, timeZone } = useDesignSystem();
+  const empty = t("Not scheduled");
+  return useCallback((value: unknown) => crmTime(value, { locale, timeZone, empty }), [locale, timeZone, empty]);
 }

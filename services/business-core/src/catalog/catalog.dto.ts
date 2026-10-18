@@ -58,7 +58,7 @@ export class SaveCatalogRecordDto {
   @IsArray() @ArrayMaxSize(10) @ValidateNested({ each: true }) @Type(() => CatalogSourceDto) sources: CatalogSourceDto[];
   @IsArray() @ArrayMaxSize(100) @ValidateNested({ each: true }) @Type(() => CatalogLinkDto) links: CatalogLinkDto[];
   @IsIn(["reference", "needs_specification", "workspace_verified"]) specificationStatus: string;
-  @IsIn(["none", "length", "area", "volume", "mass", "count", "time", "pack"]) dimension: string;
+  @IsIn(["none", "length", "area", "volume", "mass", "count", "time", "pack", "reference"]) dimension: string;
   @IsOptional() @IsNumber() @Min(0.000000001) @Max(1000000000) baseFactor?: number;
   @IsOptional() @IsObject() configuration?: Record<string,string|number>;
   @IsOptional() @ValidateNested() @Type(() => CatalogCommerceDto) commerce?: CatalogCommerceDto;

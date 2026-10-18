@@ -91,6 +91,8 @@ export const users = pgTable(
     displayName: varchar("display_name", { length: 160 }).notNull(),
     preferredLocale: varchar("preferred_locale", { length: 35 }).notNull().default("en"),
     preferredTimezone: varchar("preferred_timezone", { length: 64 }).notNull().default("UTC"),
+    // Sound and haptics on this person's devices (Profile → Sound & haptics).
+    feedbackEnabled: boolean("feedback_enabled").notNull().default(true),
     status: userStatus("status").notNull().default("active"),
     mfaSessionVersion: integer("mfa_session_version").notNull().default(0),
     ...auditColumns,
@@ -664,7 +666,7 @@ export const projectWorkflowTemplates = pgTable(
     check("project_workflow_templates_version_check", sql`${table.version} > 0`),
     check(
       "project_workflow_templates_stages_check",
-      sql`jsonb_typeof(${table.stages}) = 'array' AND jsonb_array_length(${table.stages}) BETWEEN 2 AND 12`,
+      sql`jsonb_typeof(${table.stages}) = 'array' AND jsonb_array_length(${table.stages}) BETWEEN 2 AND 18`,
     ),
     check(
       "project_workflow_templates_default_check",
@@ -717,6 +719,9 @@ export const tenantLoginBranding = pgTable(
     bodyFont: varchar("body_font", { length: 40 }),
     logoUrl: text("logo_url"),
     logoAssetId: uuid("logo_asset_id").references(() => workspaceBrandAssets.id, {
+      onDelete: "set null",
+    }),
+    loginBackgroundAssetId: uuid("login_background_asset_id").references(() => workspaceBrandAssets.id, {
       onDelete: "set null",
     }),
     ...auditColumns,
@@ -804,7 +809,7 @@ export const workspaceBrandAssets = pgTable(
     index("workspace_brand_assets_workspace_status_idx").on(table.workspaceId, table.status),
     check(
       "workspace_brand_assets_expected_size_check",
-      sql`${table.expectedByteSize} > 0 AND ${table.expectedByteSize} <= 5242880`,
+      sql`${table.expectedByteSize} > 0 AND ${table.expectedByteSize} <= 10485760`,
     ),
   ],
 );
@@ -868,7 +873,7 @@ export const tenantSetupProfiles = pgTable(
   },
   (table) => [
     primaryKey({ name: "tenant_setup_profiles_pk", columns: [table.kind, table.code, table.version] }),
-    check("tenant_setup_profiles_kind_check", sql`${table.kind} IN ('region', 'firm_kit', 'plan')`),
+    check("tenant_setup_profiles_kind_check", sql`${table.kind} IN ('region', 'firm_kit', 'plan', 'books')`),
     check("tenant_setup_profiles_version_check", sql`${table.version} > 0`),
     check("tenant_setup_profiles_configuration_check", sql`jsonb_typeof(${table.configuration}) = 'object'`),
   ],
@@ -933,6 +938,8 @@ export const workspaceMemberships = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     status: membershipStatus("status").notNull().default("active"),
+    homeLayout: jsonb("home_layout"),
+    homeLayoutVersion: integer("home_layout_version").notNull().default(0),
     joinedAt: timestamp("joined_at", { withTimezone: true }),
     version: integer("version").notNull().default(1),
     ...auditColumns,

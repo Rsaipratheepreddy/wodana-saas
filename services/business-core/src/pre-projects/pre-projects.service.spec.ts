@@ -5,10 +5,13 @@ import type { CrmEventsService } from "../crm/shared/crm-events.service";
 import type { CrmOpportunitiesService } from "../crm/opportunities/crm-opportunities.service";
 import type { RequestActor } from "../auth/actor";
 import { ensureJobForSource } from "../jobs/job-identity.store";
+import { carryTeamToCase } from "../project-core/project-team";
 
 vi.mock("../jobs/job-identity.store", () => ({
   ensureJobForSource: vi.fn().mockResolvedValue({ id: "job-1", reference: "J-000001", workspaceId: "workspace-1" }),
 }));
+// The team carried from the opportunity (PLM-100) is covered by its own specs and the integration test.
+vi.mock("../project-core/project-team", () => ({ carryTeamToCase: vi.fn().mockResolvedValue([]), readCaseTeam: vi.fn().mockResolvedValue([]) }));
 
 const actor = { subject: "test", email: "test@example.com", displayName: "Test", provider: "development" } as RequestActor;
 function setup(status = "open", existing = false) {
@@ -25,6 +28,21 @@ function setup(status = "open", existing = false) {
   return { service, query, events, withPermissions, record };
 }
 describe("pre-project case boundary", () => {
+  it("keeps paid Deal projects out of the Sales preparation list", async () => {
+    const query = vi.fn(async (sql: string) => sql.includes("count(*)")
+      ? { rows: [{ total: 1 }], rowCount: 1 }
+      : { rows: [{ id: "case-1", projectId: null }], rowCount: 1 });
+    const access = {
+      withPermission: vi.fn(async (_actor, _workspace, _permission, callback) => callback({ query }, { userId: "user-1" })),
+      hasPermission: vi.fn().mockResolvedValue(true),
+    };
+    const service = new PreProjectsService(access as never, { record: vi.fn() } as never, {} as never);
+    await expect(service.list(actor, "workspace-1", { pendingDeal: "true" })).resolves.toMatchObject({ total: 1, items: [{ projectId: null }] });
+    const [countSql, countArgs] = query.mock.calls.find(([sql]) => sql.includes("count(*)"))!;
+    expect(countSql).toContain('"projectId" IS NULL');
+    expect(countSql).toContain('project.id AS "projectId"');
+    expect(countArgs).toEqual(["workspace-1", "", "all", true]);
+  });
   it.each(["open", "won"])("starts from %s opportunity without changing its CRM status", async (status) => {
     const { service, query, events, withPermissions, record } = setup(status);
     await expect(service.start(actor, "workspace-1", "opportunity-1")).resolves.toEqual(record);
@@ -35,6 +53,8 @@ describe("pre-project case boundary", () => {
     expect(ensureJobForSource).toHaveBeenCalledWith(
       expect.anything(), "workspace-1", { type: "case", id: "case-1" }, "user-1",
     );
+    // PLM-100: the opportunity's team joins the new case.
+    expect(carryTeamToCase).toHaveBeenCalledWith(expect.anything(), "workspace-1", "case-1", "user-1");
     expect(events.record).toHaveBeenCalledOnce();
   });
   it.each(["lost", "paused", "cancelled"])("does not start a new case for %s opportunity", async (status) => {

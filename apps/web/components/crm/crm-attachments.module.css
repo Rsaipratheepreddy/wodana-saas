@@ -1,0 +1,14 @@
+.contextBar { display: flex; align-items: center; gap: var(--wd-space-3); min-inline-size: 0; }
+.enquiryPicker { inline-size: min(360px, 45%); min-inline-size: 180px; }
+.enquiryPicker :global(.wd-select-button) { min-block-size: 32px; font-size: var(--wd-text-xs); }
+.manageLink { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); font-size: var(--wd-text-xs); text-decoration: none; white-space: nowrap; }
+.manageLink:hover, .fileLink:hover .fileName { text-decoration: underline; text-underline-offset: 3px; }
+.manageLink:focus-visible, .fileLink:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
+.fileLink { display: flex; align-items: center; gap: var(--wd-space-2); min-inline-size: 0; color: var(--wd-color-text); text-decoration: none; }
+.fileIcon { display: grid; place-items: center; inline-size: 30px; block-size: 34px; flex-shrink: 0; border-radius: var(--wd-radius-2xs); background: var(--wd-color-surface-subtle); color: var(--wd-color-text-secondary); }
+.fileIcon[data-type="PDF"] { background: var(--wd-color-danger-subtle); color: var(--wd-color-danger); }
+.fileIcon[data-type="Image"] { background: var(--wd-color-surface-muted); color: var(--wd-color-info); }
+.fileName { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+.fileLink > svg { flex-shrink: 0; color: var(--wd-color-text-secondary); }
+.size { color: var(--wd-color-text-secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .contextBar { flex-wrap: wrap; } .enquiryPicker { inline-size: 100%; } }

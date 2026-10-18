@@ -1,4 +1,5 @@
 export type Dispatch = {
+  factoryLotId?: string;
   id: string;
   title: string;
   taskId: string;
@@ -18,6 +19,10 @@ export type Dispatch = {
   receiptEvidence: string;
   receivedBy?: string;
   rejectionSnagId?: string;
+  returnedToFactory?: number;
+  factoryReturnEvidence?: string;
+  factoryReturnedBy?: string;
+  factoryReturnedAt?: string;
 };
 export type Commissioning = {
   revisions?:{readings:Commissioning["readings"];evidence:string;note:string;at:string;reviewedBy?:string}[];

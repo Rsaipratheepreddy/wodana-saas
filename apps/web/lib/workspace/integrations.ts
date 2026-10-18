@@ -1,3 +1,4 @@
+import { tKey } from "@/lib/i18n/keys";
 import { companyProfileFixture, type LegalEntityRecord } from "./company-profile";
 
 export type IntegrationProvider = "google_workspace" | "quickbooks" | "zoho_books" | "whatsapp" | "payment" | "custom";
@@ -27,11 +28,17 @@ export type IntegrationConnection = {
 };
 
 export type IntegrationsPageData = {
+  loadError?: string;
   canManage: boolean;
   connections: IntegrationConnection[];
   legalEntities: LegalEntityRecord[];
   providerCapabilities: ProviderCapabilitiesResponse;
   workspaceId: string;
+  /**
+   * Whether Wodana's own app for each provider is set up (Wodana Control), so firms can connect it.
+   * Missing when that couldn't be checked: Connect then stays available and the provider answers.
+   */
+  platformReadiness?: Partial<Record<IntegrationProvider, boolean>>;
 };
 
 export type ProviderCapability = {
@@ -75,34 +82,34 @@ export const integrationCatalog: Array<{
   description: string;
   availability: "available" | "coming_soon" | "not_connected";
 }> = [
-  { id: "google_workspace", provider: "google_workspace", label: "Google Workspace", source: "workspace.google.com", href: "https://workspace.google.com/", category: "productivity", description: "Connect Google accounts for calendars, Gmail messages, and project documents.", availability: "available" },
-  { id: "quickbooks", provider: "quickbooks", label: "QuickBooks", source: "quickbooks.intuit.com", href: "https://quickbooks.intuit.com/", category: "finance", description: "Link accounting records, create invoices, and retrieve available online invoice payment links.", availability: "available" },
-  { id: "whatsapp", provider: "whatsapp", label: "WhatsApp Business", source: "business.whatsapp.com", href: "https://business.whatsapp.com/", category: "communication", description: "Connect your own business number for approved messages, replies, and delivery updates.", availability: "available" },
-  { id: "zoho_books", provider: "zoho_books", label: "Zoho Books", source: "zoho.com/ae/books", href: "https://www.zoho.com/ae/books/", category: "finance", description: "Connect accounting, invoices, payment pages, bills, expenses, and project financials.", availability: "available" },
-  { id: "autodesk_construction_cloud", label: "Autodesk Construction Cloud", source: "construction.autodesk.com", href: "https://construction.autodesk.com/", category: "productivity", description: "Connect design files, project issues, reviews, and construction handover data.", availability: "coming_soon" },
-  { id: "microsoft_365", label: "Microsoft 365", source: "microsoft.com/microsoft-365", href: "https://www.microsoft.com/microsoft-365/", category: "productivity", description: "Connect Outlook, calendars, OneDrive, Teams, and secure document collaboration.", availability: "coming_soon" },
-  { id: "docusign", label: "Docusign", source: "docusign.com", href: "https://www.docusign.com/solutions/industries/construction", category: "productivity", description: "Send and track client agreements, change orders, and project approvals.", availability: "coming_soon" },
-  { id: "payment", provider: "payment", label: "Payment gateway", source: "Provider connection", href: null, category: "finance", description: "Collect payments and receive verified transaction status updates.", availability: "coming_soon" },
-  { id: "dropbox", label: "Dropbox", source: "dropbox.com", href: "https://www.dropbox.com/", category: "productivity", description: "Link shared project files and controlled document storage.", availability: "coming_soon" },
-  { id: "meta_lead_ads", label: "Meta Lead Ads", source: "Meta Business", href: "https://www.facebook.com/business/ads/ad-objectives/lead-generation", category: "communication", description: "Native Facebook and Instagram lead-form intake needs the tenant’s Meta business, page and lead-form authorization.", availability: "not_connected" },
-  { id: "plyleads", label: "PlyLeads", source: "Provider specification required", href: null, category: "communication", description: "Automatic intake remains unavailable until the provider supplies an API or webhook specification and credentials.", availability: "not_connected" },
+  { id: "google_workspace", provider: "google_workspace", label: "Google Workspace", source: "workspace.google.com", href: "https://workspace.google.com/", category: "productivity", description: tKey("Connect Google accounts for calendars, Gmail messages, and project documents."), availability: "available" },
+  { id: "quickbooks", provider: "quickbooks", label: "QuickBooks", source: "quickbooks.intuit.com", href: "https://quickbooks.intuit.com/", category: "finance", description: tKey("Link accounting records, create invoices, and retrieve available online invoice payment links."), availability: "available" },
+  { id: "whatsapp", provider: "whatsapp", label: "WhatsApp Business", source: "business.whatsapp.com", href: "https://business.whatsapp.com/", category: "communication", description: tKey("Connect your own business number for approved messages, replies, and delivery updates."), availability: "available" },
+  { id: "zoho_books", provider: "zoho_books", label: "Zoho Books", source: "zoho.com/ae/books", href: "https://www.zoho.com/ae/books/", category: "finance", description: tKey("Connect accounting, invoices, payment pages, bills, expenses, and project financials."), availability: "available" },
+  { id: "autodesk_construction_cloud", label: "Autodesk Construction Cloud", source: "construction.autodesk.com", href: "https://construction.autodesk.com/", category: "productivity", description: tKey("Connect design files, project issues, reviews, and construction handover data."), availability: "coming_soon" },
+  { id: "microsoft_365", label: "Microsoft 365", source: "microsoft.com/microsoft-365", href: "https://www.microsoft.com/microsoft-365/", category: "productivity", description: tKey("Connect Outlook, calendars, OneDrive, Teams, and secure document collaboration."), availability: "coming_soon" },
+  { id: "docusign", label: "Docusign", source: "docusign.com", href: "https://www.docusign.com/solutions/industries/construction", category: "productivity", description: tKey("Send and track client agreements, change orders, and project approvals."), availability: "coming_soon" },
+  { id: "payment", provider: "payment", label: tKey("Payment gateway"), source: tKey("Provider connection"), href: null, category: "finance", description: tKey("Collect payments and receive verified transaction status updates."), availability: "coming_soon" },
+  { id: "dropbox", label: "Dropbox", source: "dropbox.com", href: "https://www.dropbox.com/", category: "productivity", description: tKey("Link shared project files and controlled document storage."), availability: "coming_soon" },
+  { id: "meta_lead_ads", label: "Meta Lead Ads", source: "Meta Business", href: "https://www.facebook.com/business/ads/ad-objectives/lead-generation", category: "communication", description: tKey("Native Facebook and Instagram lead-form intake needs the tenant’s Meta business, page and lead-form authorization."), availability: "not_connected" },
+  { id: "plyleads", label: "PlyLeads", source: tKey("Provider specification required"), href: null, category: "communication", description: tKey("Automatic intake remains unavailable until the provider supplies an API or webhook specification and credentials."), availability: "not_connected" },
 ];
 
 const capabilitiesByProvider: Partial<Record<ProviderCapabilityState["id"], ProviderCapability[]>> = {
   google_workspace: [
-    { code: "calendar.read", label: "Read selected calendars", access: "read", verification: "operation" },
-    { code: "calendar.write", label: "Create calendar events", access: "write", verification: "operation" },
-    { code: "email.send", label: "Send Gmail messages", access: "write", verification: "operation" },
-    { code: "storage.write", label: "Create Drive documents", access: "write", verification: "operation" },
+    { code: "calendar.read", label: tKey("Read selected calendars"), access: "read", verification: "operation" },
+    { code: "calendar.write", label: tKey("Create calendar events"), access: "write", verification: "operation" },
+    { code: "email.send", label: tKey("Send Gmail messages"), access: "write", verification: "operation" },
+    { code: "storage.write", label: tKey("Create Drive documents"), access: "write", verification: "operation" },
   ],
-  quickbooks: [{ code: "accounting.read", label: "Read accounting records", access: "read", verification: "operation" }],
-  zoho_books: [{ code: "accounting.read", label: "Read accounting records", access: "read", verification: "operation" }],
+  quickbooks: [{ code: "accounting.read", label: tKey("Read accounting records"), access: "read", verification: "operation" }],
+  zoho_books: [{ code: "accounting.read", label: tKey("Read accounting records"), access: "read", verification: "operation" }],
   whatsapp: [
-    { code: "message.send", label: "Send approved messages", access: "write", verification: "operation" },
-    { code: "message.delivery_receipt", label: "Receive delivery and read receipts", access: "read", verification: "delivery_receipt" },
+    { code: "message.send", label: tKey("Send approved messages"), access: "write", verification: "operation" },
+    { code: "message.delivery_receipt", label: tKey("Receive delivery and read receipts"), access: "read", verification: "delivery_receipt" },
   ],
-  meta_lead_ads: [{ code: "lead.ingest", label: "Receive attributed lead forms", access: "write", verification: "delivery_receipt" }],
-  plyleads: [{ code: "lead.ingest", label: "Receive attributed enquiries", access: "write", verification: "delivery_receipt" }],
+  meta_lead_ads: [{ code: "lead.ingest", label: tKey("Receive attributed lead forms"), access: "write", verification: "delivery_receipt" }],
+  plyleads: [{ code: "lead.ingest", label: tKey("Receive attributed enquiries"), access: "write", verification: "delivery_receipt" }],
 };
 
 export const providerCapabilitiesFixture: ProviderCapabilitiesResponse = {
@@ -130,14 +137,14 @@ export const providerCapabilitiesFixture: ProviderCapabilitiesResponse = {
     }),
     {
       id: "wodana_ai",
-      label: "Wodana AI review",
-      source: "Platform managed",
+      label: tKey("Wodana AI review"),
+      source: tKey("Platform managed"),
       href: null,
       category: "developer",
-      description: "Evidence-linked suggestions that require staff review before applying.",
+      description: tKey("Evidence-linked suggestions that require staff review before applying."),
       implementation: "available",
       setupMode: "platform_managed",
-      capabilities: [{ code: "ai.suggest", label: "Draft reviewable suggestions", access: "write", verification: "not_applicable" }],
+      capabilities: [{ code: "ai.suggest", label: tKey("Draft reviewable suggestions"), access: "write", verification: "not_applicable" }],
       configurationState: "platform_managed",
       verificationState: "not_applicable",
       verifiedAt: null,
@@ -151,6 +158,7 @@ export const integrationsPageFixture: IntegrationsPageData = {
   workspaceId: companyProfileFixture.workspace.id,
   legalEntities: companyProfileFixture.legalEntities,
   providerCapabilities: providerCapabilitiesFixture,
+  platformReadiness: { google_workspace: true, quickbooks: true, zoho_books: true, whatsapp: true },
   connections: [{
     id: "40000000-0000-4000-8000-000000000001",
     legalEntityId: companyProfileFixture.legalEntities[0].id,

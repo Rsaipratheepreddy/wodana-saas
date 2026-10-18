@@ -9,3 +9,8 @@ it("whitelists reusable quotation content without copying client identity, sourc
   expect(content.lines[0].rate).toBe(1450);expect(content.lines[0].customMaterials).toEqual(source.lines[0].customMaterials);
   content.lines[0].customMaterials![0].name="Changed copy";expect(source.lines[0].customMaterials![0].name).toBe("Client veneer");
 });
+it('does not copy bound client information or logo into a reusable template',()=>{
+ const source={lines:[],paymentTerms:[],presentation:{version:1,pages:[],pageBackground:'#ffffff',textColor:'#000000',accentColor:'#000000',template:'palm-reference-v1',details:{companyName:'Studio',clientName:'Private customer',clientEmail:'private@example.com',clientLogo:'data:image/png;base64,AAAA',projectName:'Private villa',reference:'Client quote',location:'Private address'}}} as unknown as Quote;
+ expect(quotationTemplateContent(source).presentation?.details).toEqual({companyName:'Studio'});
+ expect(source.presentation?.details?.clientName).toBe('Private customer');
+});

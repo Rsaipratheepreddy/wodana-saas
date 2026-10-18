@@ -33,12 +33,16 @@ describe("starter catalog integrity",()=>{
   const paint=CATALOG_STARTER.find(r=>r.name.startsWith("Asian Paints Royale"))!;
   expect(paint.sizes.map(s=>s.packQuantity)).toEqual([1,3.6,16.5,18]);
  });
- it("rejects dimensional and unit mistakes",()=>{
+ it("rejects dimensional and unit mistakes",async()=>{
   const material=structuredClone(CATALOG_STARTER.find(r=>r.kind==="material")!);
   expect(()=>validateCatalogRecord({...material,sizes:[{label:"unknown size"}]})).toThrow("dimension or pack");
   expect(()=>validateCatalogRecord({...material,sizes:[{label:"1 L",packQuantity:1}]})).toThrow("both pack");
   expect(()=>validateCatalogRecord({...room,links:[{relation:"unit",targetId:material.id}]})).toThrow("relationship");
-  expect(()=>validateCatalogRecord({...room,kind:"unit",dimension:"pack",baseFactor:32})).toThrow("Pack conversions");
+  expect(()=>validateCatalogRecord({...room,kind:"unit",dimension:"pack",baseFactor:32})).toThrow("universal conversion factor");
+  const technical={...room,kind:"unit",dimension:"reference",baseFactor:undefined};
+  expect(await validate(plainToInstance(SaveCatalogRecordDto,technical))).toEqual([]);
+  expect(()=>validateCatalogRecord(technical)).not.toThrow();
+  expect(()=>validateCatalogRecord({...technical,baseFactor:1})).toThrow("universal conversion factor");
   expect(()=>validateCatalogRecord({...material,specificationStatus:"reference",sources:[]})).toThrow("source");
  });
  it("accepts reviewable sellable records without changing existing catalog defaults",async()=>{

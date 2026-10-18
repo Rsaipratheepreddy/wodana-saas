@@ -1,3 +1,5 @@
+import type { ViewAsSettings } from "./view-as";
+
 export type WorkspaceRole = {
   id: string;
   code: string;
@@ -6,12 +8,18 @@ export type WorkspaceRole = {
   isSystem: boolean;
   version: number;
   memberCount?: number;
+  teamCount?: number;
+  pendingInvitationCount?: number;
   permissions: string[];
+  /** The template a custom role was built from (it can be reset to it); null otherwise. */
+  templateCode?: string | null;
 };
 
 export type WorkspaceMember = {
   id: string;
   userId: string;
+  avatarPreset?: string | null;
+  photoUrl?: string | null;
   email: string;
   displayName: string;
   status: "active" | "suspended";
@@ -36,16 +44,54 @@ export type WorkspaceInvitation = {
   teams?: Array<{ id: string; name: string }>;
 };
 
+/** The workspace's seats (SP-3): the limit, members using one, invitations reserving one, and what's free. */
+export type SeatUsage = { limit: number | null; used: number; reserved: number; available: number | null };
+
 export type MembersPageData = {
+  seats?: SeatUsage | null;
+  canView?: boolean;
   canManage: boolean;
+  canInvite?: boolean;
+  canEdit?: boolean;
+  canCancelInvitations?: boolean;
+  assignableRoleCodes?: string[];
   currentUserId: string;
   currentUserName: string;
   invitations: WorkspaceInvitation[];
   members: WorkspaceMember[];
   roles: WorkspaceRole[];
-  teams: Array<{ id: string; name: string }>;
+  teams: Array<{ id: string; name: string; roleIds?: string[] }>;
   workspaceId: string;
+  /** "View as" a person (owners and administrators): whether it is offered, and its notice setting. */
+  viewAs?: { canViewAs: boolean; mfaEnabled: boolean; settings: ViewAsSettings | null; viewerIsOwner: boolean };
 };
+
+export function memberAccessCapabilities(
+  allowedPermissions: readonly string[] | undefined,
+  roleCodes: readonly string[],
+  roles: readonly WorkspaceRole[],
+) {
+  const isAdministrator = roleCodes.some((role) => ["owner", "administrator"].includes(role.toLowerCase()));
+  const permissions = new Set(allowedPermissions ?? []);
+  const canManage = isAdministrator;
+  const canView = isAdministrator || permissions.has("workspace.members.manage") || [
+    "module.members.read", "module.members.write", "module.members.edit", "module.members.delete",
+  ].some((permission) => permissions.has(permission));
+  const canInvite = isAdministrator || permissions.has("workspace.members.manage") || permissions.has("module.members.write");
+  const canEdit = isAdministrator || permissions.has("workspace.members.manage") || permissions.has("module.members.edit");
+  const canCancelInvitations = isAdministrator || permissions.has("workspace.members.manage") || permissions.has("module.members.delete");
+  const canReadInvitations = isAdministrator || permissions.has("workspace.members.manage") || [
+    "module.members.read", "module.members.write", "module.members.delete",
+  ].some((permission) => permissions.has(permission));
+  const canReadTeams = isAdministrator || permissions.has("module.teams.read") || permissions.has("legal_entities.view");
+  const assignableRoleCodes = roles
+    .filter((role) => isAdministrator || (
+      !["owner", "administrator"].includes(role.code.toLowerCase())
+      && role.permissions.every((permission) => permissions.has(permission))
+    ))
+    .map((role) => role.code);
+  return { canView, canManage, canInvite, canEdit, canCancelInvitations, canReadInvitations, canReadTeams, assignableRoleCodes };
+}
 
 export const membersPageFixture: MembersPageData = {
   canManage: true,

@@ -1,0 +1,5 @@
+/* A business's logo or letterhead header in its settings: the image as printed, with replace and remove. */
+.field { display: grid; justify-items: start; gap: var(--wd-space-2); min-inline-size: 0; }
+.preview { display: block; max-inline-size: 100%; block-size: var(--wd-space-12); object-fit: contain; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.field[data-kind="letterhead"] .preview { inline-size: 100%; block-size: auto; max-block-size: var(--wd-space-24); }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-2); }

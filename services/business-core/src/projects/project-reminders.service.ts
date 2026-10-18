@@ -1,87 +1,145 @@
-import { Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { Injectable, Logger } from "@nestjs/common";
+import type { PoolClient } from "pg";
 import { DatabaseService } from "../database/database.service";
-import { ProjectNotificationsService } from "./project-notifications";
-/** Daily in-app reminders use workspace dates and a stable key per recipient/record/day. */
+import { processQuoteExpiry } from "../commercial/quote-expiry";
+import { resolveQuietChats } from "../crm/conversations/inbox/quiet-chats";
+import { escalateWaitingApprovals } from "../approvals/approval-engine";
+import { processDesignDeadlines } from "../design/design-journey.store";
+import { processProcurementGates } from "../design/finishes.store";
+import { processFactoryDeadlines } from "../factory/factory-reminders";
+import { processHrmsCheckouts, processHrmsDocuments } from "../hrms/hrms-reminders";
+import { processClientUpdateAutoSend, processClientUpdateDrafts } from "../project-core/client-updates";
+import { processMaterialsWaiting, processMilestonesDue, processStagesReady, processWeeklySummaries } from "../project-core/delivery-reminders";
+import { processSiteReports, processWarrantyExpiry } from "../site/site-reminders";
+import { processDailyProgressAutoSend, processWeeklyRollups } from "../site/progress-delivery";
+import { processProjectBudgets } from "../project-core/project-money";
+import { processPurchasingDeadlines, processRetentionReleases } from "../purchasing/purchasing-reminders";
+import { processSupplierDocuments } from "../purchasing/supplier-controls.service";
+import { raiseStageInvoiceRequests } from "../finance-requests/stage-invoice-requests";
+import { processTeamCalendarDeadlines } from "../team-calendars/team-calendars.store";
+import { processFulfilmentDeadlines } from "../fulfilment/fulfilment-reminders";
+import { processClientCalls } from "../client-calls/client-calls.store";
+
+const SERVICE_ACTOR_ID = "00000000-0000-0000-0000-000000000000";
+type Tenant = Pick<PoolClient, "query">;
+
+/**
+ * The daily run of what is not a reminder engine kind. Every rule reads its module's tables (never the retired
+ * project JSON) inside each workspace's own tenant transaction, with a stable key per recipient, record and day, so
+ * a rerun or a missed day never sends twice.
+ *
+ * Moved to the reminder engine (reminders/, plan §6.24a), so they are no longer sent here: work due and late
+ * (work.due), approval reminders and escalation to the owners (approval.waiting; the E3 policy's own escalation still
+ * runs here), client decisions on quotes and designs (client.quote_decision, client.design_decision), the quote
+ * expiry warning (quote.expiring; expiring the quote stays here), late purchase orders (purchase.order_late; blockers,
+ * stock levels and "late to order" stay), overdue design stages (design.stage_due; the stage's overdue mark stays),
+ * building permits (permit.expiry), supplier bills due (payables.due) and overdue client invoices (invoice.overdue).
+ */
 @Injectable()
 export class ProjectRemindersService {
-  constructor(
-    private readonly db: DatabaseService,
-    private readonly notifications: ProjectNotificationsService,
-  ) {}
-  async send(projectId?: string) {
-    const result = await this.db.query<{
-      workspace_id: string;
-      recipient_id: string;
-      subject: string;
-      body: string;
-      deep_link: string;
-      idempotency_key: string;
-    }>(
-      `WITH active AS (
-   SELECT e.workspace_id,e.project_id,e.content,p.name,(now() AT TIME ZONE w.default_timezone)::date::text AS today
-   FROM project_execution e JOIN delivery_projects p ON p.id=e.project_id AND p.workspace_id=e.workspace_id JOIN workspaces w ON w.id=e.workspace_id
-   WHERE e.content->>'phase' IN ('planning','active','handover','completed') AND ($1::uuid IS NULL OR e.project_id=$1)
-  ), records AS (
-   SELECT a.*,r AS record,r->>'end' AS due,'plan-teams' AS section FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'tasks','[]')) r WHERE r->>'status' NOT IN ('completed','cancelled') AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(a.content->'tasks','[]')) child WHERE child->>'parentId'=r->>'id')
-   UNION ALL SELECT a.*,r,r->>'dueDate','snagging' FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'snags','[]')) r WHERE r->>'status'<>'closed'
-   UNION ALL SELECT a.*,r,r->>'dueDate','documents' FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'technicalQueries','[]')) r WHERE r->>'status' NOT IN ('closed','cancelled')
-   UNION ALL SELECT a.*,r,r->>'dueDate','plan-teams' FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'milestones','[]')) r WHERE coalesce(r->>'acceptedAt','')=''
-   UNION ALL SELECT a.*,r,r->>'dueDate','production' FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'dispatches','[]')) r WHERE r->>'status' IN ('ready','dispatched')
-   UNION ALL SELECT a.*,r,r->>'dueDate','site-work' FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'commissioning','[]')) r WHERE r->>'status' IN ('draft','submitted','returned')
-   UNION ALL SELECT a.*,r,r->>'clientReviewDueDate','handover' FROM active a CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'handovers','[]')) r WHERE r->>'status'='ready'
-   UNION ALL SELECT a.*,jsonb_build_object('id',h->>'id','title',item->>'title','ownerId',item->>'ownerId'),item->>'dueDate','handover'
-     FROM active a
-     CROSS JOIN LATERAL jsonb_array_elements(coalesce(a.content->'handovers','[]')) h
-     CROSS JOIN LATERAL jsonb_array_elements(coalesce(h->'outstandingItems','[]')) item
-    WHERE item->>'status' NOT IN ('closed','warranty')
-  ), recipients AS (
-   SELECT DISTINCT r.workspace_id,r.project_id,r.name,r.today,r.record->>'id' AS record_id,r.record->>'title' AS title,r.due,r.section,m.id AS member_id,m.user_id
-   FROM records r JOIN project_assignments a ON a.workspace_id=r.workspace_id AND a.project_id=r.project_id AND a.active JOIN workspace_memberships m ON m.workspace_id=a.workspace_id AND m.id=a.membership_id AND m.status='active'
-   WHERE r.due~'^\\d{4}-\\d{2}-\\d{2}$' AND r.due<=r.today AND (r.record->>'ownerId'=m.id::text OR r.record->>'preparedBy'=m.id::text OR coalesce(r.record->'assigneeIds','[]') ? m.id::text OR (r.section='handover' AND a.is_manager) OR EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(r.content->'followers','[]')) f WHERE f->>'recordId'=r.record->>'id' AND f->>'memberId'=m.id::text))
-  ) INSERT INTO notifications(workspace_id,recipient_type,recipient_id,channel,event_type,status,subject,body,deep_link,idempotency_key,correlation_id,delivered_at)
-  SELECT r.workspace_id,'user',r.user_id,'in_app','project.due','delivered',CASE WHEN r.due=r.today THEN 'Due today · ' ELSE 'Overdue · ' END||r.title,r.name||' · Planned for '||r.due,'/workspace/projects/'||r.project_id||'/'||r.section||'?record='||r.record_id,'project-due:'||r.project_id||':'||r.record_id||':'||r.today||':'||r.member_id,gen_random_uuid(),now()
-  FROM recipients r WHERE coalesce((SELECT enabled FROM notification_preferences WHERE workspace_id=r.workspace_id AND recipient_type='user' AND recipient_id=r.user_id AND channel='in_app' AND event_type IN ('project.due','project.*','*') ORDER BY CASE event_type WHEN 'project.due' THEN 0 WHEN 'project.*' THEN 1 ELSE 2 END LIMIT 1),true)
-  ON CONFLICT(workspace_id,idempotency_key) DO NOTHING RETURNING workspace_id,recipient_id,subject,body,deep_link,idempotency_key`,
-      [projectId ?? null],
+  private readonly logger = new Logger(ProjectRemindersService.name);
+
+  constructor(private readonly db: DatabaseService) {}
+
+  async send() {
+    const workspaces = await this.db.query<{ workspace_id: string }>(
+      "SELECT workspace_id FROM list_reminder_workspaces()",
     );
-    for (const reminder of result.rows) {
-      const projectIdMatch = /\/workspace\/projects\/([^/]+)/.exec(reminder.deep_link);
-      const dueDate = /\b\d{4}-\d{2}-\d{2}\b/.exec(reminder.body)?.[0] ?? "";
-      const projectName = reminder.body.split(" · Planned for ")[0] || "Project";
-      await this.notifications.queueScheduledEmail({
-        workspaceId: reminder.workspace_id,
-        userId: reminder.recipient_id,
-        eventType: "project.due",
-        projectId: projectIdMatch?.[1] ?? "",
-        projectName,
-        action: "scheduled reminder",
-        recordId: reminder.deep_link.split("?record=")[1] ?? "",
-        recordTitle: reminder.subject.replace(/^(Due today|Overdue) · /, ""),
-        body: reminder.body,
-        deepLink: reminder.deep_link,
-        dueDate,
-        idempotencyKey: `${reminder.idempotency_key}:email`,
-        correlationId: randomUUID(),
-      }).catch(() => undefined);
+    const totals = { created: 0, decisionReminders: 0, quotesExpired: 0, quietChatsResolved: 0, approvalEscalations: 0, weeklySummaries: 0, stagesReady: 0, materialsWaiting: 0, milestonesDue: 0, clientUpdates: 0, clientUpdatesSent: 0, designAlerts: 0,
+      lateOrders: 0, supplierDocuments: 0, factoryShortages: 0, siteReports: 0, dailyProgressSent: 0, weeklyRollups: 0, warrantyEnding: 0, retentionReleased: 0, overBudget: 0,
+      stageInvoiceRequests: 0, checkoutReminders: 0, documentReminders: 0, teamCalendarAlerts: 0, clientCallsBooked: 0, lateDeliveries: 0, failedWorkspaces: 0 };
+    for (const { workspace_id: workspaceId } of workspaces.rows) {
+      try {
+        const run = await this.db.tenantTransaction(workspaceId, SERVICE_ACTOR_ID, (client) => this.sendWorkspace(client, workspaceId));
+        totals.decisionReminders += run.decisions;
+        totals.quotesExpired += run.quotes?.expired ?? 0;
+        totals.quietChatsResolved += run.quietChats?.resolved ?? 0;
+        totals.approvalEscalations += run.approvals?.escalated ?? 0;
+        totals.weeklySummaries += run.weekly.sent;
+        totals.stagesReady += run.stages.sent;
+        totals.materialsWaiting += run.materials.sent;
+        totals.milestonesDue += run.milestones.sent;
+        totals.stageInvoiceRequests += run.stageInvoices?.raised ?? 0;
+        totals.clientUpdates += run.clientUpdates.drafted;
+        totals.clientUpdatesSent += run.clientUpdatesSent.sent;
+        totals.designAlerts += (run.design?.alerted ?? 0) + (run.design?.closed ?? 0);
+        totals.lateOrders += run.purchasing.sent;
+        totals.supplierDocuments += (run.suppliers?.held ?? 0) + (run.suppliers?.warned ?? 0);
+        totals.factoryShortages += run.factory?.sent ?? 0;
+        totals.siteReports += run.site.sent;
+        totals.dailyProgressSent += run.dailyProgress.sent;
+        totals.weeklyRollups += run.rollups.sent;
+        totals.warrantyEnding += run.warranty.sent;
+        totals.retentionReleased += run.retention?.released ?? 0;
+        totals.overBudget += run.budgets.sent;
+        totals.checkoutReminders += run.checkouts?.sent ?? 0;
+        totals.documentReminders += run.documents?.sent ?? 0;
+        totals.teamCalendarAlerts += run.teamCalendars?.sent ?? 0;
+        totals.lateDeliveries += run.fulfilment?.sent ?? 0;
+        totals.clientCallsBooked += run.clientCalls?.booked ?? 0;
+      } catch (error) {
+        totals.failedWorkspaces += 1;
+        this.logger.error(`Reminder run failed for workspace ${workspaceId}: ${(error as Error).message}`);
+      }
     }
-    const decisionReminders = await this.sendDecisionReminders();
-    const weeklySummaries = projectId ? 0 : await this.sendWeeklyProgress();
+    totals.created = totals.decisionReminders + totals.weeklySummaries + totals.stagesReady + totals.materialsWaiting + totals.milestonesDue;
+    return totals;
+  }
+
+  /**
+   * One workspace's daily run, in the caller's tenant transaction. Changes waiting on the client aren't here: they are
+   * the reminder engine's change_request.client_decision (change-requests/change-request-reminder-source.ts).
+   */
+  async sendWorkspace(client: PoolClient, workspaceId: string) {
     return {
-      created: (result.rowCount ?? 0) + decisionReminders + weeklySummaries,
-      dueReminders: result.rowCount ?? 0,
-      decisionReminders,
-      weeklySummaries,
+      decisions: await this.createDecisionReminders(client),
+      // Quotes that ran out are Expired (Q-6); the warning before and the client's reminders are reminder engine kinds.
+      quotes: await processQuoteExpiry(client, workspaceId),
+      // Chats quiet since our last message resolve themselves, unless something is pending (AU-2).
+      quietChats: await resolveQuietChats(client, workspaceId),
+      // E3-1: a step that waited past its policy's escalation hours passes to the next approver (reminders: approval.waiting).
+      approvals: await escalateWaitingApprovals(client, workspaceId),
+      design: await processDesignDeadlines(client, workspaceId),
+      stages: await processStagesReady(client, workspaceId),
+      weekly: await processWeeklySummaries(client, workspaceId),
+      materials: await processMaterialsWaiting(client, workspaceId),
+      milestones: await processMilestonesDue(client, workspaceId),
+      // A reached payment stage raises its invoice request for Finance, where the firm turned it on (PLM-108).
+      stageInvoices: await raiseStageInvoiceRequests(client, workspaceId),
+      clientUpdates: await processClientUpdateDrafts(client, workspaceId),
+      // Drafts nobody sent or discarded in time go out by themselves when the firm chose so (D-40).
+      clientUpdatesSent: await processClientUpdateAutoSend(client, workspaceId),
+      purchasing: await processPurchasingDeadlines(client, workspaceId),
+      // PLM-148: a project whose procurement gate cleared (payment, material list, signed samples) tells procurement once.
+      procurementGates: await processProcurementGates(client, workspaceId),
+      suppliers: await processSupplierDocuments(client, workspaceId),
+      factory: await processFactoryDeadlines(client, workspaceId),
+      // Render and 2D time, production, deliveries and installations past their day (PLM-090/091).
+      teamCalendars: await processTeamCalendarDeadlines(client, workspaceId),
+      // Won orders past their expected date and not yet with the client (PLM-126).
+      fulfilment: await processFulfilmentDeadlines(client, workspaceId),
+      // The next client update call when the last one is done or its day passed (PLM-046).
+      clientCalls: await processClientCalls(client, workspaceId),
+      site: await processSiteReports(client, workspaceId),
+      // Daily progress approved but not sent (or, if the firm chose, never reviewed) goes after D-40's hours; Friday's roll-up.
+      dailyProgress: await processDailyProgressAutoSend(client, workspaceId),
+      rollups: await processWeeklyRollups(client, workspaceId),
+      warranty: await processWarrantyExpiry(client, workspaceId),
+      // Retention released at handover first, so what falls due includes it.
+      retention: await processRetentionReleases(client, workspaceId),
+      budgets: await processProjectBudgets(client, workspaceId),
+      checkouts: await processHrmsCheckouts(client, workspaceId),
+      documents: await processHrmsDocuments(client, workspaceId),
     };
   }
 
-  private async sendDecisionReminders() {
-    const result = await this.db.query(
+  private async createDecisionReminders(client: Tenant) {
+    const result = await client.query(
       `WITH due AS (
         SELECT commercial.workspace_id, commercial.case_id, request,
           membership.user_id,
           (now() AT TIME ZONE workspace.default_timezone)::date::text AS today
-        FROM commercial_cases commercial
+        FROM commercial_cases_view commercial
         JOIN workspaces workspace ON workspace.id=commercial.workspace_id
         CROSS JOIN LATERAL jsonb_array_elements(coalesce(commercial.content->'requests','[]'::jsonb)) request
         JOIN workspace_memberships membership
@@ -110,7 +168,7 @@ export class ProjectRemindersService {
       SELECT workspace_id,'user',user_id,'in_app','commercial.decision.reminder','delivered',
         'Client decision due · '||(request->>'title'),
         (request->'decisionRequest'->'target'->>'label')||' · Due '||(request->>'dueDate'),
-        '/workspace/pre-projects/'||case_id||'/commercial?request='||(request->>'id'),
+        '/workspace/pre-projects/cases/'||case_id||'/variations?request='||(request->>'id'),
         'decision-reminder:'||case_id||':'||(request->>'id')||':'||today,
         gen_random_uuid(),now()
       FROM due
@@ -128,101 +186,5 @@ export class ProjectRemindersService {
       ON CONFLICT(workspace_id,idempotency_key) DO NOTHING`,
     );
     return result.rowCount ?? 0;
-  }
-
-  private async sendWeeklyProgress() {
-    const emailPolicies = await this.db.query<{ workspace_id: string }>(
-      `SELECT DISTINCT workspace_id FROM notification_policies
-       WHERE event_type='project.weekly_progress' AND status='active' AND channels ? 'email'`,
-    );
-    const emailWorkspaces = new Set(emailPolicies.rows.map((row) => row.workspace_id));
-    const summaries = await this.db.query<{
-      workspace_id: string;
-      project_id: string;
-      recipient_id: string;
-      project_name: string;
-      body: string;
-      deep_link: string;
-      idempotency_key: string;
-    }>(
-      `WITH eligible AS (
-        SELECT project.workspace_id,project.id AS project_id,project.name,
-          execution.content,membership.user_id,
-          (now() AT TIME ZONE workspace.default_timezone)::date AS today,
-          to_char((now() AT TIME ZONE workspace.default_timezone)::date,'IYYY-IW') AS week_key
-        FROM delivery_projects project
-        JOIN project_execution execution
-          ON execution.workspace_id=project.workspace_id AND execution.project_id=project.id
-        JOIN workspaces workspace ON workspace.id=project.workspace_id
-        JOIN project_assignments assignment
-          ON assignment.workspace_id=project.workspace_id AND assignment.project_id=project.id AND assignment.active
-        JOIN workspace_memberships membership
-          ON membership.workspace_id=assignment.workspace_id AND membership.id=assignment.membership_id AND membership.status='active'
-        WHERE project.status='active'
-          AND EXISTS (
-            SELECT 1 FROM notification_policies policy
-            WHERE policy.workspace_id=project.workspace_id
-              AND policy.event_type='project.weekly_progress'
-              AND policy.status='active'
-              AND policy.channels ? 'in_app'
-              AND lower(coalesce(policy.conditions->>'weekday','friday'))=
-                  lower(trim(to_char((now() AT TIME ZONE workspace.default_timezone),'Day')))
-          )
-      ), counts AS (
-        SELECT eligible.*,
-          (SELECT count(*) FROM jsonb_array_elements(coalesce(content->'tasks','[]'::jsonb)) task
-            WHERE task->>'status' NOT IN ('completed','cancelled')) AS open_tasks,
-          (SELECT count(*) FROM jsonb_array_elements(coalesce(content->'tasks','[]'::jsonb)) task
-            WHERE task->>'status' NOT IN ('completed','cancelled')
-              AND task->>'end'~'^\\d{4}-\\d{2}-\\d{2}$'
-              AND (task->>'end')::date<today) AS overdue_tasks,
-          (SELECT count(*) FROM jsonb_array_elements(coalesce(content->'snags','[]'::jsonb)) snag
-            WHERE snag->>'status'<>'closed') AS open_snags
-        FROM eligible
-      )
-      INSERT INTO notifications(
-        workspace_id,recipient_type,recipient_id,channel,event_type,status,
-        subject,body,deep_link,idempotency_key,correlation_id,delivered_at
-      )
-      SELECT workspace_id,'user',user_id,'in_app','project.weekly_progress','delivered',
-        'Weekly progress · '||name,
-        open_tasks||' open tasks · '||overdue_tasks||' overdue · '||open_snags||' open snags',
-        '/workspace/projects/'||project_id||'/overview',
-        'weekly-progress:'||project_id||':'||user_id||':'||week_key,
-        gen_random_uuid(),now()
-      FROM counts
-      WHERE coalesce((
-        SELECT preference.enabled FROM notification_preferences preference
-        WHERE preference.workspace_id=counts.workspace_id
-          AND preference.recipient_type='user'
-          AND preference.recipient_id=counts.user_id
-          AND preference.channel='in_app'
-          AND preference.event_type IN ('project.weekly_progress','project.*','*')
-        ORDER BY CASE preference.event_type
-          WHEN 'project.weekly_progress' THEN 0 WHEN 'project.*' THEN 1 ELSE 2 END
-        LIMIT 1
-      ),true)
-      ON CONFLICT(workspace_id,idempotency_key) DO NOTHING
-      RETURNING workspace_id,split_part(deep_link,'/',4)::uuid AS project_id,
-        recipient_id,split_part(subject,' · ',2) AS project_name,body,deep_link,idempotency_key`,
-    );
-    for (const summary of summaries.rows) {
-      if (!emailWorkspaces.has(summary.workspace_id)) continue;
-      await this.notifications.queueScheduledEmail({
-        workspaceId: summary.workspace_id,
-        userId: summary.recipient_id,
-        eventType: "project.weekly_progress",
-        projectId: summary.project_id,
-        projectName: summary.project_name,
-        action: "weekly progress summary",
-        recordId: summary.project_id,
-        recordTitle: "Weekly progress",
-        body: summary.body,
-        deepLink: summary.deep_link,
-        idempotencyKey: `${summary.idempotency_key}:email`,
-        correlationId: randomUUID(),
-      }).catch(() => undefined);
-    }
-    return summaries.rowCount ?? 0;
   }
 }

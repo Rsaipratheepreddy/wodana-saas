@@ -1,0 +1,24 @@
+/* Settings › Reminders: the firm's defaults, then one row per reminder kind (switch, cadence, escalation, channels). */
+.times { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+
+.rule { display: grid; gap: var(--wd-space-3); padding-block: var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); scroll-margin-block: var(--wd-space-16); }
+.rule:last-child { border-block-end: 0; }
+.rule[data-highlighted] { margin-inline: calc(var(--wd-space-3) * -1); padding-inline: var(--wd-space-3); border-radius: var(--wd-radius-md); background: var(--wd-color-action-primary-subtle); }
+.ruleHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-space-3); }
+.ruleName { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.ruleName strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-semibold); }
+.ruleName small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+
+.ruleBody { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--wd-space-3) var(--wd-space-6); }
+.field { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.fieldLabel { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-weight: var(--wd-weight-medium); }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1-5); }
+
+.ruleFooter { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wd-space-2); }
+.ruleActions { display: inline-flex; align-items: center; gap: var(--wd-space-2); margin-inline-start: auto; }
+.conflict { display: inline-flex; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-danger); font-size: var(--wd-text-sm); }
+
+@media (max-width: 48rem) {
+  .times { justify-content: flex-start; }
+  .ruleBody { align-items: stretch; flex-direction: column; }
+}

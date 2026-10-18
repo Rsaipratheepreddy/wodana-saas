@@ -9,7 +9,11 @@ import { stableHash, decodeCursor, encodeCursor } from "../shared/crm-types";
 import { loadLeadOptions, validateLeadOptions } from "../leads/lead-options";
 import { ListIntakeQueryDto } from "./dto/intake.dto";
 import { CrmIntakeService } from "./crm-intake.service";
-import { defaultLeadForm, parseLeadForm, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
+import { completeLeadForm, defaultLeadForm, parseLeadForm, requiredFormFields, validateFormAnswers, type LeadFormSchema } from "./lead-form-schema";
+import { countryFromLocale, normalizeIntakePartyPhones } from "./intake-phone";
+import { resolveFormLink } from "./form-link";
+import { PoolClient } from "pg";
+import { customFieldId, enquiryFieldDefinitions, questionShape, writeEnquiryCustomValues } from "../settings/enquiry-fields";
 
 @Injectable()
 export class LeadFormsService {
@@ -18,9 +22,12 @@ export class LeadFormsService {
 
   list(actor: RequestActor, workspaceId: string) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async client => {
-      const result = await client.query(`SELECT id, token, draft, published, status, version, updated_at AS "updatedAt"
-        FROM crm_lead_forms WHERE workspace_id=$1 ORDER BY updated_at DESC`, [workspaceId]);
-      return { data: result.rows };
+      // PLM-116: each form with how many submissions it has brought in.
+      const result = await client.query(`SELECT id, token, draft, published, status, version, updated_at AS "updatedAt",
+          (SELECT count(*)::int FROM crm_intake_events intake WHERE intake.workspace_id = form.workspace_id AND intake.original_payload->>'formId' = form.id::text) AS submissions
+        FROM crm_lead_forms form WHERE workspace_id=$1 ORDER BY updated_at DESC`, [workspaceId]);
+      const choices = await loadLeadOptions(client, workspaceId);
+      return { data: result.rows.map(row => ({ ...row, draft: completeLeadForm(row.draft as LeadFormSchema, choices) })) };
     });
   }
 
@@ -30,13 +37,14 @@ export class LeadFormsService {
       if (!form.rowCount) throw new NotFoundException("Form not found");
       const cursor = decodeCursor(query.cursor);
       if (query.cursor && (!cursor || Number.isNaN(Date.parse(cursor.value)) || !/^[0-9a-f-]{36}$/i.test(cursor.id))) throw new BadRequestException("Invalid page cursor");
-      const result = await client.query(`SELECT intake.id, enquiry.reference, intake.original_payload->'party'->>'displayName' AS name,
+      const result = await client.query(`SELECT intake.id, enquiry.reference, lead.id AS "leadId", intake.original_payload->'party'->>'displayName' AS name,
         intake.status, intake.received_at AS "receivedAt", intake.original_payload->'formAnswers' AS answers,
         COALESCE((intake.original_payload->'consents'->0->>'status'), 'unknown') AS "consentStatus",
         (SELECT count(*)::int FROM crm_identity_candidates candidate
           WHERE candidate.workspace_id=intake.workspace_id AND candidate.intake_event_id=intake.id
             AND candidate.status='pending') AS "candidateCount"
         FROM crm_intake_events intake LEFT JOIN crm_enquiries enquiry ON enquiry.intake_event_id=intake.id AND enquiry.workspace_id=intake.workspace_id
+        LEFT JOIN crm_leads lead ON lead.enquiry_id=enquiry.id AND lead.workspace_id=intake.workspace_id
         WHERE intake.workspace_id=$1 AND intake.original_payload->>'formId'=$2
           AND ($3::timestamptz IS NULL OR (intake.received_at,intake.id) < ($3::timestamptz,$4::uuid))
         ORDER BY intake.received_at DESC, intake.id DESC LIMIT $5`, [workspaceId, id, cursor?.value ?? null, cursor?.id ?? null, query.limit + 1]);
@@ -45,15 +53,49 @@ export class LeadFormsService {
     });
   }
 
-  create(actor: RequestActor, workspaceId: string) {
+  /** A new form's starting draft, for the builder to fill in; nothing is saved until the person saves it. */
+  blank(actor: RequestActor, workspaceId: string) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client) => ({ draft: defaultLeadForm(await loadLeadOptions(client, workspaceId)) }));
+  }
+
+  /** Saves a new form: the builder's draft when it sends one (a template the person edited), else the default. */
+  create(actor: RequestActor, workspaceId: string, input: { draft?: unknown } = {}) {
     return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
       const choices = await loadLeadOptions(client, workspaceId);
+      const draft = input.draft === undefined ? defaultLeadForm(choices) : await this.prepareDraft(client, workspaceId, input.draft, false, choices);
       const result = await client.query(`INSERT INTO crm_lead_forms (workspace_id,token,draft,created_by)
         VALUES ($1,$2,$3,$4) RETURNING id,token,draft,published,status,version,updated_at AS "updatedAt"`,
-        [workspaceId, randomBytes(24).toString("base64url"), defaultLeadForm(choices), user.userId]);
+        [workspaceId, randomBytes(24).toString("base64url"), draft, user.userId]);
       await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.lead_form.created.v1", entityType: "crm_lead_form", entityId: result.rows[0].id, after: { status: "draft" } });
       return result.rows[0];
     });
+  }
+
+  /** Deletes a draft that was never published (nothing was ever submitted through it); a published form is paused instead. */
+  remove(actor: RequestActor, workspaceId: string, id: string, version: number) {
+    return this.access.withPermission(actor, workspaceId, "crm.settings.manage", async (client, user) => {
+      const found = await client.query<{ status: string; published: unknown; version: number }>(`SELECT status, published, version FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2 FOR UPDATE`, [workspaceId, id]);
+      const before = found.rows[0];
+      if (!before) throw new NotFoundException("Form not found");
+      if (before.version !== version) throw new ConflictException("This form changed. Reload before deleting");
+      if (before.status !== "draft" || before.published) throw new ConflictException("Only a draft that was never published can be deleted. Pause a published form instead");
+      await client.query(`UPDATE workspace_galleries SET lead_form_id = NULL WHERE workspace_id=$1 AND lead_form_id=$2`, [workspaceId, id]);
+      await client.query(`DELETE FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2`, [workspaceId, id]);
+      await this.events.record(client, { workspaceId, actorUserId: user.userId, source: "user", action: "crm.lead_form.deleted.v1", entityType: "crm_lead_form", entityId: id, before: { version: before.version, status: before.status } });
+      return { id, deleted: true };
+    });
+  }
+
+  /** A draft as saved: the workspace's current choices on its fixed questions, custom fields linked. */
+  private async prepareDraft(client: PoolClient, workspaceId: string, raw: unknown, publishing: boolean, choices: Awaited<ReturnType<typeof loadLeadOptions>>) {
+    const draft = parseLeadForm(completeLeadForm(raw as LeadFormSchema, choices), publishing, requiredFormFields(choices));
+    for (const question of draft.questions) {
+      if (question.field === "serviceType") question.options = choices.enquiryTypes;
+      if (question.field === "budgetRange") question.options = choices.budgetRanges;
+      if (question.field === "emirate") question.options = choices.emirates;
+    }
+    await linkCustomFields(client, workspaceId, draft);
+    return draft;
   }
 
   update(actor: RequestActor, workspaceId: string, id: string, input: { version: number; draft?: unknown; action?: string }) {
@@ -63,14 +105,11 @@ export class LeadFormsService {
       const before = found.rows[0];
       if (before.version !== input.version) throw new ConflictException("This form changed. Reload before saving");
       const publishing = input.action === "publish";
-      const draft = parseLeadForm(input.draft ?? before.draft, publishing);
       const choices = await loadLeadOptions(client, workspaceId);
-      for (const question of draft.questions) {
-        if (question.field === "serviceType") question.options = choices.enquiryTypes;
-        if (question.field === "budgetRange") question.options = choices.budgetRanges;
-      }
+      const draft = await this.prepareDraft(client, workspaceId, input.draft ?? before.draft, publishing, choices);
       if (publishing) {
-        await validateLeadOptions(client, workspaceId, { source: draft.source, channel: draft.channel, serviceType: choices.enquiryTypes[0]?.id });
+        // Publishing defines the questions; an emirate is supplied by each eventual respondent.
+        await validateLeadOptions(client, workspaceId, { source: draft.source, channel: draft.channel, serviceType: choices.enquiryTypes[0]?.id }, undefined, { requireEmirate: false });
         const configured = await client.query(`SELECT 1 FROM crm_assignment_policies WHERE workspace_id=$1 AND status='active'
           UNION ALL SELECT 1 FROM crm_queues WHERE workspace_id=$1 AND status='active' AND is_fallback LIMIT 1`, [workspaceId]);
         if (!configured.rowCount) throw new BadRequestException("Set up a default sales team or routing rule before publishing");
@@ -98,8 +137,7 @@ export class LeadFormsService {
 
   async publicForm(token: string) {
     const form = await this.resolve(token);
-    const { title, description, questions } = form.published;
-    const branding = await this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
+    const appearance = await this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       const result = await client.query<{
         displayName: string; loginSlug: string; primaryColor: string | null; secondaryColor: string | null;
         headingFont: string | null; bodyFont: string | null; hasLogo: boolean;
@@ -111,48 +149,68 @@ export class LeadFormsService {
          FROM tenant_login_branding WHERE workspace_id=$1`, [form.workspace_id],
       );
       const tenant = result.rows[0];
-      return tenant ? {
+      const workspace = await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [form.workspace_id]);
+      const choices = await loadLeadOptions(client, form.workspace_id);
+      return { choices, defaultLocale: workspace.rows[0]?.defaultLocale ?? null, branding: tenant ? {
         displayName: tenant.displayName,
         primaryColor: tenant.primaryColor,
         secondaryColor: tenant.secondaryColor,
         headingFont: tenant.headingFont,
         bodyFont: tenant.bodyFont,
         logoUrl: tenant.hasLogo ? `/api/auth/tenant-logo/${tenant.loginSlug}` : null,
-      } : null;
+      } : null };
     });
+    const { title, description, questions } = completeLeadForm(form.published, appearance.choices);
     return {
       title,
       description,
-      branding,
+      branding: appearance.branding,
+      defaultLocale: appearance.defaultLocale,
+      defaultCountryCode: countryFromLocale(appearance.defaultLocale) ?? null,
+      areas: appearance.choices.areas,
       revision: stableHash(form.published),
       consentLabel: "I agree to be contacted about this enquiry.",
-      questions: questions.map(({ field, ...question }) => question),
+      questions,
     };
   }
 
-  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; serviceConsent: boolean }) {
+  async submit(token: string, input: { requestId: string; revision: string; answers: Record<string, unknown>; phoneCountryCodes?: Record<string, string>; serviceConsent: boolean; link?: { source?: string; channel?: string; placement?: string } ; selection?: string[];
+    website?: string; elapsedMs?: number }) {
     const form = await this.resolve(token);
+    // Junk (S-13): the hidden field was filled, or the form was sent faster than a person can. The sender is told it
+    // was received, so a bot learns nothing, and no enquiry is made.
+    if (looksAutomated(input)) return { received: true };
     return this.db.tenantTransaction(form.workspace_id, "00000000-0000-0000-0000-000000000000", async client => {
       // Serialize submissions to enforce per-form limits and check publication atomically.
       const current = await client.query(`SELECT published FROM crm_lead_forms WHERE workspace_id=$1 AND id=$2 AND status='published' FOR UPDATE`, [form.workspace_id, form.id]);
       if (!current.rowCount) throw new NotFoundException("This form is not accepting enquiries");
-      const schema = current.rows[0].published as LeadFormSchema;
-      if (stableHash(schema) !== input.revision) throw new ConflictException("The form has changed. Reload it before submitting");
+      const published = current.rows[0].published as LeadFormSchema;
+      if (stableHash(published) !== input.revision) throw new ConflictException("The form has changed. Reload it before submitting");
+      const choices = await loadLeadOptions(client, form.workspace_id);
+      const schema = completeLeadForm(published, choices);
+      const link = resolveFormLink(choices, input.link);
       if (input.serviceConsent !== true) throw new BadRequestException("Consent is required before submitting an enquiry");
-      const { fields, responses } = validateFormAnswers(schema, input.answers);
+      const { fields, responses, custom } = validateFormAnswers(schema, input.answers);
+      const mobileQuestion = schema.questions.find(question => question.field === "mobile");
+      const suppliedCountry = mobileQuestion ? input.phoneCountryCodes?.[mobileQuestion.id] : undefined;
+      const workspace = await client.query<{ defaultLocale: string }>(`SELECT default_locale AS "defaultLocale" FROM workspaces WHERE id=$1`, [form.workspace_id]);
+      const countryCode = suppliedCountry || countryFromLocale(workspace.rows[0]?.defaultLocale);
+      const party = normalizeIntakePartyPhones({ displayName: fields.displayName, email: fields.email, mobile: fields.mobile, mobileCountryCode: countryCode });
       const key = `lead-form:${form.id}:${input.requestId}`;
       const existing = await client.query(`SELECT payload_hash, original_payload FROM crm_intake_events WHERE workspace_id=$1 AND idempotency_key=$2`, [form.workspace_id, key]);
       if (existing.rowCount) {
         if (!isDeepStrictEqual(existing.rows[0].original_payload.formAnswers, responses)) throw new ConflictException("This submission was already received with different answers");
         return { received: true };
       }
-      const contactFingerprint = fields.mobile?.replace(/\D/g, "") || fields.email?.trim().toLowerCase();
-      if (!contactFingerprint) throw new BadRequestException("Enter an email or mobile number");
+      const contactFingerprint = party.mobile?.replace(/\D/g, "") || fields.email?.trim().toLowerCase();
+      if (!contactFingerprint) throw new BadRequestException("Enter a mobile number");
       const rate = await client.query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE
           COALESCE(NULLIF(regexp_replace(original_payload->'party'->>'mobile', '[^0-9]', '', 'g'), ''), lower(original_payload->'party'->>'email'))=$3
         )::int AS contact
         FROM crm_intake_events WHERE workspace_id=$1 AND original_payload->>'formId'=$2 AND received_at > now()-interval '10 minutes'`, [form.workspace_id, form.id, contactFingerprint]);
       if (rate.rows[0].total >= 200 || rate.rows[0].contact >= 5) throw new HttpException("Too many submissions. Please try again later", 429);
+      // A number the firm blocked in the inbox raises nothing new (S-13); a spam contact raises a spam enquiry (PLM-138).
+      if (await blockedContact(client, form.workspace_id, contactFingerprint)) return { received: true };
       const capturedAt = new Date().toISOString();
       const consent = {
         purpose: "service",
@@ -167,10 +225,10 @@ export class LeadFormsService {
         },
       };
       await this.intake.createFormIntake(client, form.workspace_id, key, {
-        source: schema.source, channel: schema.channel, intakeMethod: "form", title: "",
-        party: { displayName: fields.displayName, email: fields.email, mobile: fields.mobile },
-        serviceType: fields.serviceType || "not_sure", summary: fields.summary,
-        details: { location: fields.location, budgetRange: fields.budgetRange }, assignment: { mode: "automatic" },
+        source: link?.source ?? schema.source, channel: link?.channel ?? schema.channel, intakeMethod: "form", title: "",
+        party,
+        serviceType: fields.serviceType, summary: withSelection(fields.summary, input.selection),
+        details: { emirate: fields.emirate, area: fields.area, budgetRange: fields.budgetRange, ...(link?.placement ? { campaign: link.placement } : {}) }, assignment: { mode: "automatic" },
         consents: [consent],
         originalPayload: {
           origin: "customer_enquiry_form",
@@ -179,10 +237,56 @@ export class LeadFormsService {
           formRevision: input.revision,
           formAnswers: responses,
           formRawAnswers: structuredClone(input.answers),
+          ...(link ? { link } : {}),
+          ...(input.selection?.length ? { selection: input.selection.slice(0, 50) } : {}),
           consent: consent.evidence,
         },
       });
+      if (Object.keys(custom).length) {
+        const enquiry = await client.query<{ id: string }>(`SELECT enquiry.id FROM crm_enquiries enquiry JOIN crm_intake_events intake ON intake.id=enquiry.intake_event_id AND intake.workspace_id=enquiry.workspace_id
+          WHERE intake.workspace_id=$1 AND intake.idempotency_key=$2`, [form.workspace_id, key]);
+        if (enquiry.rows[0]) await writeEnquiryCustomValues(client, form.workspace_id, enquiry.rows[0].id, custom);
+      }
       return { received: true };
     });
   }
+}
+
+/** Questions linked to custom enquiry fields take the field's current type and choices. */
+async function linkCustomFields(client: PoolClient, workspaceId: string, draft: LeadFormSchema) {
+  const ids = draft.questions.map(question => customFieldId(question.field)).filter((id): id is string => Boolean(id));
+  if (!ids.length) return;
+  const definitions = new Map((await enquiryFieldDefinitions(client, workspaceId, ids)).map(definition => [definition.id, definition]));
+  for (const question of draft.questions) {
+    const id = customFieldId(question.field);
+    if (!id) continue;
+    const definition = definitions.get(id);
+    if (!definition) throw new BadRequestException(`“${question.title || "A question"}” is linked to an enquiry field that was removed. Choose another field`);
+    Object.assign(question, questionShape(definition));
+  }
+}
+
+/** Faster than this from opening the form to sending it is a script, not a person. */
+export const MIN_FILL_MS = 3000;
+
+/** The public form's junk checks: its hidden field filled, or sent faster than a person fills it. */
+export function looksAutomated(input: { website?: string; elapsedMs?: number }) {
+  return Boolean(input.website?.trim()) || (typeof input.elapsedMs === "number" && input.elapsedMs < MIN_FILL_MS);
+}
+
+/** Whether a client blocked in the inbox (and not flagged as spam, whose enquiries are kept as spam, PLM-138) has this mobile number (digits) or email. */
+export async function blockedContact(client: Pick<PoolClient, "query">, workspaceId: string, fingerprint: string) {
+  const blocked = await client.query(
+    `SELECT 1 FROM crm_contact_points point JOIN crm_parties party ON party.workspace_id = point.workspace_id AND party.id = point.party_id
+      WHERE point.workspace_id = $1 AND party.blocked_at IS NOT NULL AND party.spam_at IS NULL
+        AND (regexp_replace(point.normalized_value, '[^0-9]', '', 'g') = $2 OR lower(point.raw_value) = lower($2)) LIMIT 1`, [workspaceId, fingerprint]);
+  return Boolean(blocked.rowCount);
+}
+
+/** Items a visitor picked (e.g. from the company gallery) are added to the enquiry's summary so Sales sees them. */
+export function withSelection(summary: string | undefined, selection: string[] | undefined) {
+  const picked = (selection ?? []).filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim().slice(0, 200)).slice(0, 50);
+  if (!picked.length) return summary;
+  const list = `Interested in: ${picked.join(", ")}`;
+  return (summary?.trim() ? `${summary.trim()}\n\n${list}` : list).slice(0, 4000);
 }

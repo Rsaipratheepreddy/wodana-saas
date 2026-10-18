@@ -1,0 +1,58 @@
+/* Product clipper, link cards and the fit check (plan §6.7a batch 3). Tokens only; logical properties only. */
+.clipStart { display: grid; gap: var(--wd-space-3); }
+.clipRead { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-2); }
+.bookmarklet { justify-self: start; display: inline-flex; align-items: center; gap: var(--wd-space-1-5); padding: var(--wd-space-1) var(--wd-space-2-5); border: 1px dashed var(--wd-color-border-strong); border-radius: var(--wd-radius-pill); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; cursor: grab; }
+.bookmarklet:hover { background: var(--wd-color-surface-hover); color: var(--wd-color-text); }
+.bookmarklet:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.review { display: grid; grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); gap: var(--wd-phi-3); align-items: start; }
+.pictures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.picture { position: relative; display: block; inline-size: 100%; aspect-ratio: 1; padding: 0; overflow: hidden; border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-subtle); cursor: pointer; }
+.picture img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+.picture[aria-pressed="true"] { border-color: var(--wd-color-action-primary); outline: 1px solid var(--wd-color-action-primary); }
+.picture svg { position: absolute; inset-block-start: var(--wd-space-1-5); inset-inline-start: var(--wd-space-1-5); border-radius: var(--wd-radius-round); background: var(--wd-color-action-primary); color: var(--wd-color-action-on-primary); }
+.picture:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 2px; }
+.source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wd-space-1) var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); overflow-wrap: anywhere; }
+.source a { display: inline-flex; align-items: center; gap: var(--wd-space-1); color: var(--wd-color-link); }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wd-space-3); }
+.wide { grid-column: 1 / -1; }
+.sizeRow { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 6rem); gap: var(--wd-space-2); align-items: start; }
+/* The item panel's size: width, depth and height on one line, then the diagonal and the unit; it fits a narrow panel and a phone. */
+.sizeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-2); align-items: start; }
+.field { display: grid; gap: var(--wd-space-1); min-inline-size: 0; }
+.provenance { display: inline-flex; align-items: center; gap: var(--wd-space-1); justify-self: start; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
+.provenance[data-source="ai"] { color: var(--wd-color-info); }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wd-space-3) var(--wd-space-4); margin: 0; }
+.facts dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.facts dd { margin: var(--wd-space-0-5) 0 0; font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.panel { display: grid; gap: var(--wd-space-4); }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--wd-space-2); }
+
+/* Link card: a thumbnail, the design's title and where it lives, and Open. */
+.card { display: grid; grid-template-columns: 6rem minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-3); padding: var(--wd-space-2); border: 1px solid var(--wd-color-border); border-radius: var(--wd-radius-md); background: var(--wd-color-surface); }
+.thumb { inline-size: 6rem; aspect-ratio: 4 / 3; border-radius: var(--wd-radius-sm); background: var(--wd-color-surface-muted); object-fit: cover; }
+.thumb[data-empty] { display: grid; place-items: center; color: var(--wd-color-icon-subtle); }
+.cardText { display: grid; gap: var(--wd-space-0-5); min-inline-size: 0; }
+.cardText strong { font-size: var(--wd-text-sm); overflow-wrap: anywhere; }
+.cardText small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.attach { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--wd-space-2); }
+
+/* Fit check. */
+.points { display: grid; gap: var(--wd-space-2); margin: 0; padding: 0; list-style: none; }
+.point { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--wd-space-1) var(--wd-space-3); padding: var(--wd-space-2) 0; border-block-end: 1px solid var(--wd-color-structural-divider); }
+.point small { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.pointForm { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--wd-space-3); }
+.route { display: grid; gap: var(--wd-space-1); }
+.route > header { display: flex; align-items: center; gap: var(--wd-space-2); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.fitRows { display: grid; gap: var(--wd-space-1); margin: 0; padding: 0; list-style: none; }
+.fitRows li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wd-space-1) var(--wd-space-3); font-size: var(--wd-text-sm); }
+.fitRows li small { color: var(--wd-color-text-tertiary); }
+.override { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+
+@media (max-width: 48rem) {
+  .review, .facts, .pointForm { grid-template-columns: minmax(0, 1fr); }
+  .sizeRow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pictures { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .card { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  .card > :last-child { grid-column: 1 / -1; justify-self: end; }
+  .thumb { inline-size: 4.5rem; }
+}

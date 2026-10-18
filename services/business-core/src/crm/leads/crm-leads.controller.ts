@@ -5,6 +5,7 @@ import { CurrentActor } from "../../auth/current-actor.decorator";
 import { InternalServiceGuard } from "../../auth/internal-service.guard";
 import { Public } from "../../auth/public.decorator";
 import { CrmLeadsService } from "./crm-leads.service";
+import { CrmSalesAttentionService } from "./crm-sales-attention.service";
 import {
   AddQueueMemberDto,
   AssignLeadDto,
@@ -13,7 +14,13 @@ import {
   CreateSlaPolicyDto,
   ListLeadsQueryDto,
   ProcessSlaDto,
+  ContactMatchQueryDto,
+  ConfirmClientDto,
+  ReopenDuplicateDto,
+  UpdateSalesSettingsDto,
   TransitionLeadDto,
+  LeadVersionDto,
+  LogContactDto,
   UpdateAssignmentPolicyDto,
   UpdateQueueDto,
   UpdateSlaPolicyDto,
@@ -31,9 +38,44 @@ export class CrmLeadsController {
     return this.leads.list(actor, workspaceId, query);
   }
 
+  @Get("leads/contact-match")
+  contactMatch(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query() query: ContactMatchQueryDto) {
+    return this.leads.contactMatch(actor, workspaceId, query);
+  }
+
+  @Get("sales-settings")
+  salesSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string) {
+    return this.leads.salesSettings(actor, workspaceId);
+  }
+
+  @Patch("sales-settings")
+  updateSalesSettings(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: UpdateSalesSettingsDto) {
+    return this.leads.updateSalesSettings(actor, workspaceId, input);
+  }
+
+  @Post("leads/:leadId/confirm-client")
+  confirmClient(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: ConfirmClientDto) {
+    return this.leads.confirmClient(actor, workspaceId, leadId, input);
+  }
+
+  @Post("leads/:leadId/reopen-duplicate")
+  reopenDuplicate(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: ReopenDuplicateDto) {
+    return this.leads.reopenDuplicate(actor, workspaceId, leadId, input);
+  }
+
+  @Get("leads/:leadId/history")
+  history(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string) {
+    return this.leads.history(actor, workspaceId, leadId);
+  }
+
   @Get("leads/:leadId")
   get(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string) {
     return this.leads.get(actor, workspaceId, leadId);
+  }
+
+  @Get("sales-owners")
+  salesOwners(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Query("queueId") queueId?: string) {
+    return this.leads.salesOwners(actor, workspaceId, queueId);
   }
 
   @Post("queues")
@@ -111,9 +153,26 @@ export class CrmLeadsController {
     return this.leads.manualAssign(actor, workspaceId, leadId, input);
   }
 
+  @Post("leads/:leadId/contacts")
+  logContact(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: LogContactDto) {
+    return this.leads.logContact(actor, workspaceId, leadId, input);
+  }
+
   @Post("leads/:leadId/status")
   transition(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: TransitionLeadDto) {
     return this.leads.transition(actor, workspaceId, leadId, input);
+  }
+
+  /** Junk (S-13, PLM-138): closed as spam, out of reports, and its contact flagged as spam. */
+  @Post("leads/:leadId/spam")
+  markSpam(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: LeadVersionDto) {
+    return this.leads.markSpam(actor, workspaceId, leadId, input);
+  }
+
+  /** PLM-138: "Not spam", with a reason: the contact is a real client again and its spam enquiries go back into the flow. */
+  @Post("leads/:leadId/unspam")
+  unmarkSpam(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Param("leadId", ParseUUIDPipe) leadId: string, @Body() input: ReopenDuplicateDto) {
+    return this.leads.unmarkSpam(actor, workspaceId, leadId, input);
   }
 
   @Put("leads/:leadId/qualification")
@@ -127,7 +186,7 @@ export class CrmLeadsController {
 @UseGuards(InternalServiceGuard)
 @Controller("internal/crm/slas")
 export class InternalCrmSlasController {
-  constructor(private readonly leads: CrmLeadsService) {}
+  constructor(private readonly leads: CrmLeadsService, private readonly attention: CrmSalesAttentionService) {}
 
   @Post("workspaces/:workspaceId/process")
   process(
@@ -138,10 +197,13 @@ export class InternalCrmSlasController {
   }
 
   @Post("workspaces/:workspaceId/process-takeovers")
-  processTakeovers(
+  async processTakeovers(
     @Param("workspaceId", ParseUUIDPipe) workspaceId: string,
     @Body() input: ProcessSlaDto,
   ) {
-    return this.leads.processDueTakeoversInternal(workspaceId, input.limit);
+    // The worker already calls this each pass; the other Sales timers (unowned, client review, come-back, digest) ride along.
+    const takeovers = await this.leads.processDueTakeoversInternal(workspaceId, input.limit);
+    const attention = await this.attention.processDueAttentionInternal(workspaceId, input.limit);
+    return { ...takeovers, attention };
   }
 }

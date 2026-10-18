@@ -9,7 +9,8 @@ const allowRemote = process.argv.includes("--allow-remote");
 const profile = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-crm-intake-profile.json", import.meta.url), "utf8"));
 const brand = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-living-brand.json", import.meta.url), "utf8"));
 const workflow = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-project-workflow.json", import.meta.url), "utf8"));
-const fixtureHash = createHash("sha256").update(JSON.stringify({ profile, brand, workflow })).digest("hex");
+const design = JSON.parse(readFileSync(new URL("../../../docs/fixtures/palm-design-packages.json", import.meta.url), "utf8"));
+const fixtureHash = createHash("sha256").update(JSON.stringify({ profile, brand, workflow, design })).digest("hex");
 const api = process.env.BUSINESS_CORE_URL ?? "http://127.0.0.1:8166/api/v1";
 const endpoint = new URL(api);
 const local = ["127.0.0.1", "localhost", "[::1]"].includes(endpoint.hostname);
@@ -75,6 +76,9 @@ const desiredTaxonomies = [
     options,
   })),
   { code: "enquiry_type", name: "Enquiry type", options: profile.enquiryTypes },
+  { code: "customer_type", name: "Client type", options: profile.customerTypes ?? [] },
+  { code: "referral_broker", name: "Brokers", options: profile.referralBrokers ?? [] },
+  { code: "referral_partner", name: "Referral partners", options: profile.referralPartners ?? [] },
   // The source document does not approve numeric budget bands. Keep only its safe fallback.
   { code: "budget_range", name: "Budget range", options: profile.budgetRanges },
 ];
@@ -93,14 +97,15 @@ for (const desired of desiredTaxonomies) {
 let queues = await request(`/workspaces/${workspaceId}/crm/queues`);
 let queue = queues.find((entry) => entry.code === profile.operations.queue.code);
 const queueMatches = queue && queue.status === "active" && queue.name === profile.operations.queue.name &&
-  queue.isFallback === true && queue.takeoverAfterMinutes === profile.operations.queue.takeoverAfterMinutes;
+  queue.isFallback === true && queue.takeoverAfterMinutes === profile.operations.queue.takeoverAfterMinutes && isDeepStrictEqual(queue.takeoverSchedule ?? null, profile.operations.queue.takeoverSchedule ?? null);
 if (queueMatches) unchanged.push("queue:sales");
 else if (queue) queue = await act("queue:sales", () => request(`/workspaces/${workspaceId}/crm/queues/${queue.id}`, {
-  method: "PATCH", body: { version: queue.version, name: profile.operations.queue.name, isFallback: true, takeoverAfterMinutes: profile.operations.queue.takeoverAfterMinutes, status: "active" },
+  method: "PATCH", body: { version: queue.version, name: profile.operations.queue.name, isFallback: true, takeoverAfterMinutes: profile.operations.queue.takeoverAfterMinutes, takeoverSchedule: profile.operations.queue.takeoverSchedule, status: "active" },
 })) ?? queue;
 else queue = await act("queue:sales", () => request(`/workspaces/${workspaceId}/crm/queues`, { body: {
   code: profile.operations.queue.code, name: profile.operations.queue.name, isFallback: true,
   takeoverAfterMinutes: profile.operations.queue.takeoverAfterMinutes,
+  takeoverSchedule: profile.operations.queue.takeoverSchedule,
 } }));
 
 let slas = await request(`/workspaces/${workspaceId}/crm/sla-policies`);
@@ -207,6 +212,23 @@ if (websiteForm) {
     method: "PATCH", body: { version: websiteForm.version, action: websiteForm.status === "published" ? "pause" : "save", draft },
   }));
 } else pending.push("form:website-draft");
+
+// Design packages and minimum design deposit (PLM-041): configuration, applied idempotently.
+const designSettings = await request(`/workspaces/${workspaceId}/design/settings`);
+// A percentage of the design fee comes back as text ("100.00"); the file gives it as a number.
+const sameDeposit = (current, wanted) => (wanted && "percent" in wanted ? Boolean(current && "percent" in current) && Number(current.percent) === Number(wanted.percent) : JSON.stringify(current) === JSON.stringify(wanted));
+if (sameDeposit(designSettings.minimumDeposit, design.minimumDeposit)) unchanged.push("design:minimum-deposit");
+else await act("design:minimum-deposit", () => request(`/workspaces/${workspaceId}/design/settings`, { method: "PUT", expected: 200, body: { minimumDeposit: design.minimumDeposit, version: designSettings.version } }));
+for (const desired of design.packages) {
+  const existing = designSettings.packages.find((row) => row.code === desired.code);
+  const same = existing && ["name", "pricingMethod", "rate", "currency", "includedRevisions", "includesSpacePlanning", "includesRenders", "inclusions", "position"].every((key) => String(existing[key] ?? "") === String(desired[key] ?? ""))
+    && String(existing.areaUnit ?? "") === String(desired.areaUnit ?? "") && String(existing.requiredRoleCode ?? "") === String(desired.requiredRoleCode ?? "")
+    // PLM-139/145: the reviewer role, a rate priced from, and what one unit is.
+    && String(existing.reviewRoleCode ?? "") === String(desired.reviewRoleCode ?? "") && Boolean(existing.rateFrom) === Boolean(desired.rateFrom)
+    && String(existing.unitDefinition ?? "") === String(desired.unitDefinition ?? "");
+  if (same) unchanged.push(`design:package:${desired.code}`);
+  else await act(`design:package:${desired.code}`, () => request(`/workspaces/${workspaceId}/design/packages`, { body: { ...desired, ...(existing ? { id: existing.id, version: existing.version } : {}) } }));
+}
 
 process.stdout.write(`${JSON.stringify({
   ok: true,

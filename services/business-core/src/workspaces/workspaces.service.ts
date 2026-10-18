@@ -1,3 +1,8 @@
+import { MemberProfileService } from "./member-profile.service";
+import { loadInboxViewer } from "../crm/conversations/inbox/inbox-visibility";
+import { seedDefaultNotificationTemplates } from "../notifications/default-templates";
+import { seedDefaultQuickReplies } from "../crm/conversations/inbox/default-quick-replies";
+import { acceptPendingInvitation } from "./invitation-acceptance";
 import {
   BadRequestException,
   ConflictException,
@@ -10,9 +15,12 @@ import {
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { PoolClient } from "pg";
 import sharp from "sharp";
+import { checkTaxNumber, normaliseTaxNumber, readTaxNumberRuleFor } from "../purchasing/tax-registration";
+import { entityImageUrl } from "./entity-letterhead";
 import { ActorUser, RequestActor } from "../auth/actor";
 import { IdentityService } from "../auth/identity.service";
 import { DatabaseService } from "../database/database.service";
+import { writeBlockFor } from "../auth/tenant-write-block.guard";
 import { CreateIntegrationConnectionDto } from "../integrations/dto/create-integration-connection.dto";
 import { UpdateIntegrationConnectionDto } from "../integrations/dto/update-integration-connection.dto";
 import { CreateBusinessUnitDto } from "./dto/create-business-unit.dto";
@@ -39,6 +47,10 @@ import { UpdateWorkspaceDto } from "./dto/update-workspace.dto";
 import { UpdateWorkspaceSettingsDto } from "./dto/update-workspace-settings.dto";
 import { UpdateWorkspaceTerminologyDto } from "./dto/update-workspace-terminology.dto";
 import { UpdateWorkspaceAppearanceDto } from "./dto/update-workspace-appearance.dto";
+import { UpdateHomeLayoutDto } from "./dto/update-home-layout.dto";
+import { readHomeOverview } from "./home-overview";
+import { readHomeMetrics } from "./home-metrics";
+import { readHomeSummary } from "./home-summary";
 import { WorkspaceAccessService } from "./workspace-access.service";
 import { DEFAULT_CRM_AUTOMATION_TEMPLATES } from "../crm/automations/default-automation-templates";
 import { parseProjectWorkflowTemplate } from "../projects/project-workflow";
@@ -51,6 +63,7 @@ import {
   COMPANY_LOGO_MAX_BYTES,
   InitiateCompanyLogoUploadDto,
 } from "./dto/company-logo.dto";
+import { InitiateLoginBackgroundUploadDto, LOGIN_BACKGROUND_MAX_BYTES } from "./dto/login-background.dto";
 import { TransactionalEmailService } from "../email/transactional-email.service";
 import {
   resolveWorkspaceTerminology,
@@ -58,6 +71,11 @@ import {
   type WorkspaceTerminologyOverride,
 } from "./workspace-terminology";
 import { ConfigurationRevisionsService } from "./configuration-revisions.service";
+import { invitationGreetingName, placeholderDisplayName } from "./invitation-recipient";
+import { parseRoleTemplateCodes, ROLE_TEMPLATE_CODES, roleTemplatesFor } from "./role-templates";
+import { describeAccess, expandAccess } from "./access-levels";
+import { parseSalesPipelineTemplate, seedDefaultSalesPipeline } from "../crm/default-sales-pipeline";
+import { seedKitPaymentPlan } from "../commercial/default-payment-plan";
 import { RestoreConfigurationRevisionDto } from "./dto/restore-configuration-revision.dto";
 
 interface WorkspaceRow {
@@ -88,6 +106,11 @@ interface LegalEntityRow {
   tax_registration_number: string | null;
   registration_number: string | null;
   address: Record<string, unknown>;
+  phone: string | null;
+  email: string | null;
+  logo_asset_id: string | null;
+  letterhead_asset_id: string | null;
+  letterhead_footer: string | null;
   status: string;
   version: number;
   created_at: Date;
@@ -120,12 +143,81 @@ interface BrandAssetRow {
   updated_at: Date;
 }
 
+/** The workspace's own images (not a legal entity's): the logo and the sign-in background. */
+export type WorkspaceImagePurpose = "workspace_logo" | "login_background";
+type ImageVariant = { key: string; file: string; body: Buffer; contentType: string };
+const WORKSPACE_IMAGES: Record<WorkspaceImagePurpose, {
+  /** The tenant_login_branding column that holds the active asset. */
+  column: "logo_asset_id" | "login_background_asset_id";
+  maxBytes: number;
+  name: string;
+  noun: string;
+  publicName: string;
+  route: string;
+  defaultVariant: string;
+  updatedAction: string;
+  removedAction: string;
+  sizeProblem(width: number, height: number): string | null;
+  variants(body: Buffer): Promise<ImageVariant[]>;
+}> = {
+  workspace_logo: {
+    column: "logo_asset_id",
+    maxBytes: COMPANY_LOGO_MAX_BYTES,
+    name: "Logo",
+    noun: "logo",
+    publicName: "Company logo",
+    route: "tenant-logo",
+    defaultVariant: "display",
+    updatedAction: "workspace.logo_updated",
+    removedAction: "workspace.logo_removed",
+    sizeProblem: (width, height) => width < 64 || height < 64
+      ? "Logo dimensions must be at least 64 by 64 pixels"
+      : width > 4096 || height > 4096 ? "Logo dimensions must not exceed 4096 by 4096 pixels" : null,
+    variants: async (body) => {
+      const [display, square, document] = await Promise.all([
+        sharp(body).rotate().resize({ width: 1024, height: 512, fit: "inside", withoutEnlargement: true }).webp({ quality: 90 }).toBuffer(),
+        sharp(body).rotate().resize({ width: 512, height: 512, fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).webp({ quality: 90 }).toBuffer(),
+        sharp(body).rotate().resize({ width: 1024, height: 512, fit: "contain", background: "#ffffff", withoutEnlargement: true }).flatten({ background: "#ffffff" }).png().toBuffer(),
+      ]);
+      return [
+        { key: "display", file: "display.webp", body: display, contentType: "image/webp" },
+        { key: "square", file: "square.webp", body: square, contentType: "image/webp" },
+        { key: "document", file: "document.png", body: document, contentType: "image/png" },
+      ];
+    },
+  },
+  login_background: {
+    column: "login_background_asset_id",
+    maxBytes: LOGIN_BACKGROUND_MAX_BYTES,
+    name: "Sign-in background",
+    noun: "sign-in background",
+    publicName: "Sign-in background",
+    route: "tenant-background",
+    defaultVariant: "cover",
+    updatedAction: "workspace.login_background_updated",
+    removedAction: "workspace.login_background_removed",
+    // A full-screen cover: wide enough on its long side, and not a strip.
+    sizeProblem: (width, height) => Math.max(width, height) < 1200 || Math.min(width, height) < 600
+      ? "Sign-in background must be at least 1200 by 600 pixels"
+      : width > 8000 || height > 8000 ? "Sign-in background must not exceed 8000 by 8000 pixels" : null,
+    variants: async (body) => [{
+      key: "cover",
+      file: "cover.webp",
+      body: await sharp(body).rotate().resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true }).webp({ quality: 82 }).toBuffer(),
+      contentType: "image/webp",
+    }],
+  },
+};
+
 const SYSTEM_ROLES = [
   ["owner", "Owner", "Full workspace ownership"],
   ["administrator", "Administrator", "Manage workspace operations"],
   ["member", "Member", "Standard workspace access"],
   ["viewer", "Viewer", "Read-only workspace access"],
 ] as const;
+/** The roles every workspace is made with, whatever its kit. */
+export const SYSTEM_ROLE_CODES: readonly string[] = SYSTEM_ROLES.map(([code]) => code);
+
 
 @Injectable()
 export class WorkspacesService {
@@ -190,6 +282,7 @@ export class WorkspacesService {
           );
 
           const roleIds = await this.insertSystemRoles(client, workspaceId);
+          await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(undefined));
           await client.query(
             `INSERT INTO member_roles (workspace_id, membership_id, role_id)
              VALUES ($1, $2, $3)`,
@@ -199,6 +292,9 @@ export class WorkspacesService {
           await this.insertOnboarding(client, workspaceId);
           await this.insertDefaultSequences(client, workspaceId, legalEntityId, input.firstLegalEntity.code);
           await this.insertDefaultCrmAutomations(client, workspaceId);
+          await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(undefined));
+          await seedDefaultNotificationTemplates(client, workspaceId);
+          await seedDefaultQuickReplies(client, workspaceId);
           await client.query(
             `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
              VALUES ($1, $2, now() + interval '14 days')`,
@@ -299,15 +395,7 @@ export class WorkspacesService {
           throw new BadRequestException("Account contact and setup versions must be supplied together");
         }
         const setup = input.defaults ? await this.resolveTenantSetup(client, input.defaults) : null;
-        if (setup) {
-          const region = setup.region.configuration;
-          if (input.defaultCurrency !== region.currency || input.defaultLocale !== region.locale
-            || input.defaultTimezone !== region.timezone || input.unitSystem !== region.unitSystem
-            || input.weekStartsOn !== region.weekStartsOn
-            || input.firstLegalEntity.countryCode !== region.countryCode) {
-            throw new BadRequestException("Organization regional defaults do not match the pinned region version");
-          }
-        }
+        if (setup) this.assertRegionalDefaults(input, setup);
 
         const insertedOwner = await client.query<{ id: string }>(
           `INSERT INTO users (primary_email, display_name, preferred_locale, preferred_timezone)
@@ -354,6 +442,8 @@ export class WorkspacesService {
           input.firstLegalEntity,
         );
         const roleIds = await this.insertSystemRoles(client, workspaceId);
+        // The firm kit says which people a firm of this kind employs; without a kit, every template.
+        await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(setup?.firmKit.configuration.roleTemplates));
         const invitationToken = randomBytes(32).toString("base64url");
         const tokenHash = createHash("sha256").update(invitationToken).digest("hex");
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -381,42 +471,15 @@ export class WorkspacesService {
           input.firstLegalEntity.code,
         );
         await this.insertDefaultCrmAutomations(client, workspaceId);
-        if (setup) {
-          const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
-          await client.query(
-            `INSERT INTO project_workflow_templates
-               (workspace_id, code, name, description, is_default, version, stages, created_by)
-             VALUES ($1, $2, $3, $4, true, $5, $6, $7)`,
-            [workspaceId, workflow.code, workflow.name, workflow.description,
-              workflow.version, JSON.stringify(workflow.stages), ownerUserId],
-          );
-        }
+        await seedDefaultNotificationTemplates(client, workspaceId);
+        await seedDefaultQuickReplies(client, workspaceId);
+        // The kit's Sales pipeline, so a salesperson's first conversion needs no CRM-settings permission.
+        await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
+        if (setup) await this.applyFirmKit(client, workspaceId, ownerUserId, setup);
 
         const workspaceResponse = this.mapWorkspace(workspace.rows[0]);
-        if (setup) {
-          const plan = setup.plan.configuration;
-          await client.query(
-            `INSERT INTO workspace_subscriptions
-              (workspace_id, plan_code, billing_cycle, seat_limit, project_limit, currency, renews_at)
-             VALUES ($1, $2, $3, $4, $5, $6, now() + interval '14 days')`,
-            [workspaceId, input.defaults!.plan.code, plan.billingCycle, plan.seatLimit, plan.projectLimit, input.defaultCurrency],
-          );
-          await client.query(
-            `INSERT INTO workspace_setup_versions
-              (workspace_id, region_code, region_version, firm_kit_code, firm_kit_version,
-               plan_code, plan_version, configuration_snapshot)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [workspaceId, input.defaults!.region.code, input.defaults!.region.version,
-              input.defaults!.firmKit.code, input.defaults!.firmKit.version,
-              input.defaults!.plan.code, input.defaults!.plan.version, setup],
-          );
-        } else {
-          await client.query(
-            `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
-             VALUES ($1, $2, now() + interval '14 days')`,
-            [workspaceId, input.defaultCurrency],
-          );
-        }
+        await this.insertSubscriptionAndSetup(client, workspaceId, input.defaultCurrency,
+          setup && input.defaults ? { selections: input.defaults, setup } : null);
         await this.insertCustomerAccountFoundation(client, {
           accountId,
           workspaceId,
@@ -434,7 +497,7 @@ export class WorkspacesService {
                seat_limit, project_limit, trial_ends_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '14 days')`,
             [accountId, input.defaults!.plan.code, input.defaults!.plan.version,
-              input.defaultCurrency, plan.billingCycle, plan.seatLimit, plan.projectLimit],
+              input.defaultCurrency, plan.billingCycle, input.defaults!.seatLimit ?? plan.seatLimit, plan.projectLimit],
           );
         }
         const legalEntityResponse = this.mapLegalEntity(legalEntity);
@@ -521,16 +584,24 @@ export class WorkspacesService {
     }
   }
 
+  /**
+   * An organization an account added (its request approved): the requester becomes its owner. With setup selections
+   * it is made as a first organization is: the region pack's defaults (checked against the request), the firm kit's
+   * roles, sales pipeline, payment plan and project route, the plan's seats, and the versions pinned.
+   */
   async provisionApprovedOrganization(
     client: PoolClient,
     input: CreateWorkspaceDto,
     ownerUserId: string,
     accountId: string,
+    selections?: TenantSetupSelectionsDto,
   ) {
     const workspaceId = randomUUID();
     const legalEntityId = randomUUID();
     const membershipId = randomUUID();
     const slug = input.slug ?? this.toSlug(input.name);
+    const setup = selections ? await this.resolveTenantSetup(client, selections) : null;
+    if (setup) this.assertRegionalDefaults(input, setup);
 
     await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceId]);
     await client.query("SELECT set_config('app.current_actor_id', $1, true)", [ownerUserId]);
@@ -570,6 +641,7 @@ export class WorkspacesService {
       [membershipId, workspaceId, ownerUserId],
     );
     const roleIds = await this.insertSystemRoles(client, workspaceId);
+    await this.insertRoleTemplates(client, workspaceId, parseRoleTemplateCodes(setup?.firmKit.configuration.roleTemplates));
     await client.query(
       `INSERT INTO member_roles (workspace_id, membership_id, role_id)
        VALUES ($1, $2, $3)`,
@@ -583,11 +655,11 @@ export class WorkspacesService {
       input.firstLegalEntity.code,
     );
     await this.insertDefaultCrmAutomations(client, workspaceId);
-    await client.query(
-      `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
-       VALUES ($1, $2, now() + interval '14 days')`,
-      [workspaceId, input.defaultCurrency],
-    );
+    await seedDefaultSalesPipeline(client, workspaceId, parseSalesPipelineTemplate(setup?.firmKit.configuration.salesPipeline));
+    await seedDefaultNotificationTemplates(client, workspaceId);
+    await seedDefaultQuickReplies(client, workspaceId);
+    if (setup) await this.applyFirmKit(client, workspaceId, ownerUserId, setup);
+    await this.insertSubscriptionAndSetup(client, workspaceId, input.defaultCurrency, setup && selections ? { selections, setup } : null);
     await client.query(
       `INSERT INTO customer_account_organizations (account_id, workspace_id, is_default)
        VALUES ($1, $2, false)`,
@@ -600,13 +672,14 @@ export class WorkspacesService {
       action: "customer_account.organization_provisioned",
       entityType: "workspace",
       entityId: workspaceId,
-      after: { ...this.mapWorkspace(workspace.rows[0]), accountId, isDefaultOrganization: false },
+      after: { ...this.mapWorkspace(workspace.rows[0]), accountId, isDefaultOrganization: false, setupVersions: selections ?? null },
     });
     return {
       workspace: this.mapWorkspace(workspace.rows[0]),
       legalEntity: this.mapLegalEntity(legalEntity),
       onboarding: this.mapOnboarding(onboarding),
       membership: { id: membershipId, role: "owner", status: "active" },
+      setupVersions: selections ?? null,
     };
   }
 
@@ -717,7 +790,7 @@ export class WorkspacesService {
     const workspaceId = provisioned.rows[0].workspace_id;
     const rotated = await this.database.tenantTransaction(workspaceId, operatorUserId ?? workspaceId, async (client) => {
       await this.lockWorkspace(client, workspaceId);
-      const pending = await client.query<{ id: string; email: string; recipientName: string; workspaceName: string; expiresAt: Date }>(
+      const pending = await client.query<{ id: string; email: string; recipientName: string | null; workspaceName: string; expiresAt: Date }>(
         `SELECT invitation.id, invitation.email, app_user.display_name AS "recipientName",
                 workspace.name AS "workspaceName", invitation.expires_at AS "expiresAt"
          FROM workspace_invitations invitation
@@ -749,7 +822,7 @@ export class WorkspacesService {
             status: "pending", expiresAt: pending.rows[0].expiresAt, acceptedAt: null,
             invitationToken: null, deliveryStatus: prior.rows[0].status,
             providerMessageId: prior.rows[0].providerMessageId,
-            recipientName: pending.rows[0].recipientName || pending.rows[0].email,
+            recipientName: invitationGreetingName(pending.rows[0].recipientName, pending.rows[0].email),
             workspaceName: pending.rows[0].workspaceName,
             tokenHash: null,
             replayed: true as const,
@@ -822,7 +895,7 @@ export class WorkspacesService {
         invitationToken,
         deliveryStatus: "pending",
         providerMessageId: null,
-        recipientName: pending.rows[0].recipientName || pending.rows[0].email,
+        recipientName: invitationGreetingName(pending.rows[0].recipientName, pending.rows[0].email),
         workspaceName: pending.rows[0].workspaceName,
         tokenHash,
         replayed: false as const,
@@ -835,6 +908,7 @@ export class WorkspacesService {
       return publicReplay;
     }
     const delivery = await this.transactionalEmail.sendWorkspaceInvitation({
+      workspaceId,
       email: rotated.email,
       expiresAt: rotated.expiresAt,
       invitationToken: rotated.invitationToken,
@@ -1087,6 +1161,7 @@ export class WorkspacesService {
       const branding = await client.query<{
         logoAssetId: string | null;
         logoUpdatedAt: Date | null;
+        loginBackgroundAssetId: string | null;
         primaryColor: string | null;
         secondaryColor: string | null;
         headingFont: string | null;
@@ -1094,6 +1169,7 @@ export class WorkspacesService {
       }>(
         `SELECT branding.logo_asset_id AS "logoAssetId",
                 asset.updated_at AS "logoUpdatedAt",
+                branding.login_background_asset_id AS "loginBackgroundAssetId",
                 branding.primary_color AS "primaryColor",
                 branding.secondary_color AS "secondaryColor",
                 branding.heading_font AS "headingFont",
@@ -1117,6 +1193,103 @@ export class WorkspacesService {
   async terminology(actor: RequestActor, workspaceId: string) {
     return this.access.asMember(actor, workspaceId, (client) =>
       this.resolvedTerminology(client, workspaceId));
+  }
+
+  async homeLayout(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const result = await client.query(
+        `SELECT home_layout AS widgets, home_layout_version AS version FROM workspace_memberships
+         WHERE workspace_id=$1 AND user_id=$2 AND status='active'`, [workspaceId, user.userId],
+      );
+      if (!result.rows[0]) throw new NotFoundException("Workspace membership not found");
+      return result.rows[0];
+    });
+  }
+
+  async homeOverview(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`,
+        [workspaceId, user.userId],
+      );
+      if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
+      const [sales, planning, projects, manageProjects] = await Promise.all([
+        this.access.hasPermission(client, workspaceId, user.userId, "crm.activities.view"),
+        this.access.hasPermission(client, workspaceId, user.userId, "pre_projects.view"),
+        this.access.hasPermission(client, workspaceId, user.userId, "projects.view"),
+        this.access.hasPermission(client, workspaceId, user.userId, "projects.manage"),
+      ]);
+      return readHomeOverview(client, workspaceId, membership.rows[0].id, { sales, planning, projects, manageProjects });
+    });
+  }
+
+  /** Live Home metrics in one tenant transaction; each section only when the caller holds its permission. */
+  async homeMetrics(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`,
+        [workspaceId, user.userId],
+      );
+      if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
+      const can = (permission: string) => this.access.hasPermission(client, workspaceId, user.userId, permission);
+      const [enquiries, quotes, payments, projects, manageProjects, activity, settings, data, followUps, orders] = await Promise.all([
+        can("crm.leads.view"), can("pre_projects.view"), can("receivables.view"), can("projects.view"),
+        can("projects.manage"), can("audit.view"), can("workspace.settings.manage"), can("data.manage"),
+        can("crm.activities.view"), can("purchasing.view"),
+      ]);
+      return readHomeMetrics(client, workspaceId, membership.rows[0].id, {
+        enquiries, quotes, payments, projects, manageProjects, activity, storage: settings || data, followUps, orders,
+      });
+    });
+  }
+
+  /**
+   * Home's overview for the caller in one tenant transaction: what needs them today, what is coming up, the
+   * business flow they can see and the records to jump back into. Every source follows their permissions.
+   */
+  async homeSummary(actor: RequestActor, workspaceId: string) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      const membership = await client.query<{ id: string }>(
+        `SELECT id FROM workspace_memberships WHERE workspace_id=$1 AND user_id=$2 AND status='active'`,
+        [workspaceId, user.userId],
+      );
+      if (!membership.rows[0]) throw new NotFoundException("Workspace membership not found");
+      const codes = [
+        "crm.activities.view", "crm.communications.view", "crm.leads.view", "crm.leads.assign", "pre_projects.view", "projects.view",
+        "projects.manage", "receivables.view", "purchasing.view", "factory.view", "pre_projects.review_designs",
+        "pre_projects.record_client_design_decisions", "commercial.estimate", "commercial.approve", "commercial.finance.verify",
+        "purchasing.approve", "hrms.manage",
+      ] as const;
+      const granted = await Promise.all(codes.map((code) => this.access.hasPermission(client, workspaceId, user.userId, code)));
+      const can = (code: (typeof codes)[number]) => granted[codes.indexOf(code)];
+      const inbox = await loadInboxViewer((permission) => this.access.hasPermission(client, workspaceId, user.userId, permission));
+      return readHomeSummary(client, { workspaceId, membershipId: membership.rows[0].id, userId: user.userId }, {
+        followUps: can("crm.activities.view"), replies: can("crm.communications.view"), inbox, leads: can("crm.leads.view"),
+        assignLeads: can("crm.leads.assign"), planning: can("pre_projects.view"), projects: can("projects.view") || can("projects.manage"),
+        manageProjects: can("projects.manage"), receivables: can("receivables.view"), purchasing: can("purchasing.view"), factory: can("factory.view"),
+        approvals: {
+          designs: can("pre_projects.view"), reviewDesigns: can("pre_projects.review_designs"),
+          recordClientDesigns: can("pre_projects.record_client_design_decisions"),
+          reviewQuotes: can("commercial.estimate") || can("commercial.approve"), verifyPayments: can("commercial.finance.verify"),
+          approveOrders: can("purchasing.approve"), manageLeave: can("hrms.manage"),
+          projects: can("projects.view") || can("projects.manage"), manageProjects: can("projects.manage"),
+        },
+      });
+    });
+  }
+
+  async updateHomeLayout(actor: RequestActor, workspaceId: string, input: UpdateHomeLayoutDto) {
+    return this.access.asMember(actor, workspaceId, async (client, user) => {
+      // Personal presentation only: a member cannot target another user or change access.
+      const result = await client.query(
+        `UPDATE workspace_memberships SET home_layout=$3::jsonb, home_layout_version=home_layout_version+1
+         WHERE workspace_id=$1 AND user_id=$2 AND status='active' AND home_layout_version=$4
+         RETURNING home_layout AS widgets, home_layout_version AS version`,
+        [workspaceId, user.userId, JSON.stringify(input.widgets), input.version],
+      );
+      if (!result.rows[0]) throw new ConflictException("Your Home layout changed elsewhere. Reload it before saving.");
+      return result.rows[0];
+    });
   }
 
   async terminologyHistory(actor: RequestActor, workspaceId: string, key: string) {
@@ -1469,6 +1642,9 @@ export class WorkspacesService {
           workspaceId,
           input.legalEntityId,
         );
+        await this.assertMoneyIdentityUnchanged(client, workspaceId, beforeEntity, {
+          baseCurrency: input.defaultCurrency, countryCode: input.countryCode,
+        });
 
         try {
           const workspace = await client.query<WorkspaceRow>(
@@ -1568,6 +1744,90 @@ export class WorkspacesService {
     workspaceId: string,
     input: InitiateCompanyLogoUploadDto,
   ) {
+    return this.initiateWorkspaceImageUpload(actor, workspaceId, "workspace_logo", input);
+  }
+
+  async uploadCompanyLogoContent(
+    actor: RequestActor,
+    workspaceId: string,
+    assetId: string,
+    contentType: string,
+    body: Buffer,
+  ) {
+    return this.uploadWorkspaceImageContent(actor, workspaceId, "workspace_logo", assetId, contentType, body, false);
+  }
+
+  async completeCompanyLogoUpload(
+    actor: RequestActor,
+    workspaceId: string,
+    assetId: string,
+  ) {
+    const completed = await this.completeWorkspaceImageUpload(actor, workspaceId, "workspace_logo", assetId);
+    return { assetId: completed.assetId, logoUrl: completed.url, updatedAt: completed.updatedAt };
+  }
+
+  async removeCompanyLogo(actor: RequestActor, workspaceId: string) {
+    return this.removeWorkspaceImage(actor, workspaceId, "workspace_logo");
+  }
+
+  async readPublicCompanyLogo(loginSlug: string, variant: "display" | "square" = "display") {
+    return this.readPublicWorkspaceImage(loginSlug, "workspace_logo", variant);
+  }
+
+  async initiateLoginBackgroundUpload(
+    actor: RequestActor,
+    workspaceId: string,
+    input: InitiateLoginBackgroundUploadDto,
+  ) {
+    return this.initiateWorkspaceImageUpload(actor, workspaceId, "login_background", input);
+  }
+
+  async uploadLoginBackgroundContent(
+    actor: RequestActor,
+    workspaceId: string,
+    assetId: string,
+    contentType: string,
+    body: Buffer,
+  ) {
+    return this.uploadWorkspaceImageContent(actor, workspaceId, "login_background", assetId, contentType, body, false);
+  }
+
+  async completeLoginBackgroundUpload(actor: RequestActor, workspaceId: string, assetId: string) {
+    const completed = await this.completeWorkspaceImageUpload(actor, workspaceId, "login_background", assetId);
+    return { assetId: completed.assetId, loginBackgroundUrl: completed.url, updatedAt: completed.updatedAt };
+  }
+
+  async removeLoginBackground(actor: RequestActor, workspaceId: string) {
+    return this.removeWorkspaceImage(actor, workspaceId, "login_background");
+  }
+
+  async readPublicLoginBackground(loginSlug: string) {
+    return this.readPublicWorkspaceImage(loginSlug, "login_background", "cover");
+  }
+
+  /**
+   * A server-side upload (the operator CLI): the content goes straight to the brand storage, local or object storage,
+   * with the same permission and pending-upload checks as the browser's upload. Then complete it as the browser does.
+   */
+  async storeWorkspaceImageContent(
+    actor: RequestActor,
+    workspaceId: string,
+    purpose: WorkspaceImagePurpose,
+    assetId: string,
+    contentType: string,
+    body: Buffer,
+  ) {
+    return this.uploadWorkspaceImageContent(actor, workspaceId, purpose, assetId, contentType, body, true);
+  }
+
+  private async initiateWorkspaceImageUpload(
+    actor: RequestActor,
+    workspaceId: string,
+    purpose: WorkspaceImagePurpose,
+    input: { filename: string; mimeType: string; byteSize: number },
+  ) {
+    const rule = WORKSPACE_IMAGES[purpose];
+    if (input.byteSize > rule.maxBytes) throw new BadRequestException(`${rule.name} must be ${rule.maxBytes / 1024 / 1024} MB or smaller`);
     return this.access.withAnyPermission(
       actor,
       workspaceId,
@@ -1579,8 +1839,8 @@ export class WorkspacesService {
         await client.query(
           `INSERT INTO workspace_brand_assets
             (id, workspace_id, object_key, original_filename, mime_type,
-             expected_byte_size, created_by, upload_expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+             expected_byte_size, created_by, upload_expires_at, purpose)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
           [
             assetId,
             workspaceId,
@@ -1590,6 +1850,7 @@ export class WorkspacesService {
             input.byteSize,
             actorUser.userId,
             expiresAt,
+            purpose,
           ],
         );
         const uploadUrl = await this.brandStorage.createUploadUrl(objectKey, input.mimeType, input.byteSize);
@@ -1604,14 +1865,17 @@ export class WorkspacesService {
     );
   }
 
-  async uploadCompanyLogoContent(
+  private async uploadWorkspaceImageContent(
     actor: RequestActor,
     workspaceId: string,
+    purpose: WorkspaceImagePurpose,
     assetId: string,
     contentType: string,
     body: Buffer,
+    serverSide: boolean,
   ) {
-    if (this.brandStorage.usesObjectStorage) {
+    const rule = WORKSPACE_IMAGES[purpose];
+    if (this.brandStorage.usesObjectStorage && !serverSide) {
       throw new BadRequestException("Use the signed object-storage URL for this upload");
     }
     return this.access.withAnyPermission(
@@ -1619,35 +1883,38 @@ export class WorkspacesService {
       workspaceId,
       ["module.organization.edit", "workspace.settings.manage"],
       async (client) => {
-        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId);
-        if (contentType !== asset.mime_type) throw new BadRequestException("Logo content type changed");
+        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId, purpose);
+        if (contentType !== asset.mime_type) throw new BadRequestException(`${rule.name} content type changed`);
         if (body.byteLength !== asset.expected_byte_size) {
-          throw new BadRequestException("Logo byte size changed during upload");
+          throw new BadRequestException(`${rule.name} byte size changed during upload`);
         }
-        if (body.byteLength > COMPANY_LOGO_MAX_BYTES) {
-          throw new BadRequestException("Logo must be 5 MB or smaller");
+        if (body.byteLength > rule.maxBytes) {
+          throw new BadRequestException(`${rule.name} must be ${rule.maxBytes / 1024 / 1024} MB or smaller`);
         }
-        await this.brandStorage.writeLocal(asset.object_key, body);
+        if (this.brandStorage.usesObjectStorage) await this.brandStorage.put(asset.object_key, body, asset.mime_type);
+        else await this.brandStorage.writeLocal(asset.object_key, body);
         return { uploaded: true };
       },
     );
   }
 
-  async completeCompanyLogoUpload(
+  private async completeWorkspaceImageUpload(
     actor: RequestActor,
     workspaceId: string,
+    purpose: WorkspaceImagePurpose,
     assetId: string,
   ) {
+    const rule = WORKSPACE_IMAGES[purpose];
     return this.access.withAnyPermission(
       actor,
       workspaceId,
       ["module.organization.edit", "workspace.settings.manage"],
       async (client, actorUser) => {
-        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId);
+        const asset = await this.requirePendingBrandAsset(client, workspaceId, assetId, purpose);
         const stored = await this.brandStorage.read(asset.object_key).catch(() => null);
-        if (!stored) throw new BadRequestException("Upload the logo before completing it");
-        if (stored.byteSize !== asset.expected_byte_size || stored.byteSize > COMPANY_LOGO_MAX_BYTES) {
-          throw new BadRequestException("Uploaded logo size does not match the requested file");
+        if (!stored) throw new BadRequestException(`Upload the ${rule.noun} before completing it`);
+        if (stored.byteSize !== asset.expected_byte_size || stored.byteSize > rule.maxBytes) {
+          throw new BadRequestException(`Uploaded ${rule.noun} size does not match the requested file`);
         }
         await this.brandStorage.confirmUpload(asset.object_key, stored.body, asset.mime_type);
 
@@ -1660,35 +1927,21 @@ export class WorkspacesService {
               ? "image/webp"
               : null;
         if (!metadata?.width || !metadata.height || detectedMime !== asset.mime_type) {
-          throw new BadRequestException("The uploaded file is not a valid supported logo image");
+          throw new BadRequestException(`The uploaded file is not a valid supported ${rule.noun} image`);
         }
-        if (metadata.width < 64 || metadata.height < 64) {
-          throw new BadRequestException("Logo dimensions must be at least 64 by 64 pixels");
-        }
-        if (metadata.width > 4096 || metadata.height > 4096) {
-          throw new BadRequestException("Logo dimensions must not exceed 4096 by 4096 pixels");
-        }
+        const sizeProblem = rule.sizeProblem(metadata.width, metadata.height);
+        if (sizeProblem) throw new BadRequestException(sizeProblem);
 
         const variantPrefix = `workspace-branding/${workspaceId}/${assetId}`;
-        const displayKey = `${variantPrefix}/display.webp`;
-        const squareKey = `${variantPrefix}/square.webp`;
-        const documentKey = `${variantPrefix}/document.png`;
-        const [display, square, document] = await Promise.all([
-          sharp(stored.body).rotate().resize({ width: 1024, height: 512, fit: "inside", withoutEnlargement: true }).webp({ quality: 90 }).toBuffer(),
-          sharp(stored.body).rotate().resize({ width: 512, height: 512, fit: "contain", background: { r: 255, g: 255, b: 255, alpha: 0 } }).webp({ quality: 90 }).toBuffer(),
-          sharp(stored.body).rotate().resize({ width: 1024, height: 512, fit: "contain", background: "#ffffff", withoutEnlargement: true }).flatten({ background: "#ffffff" }).png().toBuffer(),
-        ]);
-        await Promise.all([
-          this.brandStorage.put(displayKey, display, "image/webp"),
-          this.brandStorage.put(squareKey, square, "image/webp"),
-          this.brandStorage.put(documentKey, document, "image/png"),
-        ]);
-        const variants = { display: displayKey, square: squareKey, document: documentKey };
+        const rendered = await rule.variants(stored.body);
+        await Promise.all(rendered.map((variant) =>
+          this.brandStorage.put(`${variantPrefix}/${variant.file}`, variant.body, variant.contentType)));
+        const variants = Object.fromEntries(rendered.map((variant) => [variant.key, `${variantPrefix}/${variant.file}`]));
 
         await client.query(
           `UPDATE workspace_brand_assets SET status = 'replaced'
-           WHERE workspace_id = $1 AND status = 'active' AND id <> $2`,
-          [workspaceId, assetId],
+           WHERE workspace_id = $1 AND status = 'active' AND id <> $2 AND purpose = $3`,
+          [workspaceId, assetId, purpose],
         );
         const activated = await client.query<BrandAssetRow>(
           `UPDATE workspace_brand_assets
@@ -1698,10 +1951,10 @@ export class WorkspacesService {
            RETURNING *`,
           [stored.byteSize, metadata.width, metadata.height, variants, assetId, workspaceId],
         );
-        if (!activated.rowCount) throw new ConflictException("Logo upload changed; try again");
+        if (!activated.rowCount) throw new ConflictException(`${rule.name} upload changed; try again`);
         const branding = await client.query<{ loginSlug: string }>(
           `UPDATE tenant_login_branding
-           SET logo_asset_id = $1, logo_url = NULL
+           SET ${rule.column} = $1${purpose === "workspace_logo" ? ", logo_url = NULL" : ""}
            WHERE workspace_id = $2
            RETURNING login_slug AS "loginSlug"`,
           [assetId, workspaceId],
@@ -1709,7 +1962,7 @@ export class WorkspacesService {
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
-          action: "workspace.logo_updated",
+          action: rule.updatedAction,
           entityType: "workspace_brand_asset",
           entityId: assetId,
           after: {
@@ -1721,24 +1974,26 @@ export class WorkspacesService {
         });
         return {
           assetId,
-          logoUrl: `/api/auth/tenant-logo/${branding.rows[0]?.loginSlug}?v=${assetId}`,
+          url: `/api/auth/${rule.route}/${branding.rows[0]?.loginSlug}?v=${assetId}`,
           updatedAt: activated.rows[0].updated_at,
         };
       },
     );
   }
 
-  async removeCompanyLogo(actor: RequestActor, workspaceId: string) {
+  private async removeWorkspaceImage(actor: RequestActor, workspaceId: string, purpose: WorkspaceImagePurpose) {
+    const rule = WORKSPACE_IMAGES[purpose];
+    const field = purpose === "workspace_logo" ? "logoAssetId" : "loginBackgroundAssetId";
     return this.access.withAnyPermission(
       actor,
       workspaceId,
       ["module.organization.delete", "workspace.settings.manage"],
       async (client, actorUser) => {
-        const current = await client.query<{ logoAssetId: string | null }>(
-          `SELECT logo_asset_id AS "logoAssetId" FROM tenant_login_branding WHERE workspace_id = $1`,
+        const current = await client.query<{ assetId: string | null }>(
+          `SELECT ${rule.column} AS "assetId" FROM tenant_login_branding WHERE workspace_id = $1`,
           [workspaceId],
         );
-        const assetId = current.rows[0]?.logoAssetId;
+        const assetId = current.rows[0]?.assetId;
         if (assetId) {
           await client.query(
             `UPDATE workspace_brand_assets SET status = 'replaced'
@@ -1747,42 +2002,45 @@ export class WorkspacesService {
           );
         }
         await client.query(
-          `UPDATE tenant_login_branding SET logo_asset_id = NULL, logo_url = NULL
+          `UPDATE tenant_login_branding SET ${rule.column} = NULL${purpose === "workspace_logo" ? ", logo_url = NULL" : ""}
            WHERE workspace_id = $1`,
           [workspaceId],
         );
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
-          action: "workspace.logo_removed",
+          action: rule.removedAction,
           entityType: "workspace",
           entityId: workspaceId,
-          before: { logoAssetId: assetId ?? null },
-          after: { logoAssetId: null },
+          before: { [field]: assetId ?? null },
+          after: { [field]: null },
         });
         return { removed: true };
       },
     );
   }
 
-  async readPublicCompanyLogo(loginSlug: string, variant: "display" | "square" = "display") {
+  private async readPublicWorkspaceImage(loginSlug: string, purpose: WorkspaceImagePurpose, variant: string) {
+    const rule = WORKSPACE_IMAGES[purpose];
     const branding = await this.database.query<{ workspaceId: string; assetId: string | null }>(
-      `SELECT workspace_id AS "workspaceId", logo_asset_id AS "assetId"
+      `SELECT workspace_id AS "workspaceId", ${rule.column} AS "assetId"
        FROM tenant_login_branding WHERE login_slug = $1`,
       [loginSlug.toLowerCase()],
     );
     const row = branding.rows[0];
-    if (!row?.assetId) throw new NotFoundException("Company logo was not found");
+    const missing = () => new NotFoundException(`${rule.publicName} was not found`);
+    if (!row?.assetId) throw missing();
     return this.database.tenantTransaction(row.workspaceId, row.workspaceId, async (client) => {
       const asset = await client.query<BrandAssetRow>(
         `SELECT * FROM workspace_brand_assets
          WHERE id = $1 AND workspace_id = $2 AND status = 'active'`,
         [row.assetId, row.workspaceId],
       );
-      if (!asset.rowCount) throw new NotFoundException("Company logo was not found");
-      const objectKey = asset.rows[0].variants[variant] ?? asset.rows[0].variants.display ?? asset.rows[0].object_key;
+      if (!asset.rowCount) throw missing();
+      const variants = asset.rows[0].variants;
+      const objectKey = variants[variant] ?? variants[rule.defaultVariant] ?? asset.rows[0].object_key;
       const stored = await this.brandStorage.read(objectKey).catch(() => null);
-      if (!stored) throw new NotFoundException("Company logo was not found");
+      if (!stored) throw missing();
       return {
         body: stored.body,
         contentType: objectKey.endsWith(".webp") ? "image/webp" : asset.rows[0].mime_type,
@@ -1915,6 +2173,7 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const entityId = randomUUID();
+        if (input.taxRegistrationNumber) input.taxRegistrationNumber = checkTaxNumber(input.taxRegistrationNumber, await readTaxNumberRuleFor(client, input.countryCode));
         try {
           const entity = await this.insertLegalEntity(client, workspaceId, entityId, input);
           await this.insertDefaultSequences(client, workspaceId, entityId, input.code);
@@ -1947,6 +2206,11 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const before = await this.requireLegalEntity(client, workspaceId, entityId);
+        await this.assertMoneyIdentityUnchanged(client, workspaceId, before, input);
+        // A new or changed tax number must have the format of the business's country (PLM-111/112).
+        if (input.taxRegistrationNumber && normaliseTaxNumber(input.taxRegistrationNumber) !== normaliseTaxNumber(before.tax_registration_number ?? "")) {
+          input.taxRegistrationNumber = checkTaxNumber(input.taxRegistrationNumber, await readTaxNumberRuleFor(client, input.countryCode ?? before.country_code));
+        }
         const values: unknown[] = [];
         const assignments: string[] = [];
         const add = (column: string, value: unknown) => {
@@ -1966,6 +2230,9 @@ export class WorkspacesService {
           add("registration_number", input.registrationNumber || null);
         }
         if (input.address !== undefined) add("address", input.address);
+        if (input.phone !== undefined) add("phone", input.phone || null);
+        if (input.email !== undefined) add("email", input.email || null);
+        if (input.letterheadFooter !== undefined) add("letterhead_footer", input.letterheadFooter || null);
         if (!assignments.length) return this.mapLegalEntity(before);
 
         values.push(entityId, workspaceId, input.version);
@@ -2552,12 +2819,22 @@ export class WorkspacesService {
   }
 
   async listRoles(actor: RequestActor, workspaceId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, ["module.roles.read", "workspace.roles.manage"], async (client) => {
+    // A member who can create, edit or delete roles must be able to see the
+    // catalogue before acting; those grants do not imply the other mutations.
+    return this.access.withAnyPermission(actor, workspaceId, [
+      "module.roles.read", "module.roles.write", "module.roles.edit", "module.roles.delete", "workspace.roles.manage",
+      "module.members.read", "module.members.write", "module.members.edit", "module.members.delete", "workspace.members.manage",
+    ], async (client) => {
       const roles = await client.query(
         `SELECT role.id, role.code, role.name, role.description, role.is_system AS "isSystem",
                 role.version,
                 (SELECT count(*)::int FROM member_roles assigned
                  WHERE assigned.role_id = role.id) AS "memberCount",
+                (SELECT count(*)::int FROM workspace_team_roles assigned
+                 WHERE assigned.role_id = role.id) AS "teamCount",
+                (SELECT count(*)::int FROM invitation_roles assigned
+                 JOIN workspace_invitations invitation ON invitation.id = assigned.invitation_id
+                 WHERE assigned.role_id = role.id AND invitation.status = 'pending') AS "pendingInvitationCount",
                 COALESCE(json_agg(permission.code ORDER BY permission.code)
                   FILTER (WHERE permission.code IS NOT NULL), '[]') AS permissions
          FROM roles role
@@ -2568,7 +2845,8 @@ export class WorkspacesService {
          ORDER BY role.is_system DESC, role.name`,
         [workspaceId],
       );
-      return roles.rows;
+      // A custom role keeping a template's code was built from it and can be reset to it.
+      return roles.rows.map((role) => ({ ...role, templateCode: !role.isSystem && ROLE_TEMPLATE_CODES.includes(role.code) ? role.code : null }));
     });
   }
 
@@ -2580,6 +2858,8 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const permissions = await this.resolvePermissions(client, input.permissionCodes);
+        await this.assertRoleDelegation(client, workspaceId, actorUser.userId, input.permissionCodes);
+        await this.assertRoleNameFree(client, workspaceId, input.name);
 
         try {
           const role = await client.query<{ id: string } & Record<string, unknown>>(
@@ -2612,11 +2892,58 @@ export class WorkspacesService {
     );
   }
 
+  /** Nobody edits themselves out of Roles & permissions: their other roles must still let them change roles. */
+  private async assertKeepsOwnRoleAccess(client: PoolClient, workspaceId: string, userId: string, roleId: string, nextCodes: readonly string[]) {
+    const ROLE_EDITING = ["workspace.roles.manage", "module.roles.edit"];
+    if (nextCodes.some((code) => ROLE_EDITING.includes(code))) return;
+    const held = await client.query<{ fromThisRole: boolean; elsewhere: boolean }>(
+      `SELECT bool_or(assigned.role_id = $3) AS "fromThisRole",
+              bool_or(assigned.role_id <> $3 AND permission.code = ANY($4::text[])) AS elsewhere
+         FROM workspace_memberships membership
+         JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+         JOIN role_permissions granted ON granted.role_id = assigned.role_id
+         JOIN permissions permission ON permission.id = granted.permission_id
+        WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active'
+          AND permission.code = ANY($4::text[])`,
+      [workspaceId, userId, roleId, ROLE_EDITING]);
+    if (held.rows[0]?.fromThisRole && !held.rows[0]?.elsewhere) {
+      throw new ConflictException("You can't remove your own access to roles and permissions. Ask another owner or administrator.");
+    }
+  }
+
+  /** Two roles never share a name (ignoring case and spaces): people pick roles by name in Invite and Access. */
+  private async assertRoleNameFree(client: PoolClient, workspaceId: string, name: string, exceptRoleId?: string) {
+    const taken = await client.query(
+      `SELECT 1 FROM roles WHERE workspace_id = $1 AND lower(btrim(name)) = lower(btrim($2)) AND ($3::uuid IS NULL OR id <> $3::uuid) LIMIT 1`,
+      [workspaceId, name, exceptRoleId ?? null]);
+    if (taken.rowCount) throw new ConflictException(`A role named ${name.trim()} already exists. Choose another name, or change that role.`);
+  }
+
+  /**
+   * Roles & permissions by module: one level per module plus advanced extras, expanded to permission codes with
+   * the shared model (access-levels.json). Version-checked and audited like any role change.
+   */
+  async setRoleAccess(actor: RequestActor, workspaceId: string, roleId: string, input: { version: number; levels?: Record<string, unknown>; extras?: unknown }) {
+    const permissionCodes = expandAccess(input);
+    return this.updateRole(actor, workspaceId, roleId, { version: input.version, permissionCodes } as UpdateRoleDto,
+      { action: "role.access_updated", details: { access: describeAccess(permissionCodes) } });
+  }
+
+  /** A role built from a template gets the template's permissions back (and Woddy, which every staff role has). */
+  async resetRoleToTemplate(actor: RequestActor, workspaceId: string, roleId: string, version: number) {
+    const role = await this.access.withAnyPermission(actor, workspaceId, ["module.roles.edit", "workspace.roles.manage"], (client) => this.requireRole(client, workspaceId, roleId));
+    const template = role.isSystem ? undefined : roleTemplatesFor([String(role.code)])[0];
+    if (!template) throw new UnprocessableEntityException("This role was not built from a template");
+    return this.updateRole(actor, workspaceId, roleId, { version, permissionCodes: [...new Set([...template.permissions, "ai.suggestions.use"])].sort() } as UpdateRoleDto,
+      { action: "role.reset_to_template", details: { template: template.code } });
+  }
+
   async updateRole(
     actor: RequestActor,
     workspaceId: string,
     roleId: string,
     input: UpdateRoleDto,
+    audit: { action: string; details: Record<string, unknown> } = { action: "role.updated", details: {} },
   ) {
     return this.access.withAnyPermission(
       actor,
@@ -2628,6 +2955,7 @@ export class WorkspacesService {
         if (before.isSystem) {
           throw new ConflictException("System roles cannot be edited");
         }
+        await this.assertRoleDelegation(client, workspaceId, actorUser.userId, before.permissions as string[]);
         if (
           input.name === undefined
           && input.description === undefined
@@ -2635,9 +2963,14 @@ export class WorkspacesService {
         ) {
           return before;
         }
+        if (input.name !== undefined) await this.assertRoleNameFree(client, workspaceId, input.name, roleId);
         const permissions = input.permissionCodes === undefined
           ? undefined
           : await this.resolvePermissions(client, input.permissionCodes);
+        if (input.permissionCodes !== undefined) {
+          await this.assertRoleDelegation(client, workspaceId, actorUser.userId, input.permissionCodes);
+          await this.assertKeepsOwnRoleAccess(client, workspaceId, actorUser.userId, roleId, input.permissionCodes);
+        }
         const updated = await client.query(
           `UPDATE roles
            SET name = COALESCE($1, name),
@@ -2662,16 +2995,17 @@ export class WorkspacesService {
         }
         const response = {
           ...updated.rows[0],
-          permissions: input.permissionCodes ?? before.permissions,
+          permissions: [...(input.permissionCodes ?? before.permissions as string[])].sort(),
+          templateCode: ROLE_TEMPLATE_CODES.includes(String(updated.rows[0].code)) ? updated.rows[0].code : null,
         } as Record<string, unknown>;
         await this.recordChange(client, {
           workspaceId,
           actorUserId: actorUser.userId,
-          action: "role.updated",
+          action: audit.action,
           entityType: "role",
           entityId: roleId,
           before,
-          after: response,
+          after: { ...response, ...audit.details },
         });
         return response;
       },
@@ -2694,6 +3028,7 @@ export class WorkspacesService {
         if (before.isSystem) {
           throw new ConflictException("System roles cannot be deleted");
         }
+        await this.assertRoleDelegation(client, workspaceId, actorUser.userId, before.permissions as string[]);
         const assignments = await client.query<{ members: number; invitations: number; teams: number }>(
           `SELECT
              (SELECT count(*)::int FROM member_roles WHERE role_id = $1) AS members,
@@ -2783,9 +3118,9 @@ export class WorkspacesService {
           );
           if (teams.rowCount !== teamIds.length) throw new UnprocessableEntityException("One or more teams are not active");
         }
+        await this.assertMemberRoleDelegation(client, workspaceId, actorUser.userId, roles.rows.map((role) => role.id), teamIds);
 
-        const displayName = input.displayName
-          ?? input.email.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+        const displayName = input.displayName?.trim() || placeholderDisplayName(input.email);
         await client.query(
           `INSERT INTO users (primary_email, display_name)
            VALUES ($1, $2)
@@ -2847,9 +3182,10 @@ export class WorkspacesService {
             expiresAt,
             invitationToken,
             inviterName: actorUser.displayName,
-            recipientName: displayName,
+            recipientName: invitationGreetingName(input.displayName, input.email),
             roleCodes: input.roleCodes,
             workspaceName: workspace.name,
+            workspaceId,
           },
         };
       },
@@ -2859,12 +3195,15 @@ export class WorkspacesService {
   }
 
   async listMembers(actor: RequestActor, workspaceId: string) {
-    return this.access.withAnyPermission(actor, workspaceId, ["module.members.read", "workspace.members.manage"], async (client) => {
+    return this.access.withAnyPermission(actor, workspaceId, [
+      "module.members.read", "module.members.write", "module.members.edit", "module.members.delete", "workspace.members.manage",
+    ], async (client) => {
       const members = await client.query(
         `SELECT membership.id, membership.status, membership.joined_at AS "joinedAt",
                 membership.version,
                 app_user.id AS "userId", app_user.primary_email AS email,
                 app_user.display_name AS "displayName",
+                profile.avatar_preset AS "avatarPreset", profile.photo_updated_at AS "photoUpdatedAt",
                 COALESCE(json_agg(role.code ORDER BY role.code)
                   FILTER (WHERE role.code IS NOT NULL), '[]') AS roles,
                 (SELECT COALESCE(json_agg(DISTINCT inherited_role.code), '[]')
@@ -2877,14 +3216,15 @@ export class WorkspacesService {
                  WHERE team_member.membership_id=membership.id) AS teams
          FROM workspace_memberships membership
          JOIN users app_user ON app_user.id = membership.user_id
+         LEFT JOIN workspace_member_profiles profile ON profile.workspace_id = membership.workspace_id AND profile.user_id = membership.user_id
          LEFT JOIN member_roles assigned ON assigned.membership_id = membership.id
          LEFT JOIN roles role ON role.id = assigned.role_id
          WHERE membership.workspace_id = $1
-         GROUP BY membership.id, app_user.id
+         GROUP BY membership.id, app_user.id, profile.avatar_preset, profile.photo_updated_at
          ORDER BY app_user.display_name`,
         [workspaceId],
       );
-      return members.rows;
+      return members.rows.map(({ photoUpdatedAt, ...member }) => ({ ...member, photoUrl: MemberProfileService.photoUrl(workspaceId, String(member.userId), photoUpdatedAt as Date | null) }));
     });
   }
 
@@ -2917,6 +3257,12 @@ export class WorkspacesService {
           );
           if (!inherited.rowCount) throw new BadRequestException("A member needs a direct role or an active team role");
         }
+        const currentRoles = await client.query<{ roleId: string }>(
+          `SELECT DISTINCT role_id AS "roleId" FROM effective_member_roles WHERE membership_id=$1`,
+          [membershipId],
+        );
+        await this.assertMemberRoleDelegation(client, workspaceId, actorUser.userId,
+          [...new Set([...currentRoles.rows.map((role) => role.roleId), ...(requestedRoles?.rows.map((role) => role.id) ?? [])])], []);
         const nextStatus = input.status ?? String(before.status);
         if (String(before.status) !== "active" && nextStatus === "active") {
           await this.assertSeatAvailable(client, workspaceId);
@@ -2963,11 +3309,31 @@ export class WorkspacesService {
     );
   }
 
+  /**
+   * The workspace's seats as People shows them before anyone invites (SP-3): the limit, members using a seat,
+   * pending invitations reserving one, and what's free. Null limit when no subscription is set up.
+   */
+  async seats(actor: RequestActor, workspaceId: string) {
+    return this.access.withAnyPermission(
+      actor,
+      workspaceId,
+      ["module.members.read", "module.members.write", "module.members.delete", "workspace.members.manage"],
+      async (client) => {
+        const row = (await client.query<{ seatLimit: number; activeMembers: number; pendingInvitations: number; reservedSeats: number }>(
+          `SELECT seat_limit AS "seatLimit", active_members AS "activeMembers", pending_invitations AS "pendingInvitations", reserved_seats AS "reservedSeats"
+             FROM workspace_seat_capacity($1, NULL)`, [workspaceId])).rows[0];
+        if (!row) return { limit: null, used: 0, reserved: 0, available: null };
+        return { limit: Number(row.seatLimit), used: Number(row.activeMembers), reserved: Number(row.pendingInvitations),
+          available: Math.max(0, Number(row.seatLimit) - Number(row.reservedSeats)) };
+      },
+    );
+  }
+
   async listInvitations(actor: RequestActor, workspaceId: string) {
     return this.access.withAnyPermission(
       actor,
       workspaceId,
-      ["module.members.read", "workspace.members.manage"],
+      ["module.members.read", "module.members.write", "module.members.delete", "workspace.members.manage"],
       async (client) => {
         const result = await client.query(
           `SELECT invitation.id, invitation.email, invitee.display_name AS "displayName",
@@ -3013,6 +3379,7 @@ export class WorkspacesService {
       async (client, actorUser) => {
         await this.lockWorkspace(client, workspaceId);
         const invitation = await this.requirePendingInvitation(client, workspaceId, invitationId);
+        await this.assertInvitationDelegation(client, workspaceId, actorUser.userId, invitationId);
         const cancelled = await client.query(
           `UPDATE workspace_invitations
            SET status = 'cancelled', cancelled_at = now()
@@ -3049,6 +3416,14 @@ export class WorkspacesService {
         await this.lockWorkspace(client, workspaceId);
         const workspace = await this.requireWorkspace(client, workspaceId);
         const before = await this.requirePendingInvitation(client, workspaceId, invitationId);
+        await this.assertInvitationDelegation(client, workspaceId, actorUser.userId, invitationId);
+        // An invitation past its expiry no longer holds a seat. Reviving it must take a free seat,
+        // otherwise a resend could push the workspace over its limit after the seat was reused.
+        const expired = await client.query(
+          `SELECT 1 FROM workspace_invitations WHERE id = $1 AND workspace_id = $2 AND expires_at <= now()`,
+          [invitationId, workspaceId],
+        );
+        if (expired.rowCount) await this.assertSeatAvailable(client, workspaceId);
         const details = await client.query<{ displayName: string; roleCodes: string[] }>(
           `SELECT invitee.display_name AS "displayName",
                   COALESCE(array_agg(role.code ORDER BY role.code)
@@ -3094,10 +3469,10 @@ export class WorkspacesService {
             expiresAt,
             invitationToken,
             inviterName: actorUser.displayName,
-            recipientName: recipient?.displayName
-              ?? String(response.email).split("@")[0],
+            recipientName: invitationGreetingName(recipient?.displayName, String(response.email)),
             roleCodes: recipient?.roleCodes ?? [],
             workspaceName: workspace.name,
+            workspaceId,
           },
         };
       },
@@ -3421,7 +3796,9 @@ export class WorkspacesService {
           workspaceId,
           connectionId,
         );
-        if (before.status === status) {
+        // A connection left waiting (the provider's window closed or failed) can start again; its old attempt
+        // goes stale with the version bump, so it can never complete afterwards.
+        if (before.status === status && status !== "pending") {
           throw new ConflictException(`Integration is already ${status}`);
         }
         if (status === "pending" && before.status === "connected") {
@@ -3555,20 +3932,22 @@ export class WorkspacesService {
     client: PoolClient,
     workspaceId: string,
     assetId: string,
+    purpose: WorkspaceImagePurpose,
   ): Promise<BrandAssetRow> {
+    const rule = WORKSPACE_IMAGES[purpose];
     const result = await client.query<BrandAssetRow>(
       `SELECT * FROM workspace_brand_assets
-       WHERE id = $1 AND workspace_id = $2 AND status = 'pending'`,
-      [assetId, workspaceId],
+       WHERE id = $1 AND workspace_id = $2 AND status = 'pending' AND purpose = $3`,
+      [assetId, workspaceId, purpose],
     );
-    if (!result.rowCount) throw new NotFoundException("Pending logo upload was not found");
+    if (!result.rowCount) throw new NotFoundException(`Pending ${rule.noun} upload was not found`);
     if (result.rows[0].upload_expires_at.getTime() <= Date.now()) {
       await client.query(
         `UPDATE workspace_brand_assets SET status = 'failed'
          WHERE id = $1 AND workspace_id = $2`,
         [assetId, workspaceId],
       );
-      throw new GoneException("Logo upload expired; choose the file again");
+      throw new GoneException(`${rule.name} upload expired; choose the file again`);
     }
     return result.rows[0];
   }
@@ -3791,6 +4170,96 @@ export class WorkspacesService {
     return roles;
   }
 
+  private async assertRoleDelegation(
+    client: PoolClient,
+    workspaceId: string,
+    actorUserId: string,
+    permissionCodes: readonly string[],
+  ): Promise<void> {
+    const grants = await client.query<{ roleCode: string; permissionCode: string | null }>(
+      `SELECT DISTINCT role.code AS "roleCode", permission.code AS "permissionCode"
+       FROM workspace_memberships membership
+       JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+       JOIN roles role ON role.id = assigned.role_id
+       LEFT JOIN role_permissions granted ON granted.role_id = role.id
+       LEFT JOIN permissions permission ON permission.id = granted.permission_id
+       WHERE membership.workspace_id = $1 AND membership.user_id = $2
+         AND membership.status = 'active'`,
+      [workspaceId, actorUserId],
+    );
+    if (grants.rows.some(({ roleCode }) => roleCode === "owner" || roleCode === "administrator")) return;
+    const effective = new Set(await this.access.effectivePermissions(
+      client,
+      workspaceId,
+      grants.rows.map(({ permissionCode }) => permissionCode).filter((code): code is string => Boolean(code)),
+    ));
+    if (effective.has("workspace.roles.manage")) return;
+    if (permissionCodes.some((code) => !effective.has(code))) {
+      throw new ForbiddenException("You cannot manage a role containing permissions outside your own access");
+    }
+  }
+
+  private async assertMemberRoleDelegation(
+    client: PoolClient,
+    workspaceId: string,
+    actorUserId: string,
+    roleIds: string[],
+    teamIds: string[],
+  ): Promise<void> {
+    const actorGrants = await client.query<{ roleCode: string; permissionCode: string | null }>(
+      `SELECT DISTINCT role.code AS "roleCode", permission.code AS "permissionCode"
+       FROM workspace_memberships membership
+       JOIN effective_member_roles assigned ON assigned.membership_id = membership.id
+       JOIN roles role ON role.id = assigned.role_id
+       LEFT JOIN role_permissions granted ON granted.role_id = role.id
+       LEFT JOIN permissions permission ON permission.id = granted.permission_id
+       WHERE membership.workspace_id = $1 AND membership.user_id = $2 AND membership.status = 'active'`,
+      [workspaceId, actorUserId],
+    );
+    if (actorGrants.rows.some(({ roleCode }) => roleCode === "owner" || roleCode === "administrator")) return;
+
+    const delegated = await client.query<{ roleCode: string; permissionCode: string | null }>(
+      `SELECT DISTINCT role.code AS "roleCode", permission.code AS "permissionCode"
+       FROM roles role
+       LEFT JOIN role_permissions granted ON granted.role_id = role.id
+       LEFT JOIN permissions permission ON permission.id = granted.permission_id
+       WHERE role.workspace_id=$1 AND (
+         role.id=ANY($2::uuid[]) OR EXISTS (
+           SELECT 1 FROM workspace_team_roles assigned
+           WHERE assigned.role_id=role.id AND assigned.team_id=ANY($3::uuid[])
+         )
+       )`,
+      [workspaceId, roleIds, teamIds],
+    );
+    if (delegated.rows.some(({ roleCode }) => roleCode === "owner" || roleCode === "administrator")) {
+      throw new ForbiddenException("Only an Owner or Administrator can assign privileged workspace roles");
+    }
+    const effective = new Set(await this.access.effectivePermissions(client, workspaceId,
+      actorGrants.rows.map(({ permissionCode }) => permissionCode).filter((code): code is string => Boolean(code))));
+    if (delegated.rows.some(({ permissionCode }) => permissionCode && !effective.has(permissionCode))) {
+      throw new ForbiddenException("You cannot grant access beyond your own permissions");
+    }
+  }
+
+  private async assertInvitationDelegation(
+    client: PoolClient,
+    workspaceId: string,
+    actorUserId: string,
+    invitationId: string,
+  ): Promise<void> {
+    const assigned = await client.query<{ roleId: string }>(
+      `SELECT DISTINCT role_id AS "roleId" FROM invitation_roles WHERE invitation_id=$1
+       UNION
+       SELECT DISTINCT granted.role_id AS "roleId"
+       FROM invitation_teams invited_team
+       JOIN workspace_team_roles granted ON granted.team_id=invited_team.team_id
+       WHERE invited_team.invitation_id=$1`,
+      [invitationId],
+    );
+    await this.assertMemberRoleDelegation(client, workspaceId, actorUserId,
+      assigned.rows.map((role) => role.roleId), []);
+  }
+
   private async requireRole(
     client: PoolClient,
     workspaceId: string,
@@ -3932,49 +4401,18 @@ export class WorkspacesService {
     if (new Date(invitation.expires_at).getTime() <= Date.now()) {
       throw new GoneException("Invitation has expired");
     }
-    await this.assertSeatAvailable(client, invitation.workspace_id, invitation.id);
-    const membership = await client.query<{ id: string }>(
-      `INSERT INTO workspace_memberships
-        (workspace_id, user_id, status, joined_at)
-       VALUES ($1, $2, 'active', now())
-       ON CONFLICT (workspace_id, user_id)
-       DO UPDATE SET status = 'active', joined_at = COALESCE(workspace_memberships.joined_at, now())
-       RETURNING id`,
-      [invitation.workspace_id, actorUser.userId],
-    );
-    await client.query(
-      `INSERT INTO member_roles (workspace_id, membership_id, role_id)
-       SELECT $1, $2, role_id
-       FROM invitation_roles
-       WHERE invitation_id = $3
-       ON CONFLICT (membership_id, role_id) DO NOTHING`,
-      [invitation.workspace_id, membership.rows[0].id, invitation.id],
-    );
-    await client.query(
-      `INSERT INTO workspace_team_members (workspace_id, team_id, membership_id, is_lead)
-       SELECT invited_team.workspace_id, invited_team.team_id, $2, false
-       FROM invitation_teams invited_team JOIN workspace_teams team ON team.id=invited_team.team_id
-       WHERE invited_team.invitation_id=$1 AND team.status='active'
-       ON CONFLICT (team_id, membership_id) DO NOTHING`,
-      [invitation.id, membership.rows[0].id],
-    );
-    await client.query(
-      `UPDATE workspace_invitations
-       SET status = 'accepted', accepted_at = now()
-       WHERE id = $1`,
-      [invitation.id],
-    );
+    const membership = await acceptPendingInvitation(client, { invitationId: invitation.id, userId: actorUser.userId });
     await this.recordChange(client, {
       workspaceId: invitation.workspace_id,
       actorUserId: actorUser.userId,
       action: "workspace.invitation_accepted",
       entityType: "workspace_membership",
-      entityId: membership.rows[0].id,
+      entityId: membership.membershipId,
       after: { invitationId: invitation.id, email: invitation.email },
     });
     return {
       workspaceId: invitation.workspace_id,
-      membershipId: membership.rows[0].id,
+      membershipId: membership.membershipId,
       status: "active",
     };
   }
@@ -4008,7 +4446,12 @@ export class WorkspacesService {
       "SELECT id FROM workspaces WHERE id = $1 AND status = 'active' FOR UPDATE",
       [workspaceId],
     );
-    if (!lock.rowCount) throw new NotFoundException("Workspace not found");
+    if (lock.rowCount) return;
+    // A suspended organization is read-only; the refusal says so instead of hiding the workspace.
+    const current = await client.query<{ status: string }>("SELECT status::text AS status FROM workspaces WHERE id = $1", [workspaceId]);
+    const blocked = writeBlockFor(current.rows[0]?.status);
+    if (blocked) throw blocked;
+    throw new NotFoundException("Workspace not found");
   }
 
   private async assertSeatAvailable(
@@ -4056,8 +4499,8 @@ export class WorkspacesService {
       `INSERT INTO legal_entities
         (id, workspace_id, code, display_name, registered_name, country_code,
          base_currency, locale, timezone, tax_registration_number,
-         registration_number, address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         registration_number, address, phone, email, letterhead_footer)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         entityId,
@@ -4072,6 +4515,9 @@ export class WorkspacesService {
         input.taxRegistrationNumber ?? null,
         input.registrationNumber ?? null,
         input.address ?? {},
+        input.phone || null,
+        input.email || null,
+        input.letterheadFooter || null,
       ],
     );
     return result.rows[0];
@@ -4110,6 +4556,64 @@ export class WorkspacesService {
     );
   }
 
+  /** A pinned region pack's defaults are the organization's: currency, locale, time zone, units, week and country. */
+  private assertRegionalDefaults(input: CreateWorkspaceDto, setup: { region: { configuration: Record<string, unknown> } }) {
+    const region = setup.region.configuration;
+    if (input.defaultCurrency !== region.currency || input.defaultLocale !== region.locale
+      || input.defaultTimezone !== region.timezone || input.unitSystem !== region.unitSystem
+      || input.weekStartsOn !== region.weekStartsOn
+      || input.firstLegalEntity.countryCode !== region.countryCode) {
+      throw new BadRequestException("Organization regional defaults do not match the pinned region version");
+    }
+  }
+
+  /** The firm kit's payment plan (the default for new quotes, Q-34) and its project route. */
+  private async applyFirmKit(client: PoolClient, workspaceId: string, ownerUserId: string, setup: { firmKit: { configuration: Record<string, unknown> } }) {
+    await seedKitPaymentPlan(client, workspaceId, setup.firmKit.configuration.paymentTemplate);
+    const workflow = parseProjectWorkflowTemplate(setup.firmKit.configuration.projectWorkflow);
+    await client.query(
+      `INSERT INTO project_workflow_templates
+         (workspace_id, code, name, description, is_default, version, stages, created_by)
+       VALUES ($1, $2, $3, $4, true, $5, $6, $7)`,
+      [workspaceId, workflow.code, workflow.name, workflow.description,
+        workflow.version, JSON.stringify(workflow.stages), ownerUserId],
+    );
+  }
+
+  /** The organization's subscription: the plan's seats and projects with pinned setup versions, else the defaults. */
+  private async insertSubscriptionAndSetup(
+    client: PoolClient,
+    workspaceId: string,
+    currency: string,
+    pinned: { selections: TenantSetupSelectionsDto; setup: { plan: { configuration: Record<string, unknown> } } } | null,
+  ) {
+    if (!pinned) {
+      await client.query(
+        `INSERT INTO workspace_subscriptions (workspace_id, currency, renews_at)
+         VALUES ($1, $2, now() + interval '14 days')`,
+        [workspaceId, currency],
+      );
+      return;
+    }
+    const { selections, setup } = pinned;
+    const plan = setup.plan.configuration;
+    await client.query(
+      `INSERT INTO workspace_subscriptions
+        (workspace_id, plan_code, billing_cycle, seat_limit, project_limit, currency, renews_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now() + interval '14 days')`,
+      [workspaceId, selections.plan.code, plan.billingCycle, selections.seatLimit ?? plan.seatLimit, plan.projectLimit, currency],
+    );
+    await client.query(
+      `INSERT INTO workspace_setup_versions
+        (workspace_id, region_code, region_version, firm_kit_code, firm_kit_version,
+         plan_code, plan_version, configuration_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [workspaceId, selections.region.code, selections.region.version,
+        selections.firmKit.code, selections.firmKit.version,
+        selections.plan.code, selections.plan.version, setup],
+    );
+  }
+
   private async resolveTenantSetup(client: PoolClient, selected: TenantSetupSelectionsDto) {
     const profiles = await client.query<{
       kind: "region" | "firm_kit" | "plan";
@@ -4133,6 +4637,8 @@ export class WorkspacesService {
     const firmKit = profiles.rows.find((profile) => profile.kind === "firm_kit")!;
     const plan = profiles.rows.find((profile) => profile.kind === "plan")!;
     parseProjectWorkflowTemplate(firmKit.configuration.projectWorkflow);
+    parseRoleTemplateCodes(firmKit.configuration.roleTemplates);
+    parseSalesPipelineTemplate(firmKit.configuration.salesPipeline);
     if (!Number.isInteger(plan.configuration.seatLimit) || Number(plan.configuration.seatLimit) < 1
       || !Number.isInteger(plan.configuration.projectLimit) || Number(plan.configuration.projectLimit) < 1
       || !["monthly", "yearly", "custom"].includes(String(plan.configuration.billingCycle))) {
@@ -4168,11 +4674,37 @@ export class WorkspacesService {
          SELECT $1, $2, id FROM permissions
          WHERE code IN ('legal_entities.view', 'integrations.view', 'catalog.view')
             OR code LIKE 'module.%.read'
-            OR ($3 = 'member' AND code IN ('hrms.self', 'projects.view', 'projects.report'))`,
+            OR ($3 = 'member' AND code IN ('hrms.self', 'projects.view', 'projects.report', 'ai.suggestions.use'))`,
         [workspaceId, roleIds.get(roleCode), roleCode],
       );
     }
     return roleIds;
+  }
+
+  /** Materialises the kit's role templates as editable roles. A permission the catalog lacks is a defect, not a silent gap. */
+  private async insertRoleTemplates(client: PoolClient, workspaceId: string, templateCodes: readonly string[]) {
+    for (const role of roleTemplatesFor(templateCodes)) {
+      const result = await client.query<{ id: string }>(
+        `INSERT INTO roles (workspace_id, code, name, description, is_system)
+         VALUES ($1, $2, $3, $4, false) RETURNING id`,
+        [workspaceId, role.code, role.name, role.description],
+      );
+      const granted = await client.query(
+        `INSERT INTO role_permissions (workspace_id, role_id, permission_id)
+         SELECT $1, $2, id FROM permissions WHERE code = ANY($3::text[])`,
+        [workspaceId, result.rows[0].id, [...role.permissions]],
+      );
+      if (granted.rowCount !== role.permissions.length) {
+        throw new Error(`Role template ${role.code} names a permission the catalog does not have`);
+      }
+      // Every staff role can ask Woddy; the workspace AI switch and credits still decide whether it answers.
+      await client.query(
+        `INSERT INTO role_permissions (workspace_id, role_id, permission_id)
+         SELECT $1, $2, id FROM permissions WHERE code = 'ai.suggestions.use'
+         ON CONFLICT (role_id, permission_id) DO NOTHING`,
+        [workspaceId, result.rows[0].id],
+      );
+    }
   }
 
   private async insertOnboarding(
@@ -4208,13 +4740,13 @@ export class WorkspacesService {
     legalEntityId: string,
     entityCode: string,
   ): Promise<void> {
-    for (const documentType of ["QUOTATION", "INVOICE", "PURCHASE_ORDER"]) {
-      const shortCode = documentType === "PURCHASE_ORDER" ? "PO" : documentType.slice(0, 3);
+    for (const documentType of ["QUOTATION", "INVOICE", "CREDIT_NOTE", "PURCHASE_ORDER"]) {
+      const shortCode = documentType === "PURCHASE_ORDER" ? "PO" : documentType === "CREDIT_NOTE" ? "CN" : documentType.slice(0, 3);
       await client.query(
         `INSERT INTO document_sequences
           (workspace_id, legal_entity_id, document_type, prefix)
          VALUES ($1, $2, $3, $4)`,
-        [workspaceId, legalEntityId, documentType, `${entityCode}-${shortCode}-`],
+        [workspaceId, legalEntityId, documentType, `${entityCode}-${shortCode}-{YYYY}-`],
       );
     }
   }
@@ -4325,8 +4857,8 @@ export class WorkspacesService {
   private mapBranding(
     loginSlug: string,
     row?: {
-      logoAssetId: string | null; logoUpdatedAt: Date | null; primaryColor: string | null;
-      secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
+      logoAssetId: string | null; logoUpdatedAt: Date | null; loginBackgroundAssetId?: string | null;
+      primaryColor: string | null; secondaryColor: string | null; headingFont: string | null; bodyFont: string | null;
     },
   ) {
     return {
@@ -4335,6 +4867,10 @@ export class WorkspacesService {
         ? `/api/auth/tenant-logo/${loginSlug}?v=${row.logoAssetId}`
         : null,
       logoUpdatedAt: row?.logoUpdatedAt ?? null,
+      loginBackgroundAssetId: row?.loginBackgroundAssetId ?? null,
+      loginBackgroundUrl: row?.loginBackgroundAssetId
+        ? `/api/auth/tenant-background/${loginSlug}?v=${row.loginBackgroundAssetId}`
+        : null,
       primaryColor: row?.primaryColor ?? null,
       secondaryColor: row?.secondaryColor ?? null,
       headingFont: row?.headingFont ?? null,
@@ -4356,6 +4892,12 @@ export class WorkspacesService {
       taxRegistrationNumber: row.tax_registration_number,
       registrationNumber: row.registration_number,
       address: row.address,
+      // PLM-112: what the business's documents print.
+      phone: row.phone ?? null,
+      email: row.email ?? null,
+      letterheadFooter: row.letterhead_footer ?? null,
+      logoUrl: entityImageUrl(row.workspace_id, row.logo_asset_id ?? null),
+      letterheadUrl: entityImageUrl(row.workspace_id, row.letterhead_asset_id ?? null),
       status: row.status,
       version: row.version,
       createdAt: row.created_at,
@@ -4384,6 +4926,26 @@ export class WorkspacesService {
       .replace(/^-|-$/g, "")
       .slice(0, 70);
     return slug || `workspace-${randomUUID().slice(0, 8)}`;
+  }
+
+  /** Currency and country are fixed once a legal entity has quotes, payments or receipts. */
+  private async assertMoneyIdentityUnchanged(
+    client: PoolClient,
+    workspaceId: string,
+    entity: { id: string; base_currency: string; country_code: string },
+    next: { baseCurrency?: string; countryCode?: string },
+  ) {
+    const changing = (next.baseCurrency !== undefined && next.baseCurrency !== entity.base_currency)
+      || (next.countryCode !== undefined && next.countryCode !== entity.country_code);
+    if (!changing) return;
+    const used = await client.query<{ used: boolean }>(
+      "SELECT legal_entity_has_financial_records($1, $2) AS used", [workspaceId, entity.id],
+    );
+    if (used.rows[0]?.used) {
+      throw new ConflictException(
+        "This legal entity already has quotes or payments, so its currency and country can't change. Add a new legal entity for another country or currency.",
+      );
+    }
   }
 
   private rethrowConstraint(error: unknown, message: string): never {

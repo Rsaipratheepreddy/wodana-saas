@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from 
 import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RequestActor } from "../../auth/actor";
 import { CurrentActor } from "../../auth/current-actor.decorator";
+import { AllowWhenReadOnly } from "../../auth/tenant-write-block.guard";
 import { CrmPartiesService } from "./crm-parties.service";
 import {
   AddressInputDto,
@@ -41,6 +42,7 @@ export class CrmPartiesController {
   }
 
   @Post("parties/export")
+  @AllowWhenReadOnly()
   exportParties(@CurrentActor() actor: RequestActor, @Param("workspaceId", ParseUUIDPipe) workspaceId: string, @Body() input: ExportPartiesDto) {
     return this.parties.export(actor, workspaceId, input);
   }

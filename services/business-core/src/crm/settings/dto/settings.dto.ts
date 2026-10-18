@@ -1,10 +1,14 @@
 import { Type } from "class-transformer";
-import { Allow, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from "class-validator";
+import { Allow, ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNotEmpty, IsObject, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, ValidateIf, ValidateNested } from "class-validator";
 
 export class TaxonomyOptionDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
   @IsString() @IsNotEmpty() @MaxLength(160) label!: string;
   @IsOptional() @IsInt() @Min(0) position?: number;
+  /** Role codes allowed to choose this option by hand (e.g. Self Generated); empty clears the limit, absent keeps it. */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @IsString({ each: true }) @Matches(/^[A-Za-z0-9_-]{1,60}$/, { each: true }) allowedRoles?: string[];
+  /** Legacy: an enquiry type's flow code (a starter's or the workspace's own). Each enquiry type owns its own flow, which puts this back to that flow's code. */
+  @IsOptional() @ValidateIf((_, value) => value !== null) @IsString() @Matches(/^[a-z][a-z0-9_]{0,59}$/) flow?: string | null;
 }
 export class CreateTaxonomyDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
@@ -25,6 +29,8 @@ export class CreateCustomFieldDto {
   @IsOptional() @IsBoolean() required?: boolean;
   @IsOptional() @IsBoolean() searchable?: boolean;
   @IsOptional() @IsObject() configuration?: Record<string, unknown>;
+  @IsOptional() @IsBoolean() visible?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(10000) position?: number;
 }
 export class UpdateCustomFieldDto {
   @IsInt() @Min(1) version!: number;
@@ -33,6 +39,8 @@ export class UpdateCustomFieldDto {
   @IsOptional() @IsBoolean() searchable?: boolean;
   @IsOptional() @IsObject() configuration?: Record<string, unknown>;
   @IsOptional() @IsIn(["active", "archived"]) status?: string;
+  @IsOptional() @IsBoolean() visible?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(10000) position?: number;
 }
 export class SetCustomFieldValueDto {
   @IsString() entityType!: string;
@@ -52,6 +60,8 @@ export class CreateQualificationFormDto {
   @IsString() @Matches(/^[a-z][a-z0-9_-]{0,78}$/) code!: string;
   @IsString() @IsNotEmpty() @MaxLength(160) name!: string;
   @IsOptional() @IsString() @MaxLength(100) serviceType?: string;
+  /** "discovery" forms are the Account Manager's intro questions on an opportunity (PLM-040). */
+  @IsOptional() @IsIn(["qualification", "discovery"]) purpose?: "qualification" | "discovery";
   @IsArray() @ValidateNested({ each: true }) @Type(() => QualificationQuestionDto) questions!: QualificationQuestionDto[];
 }
 export class UpdateQualificationFormDto {
@@ -74,3 +84,19 @@ export class UpdateSavedViewDto {
   @IsOptional() @IsObject() definition?: Record<string, unknown>;
 }
 export class ArchiveSettingDto { @IsInt() @Min(1) version!: number; }
+export class EnquiryFieldVisibilityDto {
+  @IsBoolean() visible!: boolean;
+  @IsInt() @Min(0) version!: number;
+}
+/** PLM-096: one enquiry type's requirement for a field: from which gate it is required, or never. */
+export class EnquiryTypeRequirementDto {
+  @IsString() @IsNotEmpty() @MaxLength(100) enquiryType!: string;
+  @IsIn(["create", "convert", "book_intro", "never"]) requiredAt!: string;
+  @IsInt() @Min(0) version!: number;
+}
+export class EnquiryRequirementDto {
+  @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => EnquiryTypeRequirementDto) types!: EnquiryTypeRequirementDto[];
+}
+export class EnquiryFieldValuesDto {
+  @IsObject() values!: Record<string, unknown>;
+}

@@ -51,6 +51,8 @@ describe('catalog import preparation',()=>{
   expect(prepare('Name,Dimension,BaseFactor\nMy foot,length,0.3048',{kind:'unit'}).records[0]).toMatchObject({dimension:'length',baseFactor:.3048});
   expect(prepare('Name\nSquare foot',{kind:'unit'},[]).errors.join(' ')).toContain('measurement type');
   expect(prepare('Name,Dimension,BaseFactor\nSheet,pack,32',{kind:'unit'}).errors.join(' ')).toContain('universal');
+  expect(prepare('Name,Dimension\nWatt,reference',{kind:'unit'}).records[0]).toMatchObject({dimension:'reference',baseFactor:undefined});
+  expect(prepare('Name,Dimension,BaseFactor\nWatt,reference,1',{kind:'unit'}).errors.join(' ')).toContain('universal');
  });
  it('resolves forward parent references without relying on worksheet order',()=>{
   const plan=prepare('Name,Parent\nGuest bedroom,Bedroom\nBedroom,',{kind:'room'},[]);

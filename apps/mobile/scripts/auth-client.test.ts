@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ApiError, AuthClient, type SessionStorage } from '../src/auth/client';
+import { ApiError, AuthClient, DeviceLimitError, modulesForPath, type SessionStorage } from '../src/auth/client';
 
 const profile = { id: 'user-1', primaryEmail: 'member@example.com', displayName: 'Member', status: 'active', nextAction: 'enter_workspace',
   memberships: [{ workspaceId: 'workspace-1', workspaceName: 'Iglo Architects', workspaceSlug: 'iglo-architects', workspaceStatus: 'active',
@@ -26,7 +26,7 @@ function harness() {
     if (path === '/me') return response(profile);
     throw new Error(`Unexpected path ${path}`);
   };
-  const create = (tenantSlug = 'iglo-architects') => new AuthClient({ baseUrl: 'https://api.example.com/api/v1', tenantSlug, storage, fetch: fetcher, now: () => clock });
+  const create = (tenantSlug = 'iglo-architects', profileCache?: SessionStorage) => new AuthClient({ baseUrl: 'https://api.example.com/api/v1', tenantSlug, storage, profileCache, fetch: fetcher, now: () => clock });
   return { create, storage, calls, get saved() { return saved; }, set saved(value) { saved = value; }, set clock(value: number) { clock = value; },
     set override(value: typeof override) { override = value; } };
 }
@@ -40,6 +40,26 @@ test('sign-in verifies /me and persists only refresh metadata, never password or
   assert.equal(h.calls[1].token, 'Bearer access-1');
   assert.equal(JSON.parse(h.saved!).refreshToken, 'refresh-1');
   assert.doesNotMatch(h.saved!, /Keep#Spaces|access-1|primaryEmail/);
+});
+test('organization lookup accepts name, slug, or ID before tenant-scoped sign-in', async () => {
+  const h = harness(), client = h.create('');
+  h.override = (path) => path === '/auth/organization/resolve'
+    ? response({ displayName: 'Palm Living', loginSlug: 'palm-living', logoUrl: '/api/auth/tenant-logo/palm-living', primaryColor: '#E4E3DE' }, 201)
+    : undefined;
+  for (const identifier of ['Palm Living', 'palm-living', '00000000-0000-4000-8000-000000000001']) {
+    const organization = await client.resolveOrganization(identifier);
+    assert.equal(organization.displayName, 'Palm Living');
+    assert.equal(organization.loginSlug, 'palm-living');
+    assert.equal(organization.logoUrl, 'https://api.example.com/api/v1/public/tenant-branding/palm-living/logo');
+  }
+  assert.deepEqual(h.calls.map((call) => call.body?.identifier), ['Palm Living', 'palm-living', '00000000-0000-4000-8000-000000000001']);
+  assert.equal(client.tenantSlug, 'palm-living');
+});
+test('unknown or ambiguous organization does not advance to sign-in', async () => {
+  const h = harness(), client = h.create('');
+  h.override = () => response({ message: 'Organization was not found' }, 404);
+  await assert.rejects(client.resolveOrganization('missing'), /Organization was not found/);
+  assert.equal(client.tenantSlug, '');
 });
 test('native sign-in waits for an MFA challenge and persists no token before verification', async () => {
   const h = harness(), client = h.create();
@@ -252,6 +272,20 @@ test('workspace writes retry a 401 with the same action and preserve API validat
  assert.equal(client.getSnapshot().status,'signedIn');
  await assert.rejects(client.api('/workspaces/other-workspace/hrms/bootstrap'),/outside the active workspace/);
 });
+test('a command keeps its own idempotency key across the 401 retry, and it can never replace the token', async () => {
+  const h = harness(), client = h.create(); await client.signIn('member@example.com', 'password');
+  const seen: Array<{ key: string | null; auth: string | null }> = [];
+  h.override = (path, init) => {
+    if (!path.includes('/crm/intake-events')) return undefined;
+    const headers = new Headers(init.headers);
+    seen.push({ key: headers.get('idempotency-key'), auth: headers.get('authorization') });
+    return headers.get('authorization') === 'Bearer access-1' ? response({}, 401) : response({ leadId: 'lead-1' }, 201);
+  };
+  const result = await client.api('/workspaces/workspace-1/crm/intake-events', 'POST', { source: 'company' }, false, { headers: { 'idempotency-key': 'lead-app:1', authorization: 'Bearer forged' } });
+  assert.deepEqual(result, { leadId: 'lead-1' });
+  assert.deepEqual(seen.map((item) => item.key), ['lead-app:1', 'lead-app:1']);
+  assert.deepEqual(seen.map((item) => item.auth), ['Bearer access-1', 'Bearer access-2']);
+});
 test('a server-side module downgrade refreshes stale native capabilities and blocks later queued writes locally',async()=>{
  const h=harness(),client=h.create();
  let current={...profile,memberships:[{...profile.memberships[0],allowedModules:['workspace','crm','projects']}]} as typeof profile;
@@ -312,4 +346,123 @@ test('Site and Brief calls use the active workspace and preserve markup bytes an
  const before=h.calls.length;await assert.rejects(client.api('/workspaces/other-workspace/pre-projects/case-1/site'),/outside the active workspace/);assert.equal(h.calls.length,before);
  const bytes=new Uint8Array([137,80,78,71]);h.override=p=>p.endsWith('/assets/photo-1')?new Response(bytes):undefined;
  assert.deepEqual(new Uint8Array(await client.api<ArrayBuffer>('/workspaces/workspace-1/pre-projects/case-1/assets/photo-1','GET',undefined,true)),bytes);
+});
+
+test('email-first sign-in takes the workspace from the account and scopes the saved session to it', async () => {
+  const h = harness(), client = h.create('');
+  const result = await client.signIn('member@example.com', 'password');
+  assert.deepEqual(result, { kind: 'signedIn' });
+  assert.equal(h.calls.find((call) => call.path === '/auth/login')?.body?.tenantSlug, undefined);
+  assert.equal(client.tenantSlug, 'iglo-architects');
+  assert.equal(JSON.parse(h.saved!).scope, 'https://api.example.com/api/v1|iglo-architects');
+  assert.equal(client.getSnapshot().status, 'signedIn');
+});
+
+test('an email in several workspaces offers a choice without a session, then signs in to the chosen one', async () => {
+  const h = harness(), client = h.create('');
+  h.override = (path, init) => {
+    if (path !== '/auth/login') return undefined;
+    const body = JSON.parse(String(init.body));
+    if (body.tenantSlug) return undefined;
+    return response({ workspaceSelectionRequired: true, workspaces: [
+      { workspaceId: 'workspace-1', name: 'Iglo Architects', loginSlug: 'iglo-architects', logoUrl: '/api/auth/tenant-logo/iglo-architects?v=1', primaryColor: '#123456' },
+      { workspaceId: 'bad', name: 'Bad', loginSlug: 'Not A Slug', logoUrl: null, primaryColor: null },
+    ] }, 201);
+  };
+  const choice = await client.signIn('member@example.com', 'password');
+  assert.equal(choice?.kind, 'chooseWorkspace');
+  assert.deepEqual(choice?.kind === 'chooseWorkspace' ? choice.workspaces : [], [{
+    workspaceId: 'workspace-1', name: 'Iglo Architects', loginSlug: 'iglo-architects', primaryColor: '#123456',
+    logoUrl: 'https://api.example.com/api/v1/public/tenant-branding/iglo-architects/logo',
+  }]);
+  assert.equal(client.getSnapshot().status, 'signedOut');
+  assert.equal(h.saved, null);
+  assert.deepEqual(await client.signIn('member@example.com', 'password', 'iglo-architects'), { kind: 'signedIn' });
+  assert.equal(h.calls.filter((call) => call.path === '/auth/login').at(-1)?.body?.tenantSlug, 'iglo-architects');
+});
+
+test('the device limit lists the other sessions, and signing one out is sent with the retry', async () => {
+  const h = harness(), client = h.create('');
+  let limited = true;
+  h.override = (path) => (path === '/auth/login' && limited ? response({ code: 'DEVICE_LIMIT_REACHED', message: 'You are already signed in on 2 devices.', maxActiveDevices: 2,
+    sessions: [{ familyId: 'f-1', createdAt: '2026-09-01', lastActiveAt: '2026-09-20', expiresAt: '2026-10-20', userAgent: 'iPhone', ipAddress: null }] }, 409) : undefined);
+  await assert.rejects(client.signIn('member@example.com', 'password'), (error: unknown) => error instanceof DeviceLimitError && error.sessions[0].familyId === 'f-1' && error.maxActiveDevices === 2);
+  limited = false;
+  await client.signIn('member@example.com', 'password', null, { revokeFamilyId: 'f-1' });
+  assert.equal(h.calls.filter((call) => call.path === '/auth/login').at(-1)?.body?.revokeFamilyId, 'f-1');
+});
+
+test('password help needs only the email, and signing in with another email forgets the workspace', async () => {
+  const h = harness(), client = h.create('');
+  h.override = (path) => (path === '/auth/password/forgot' ? response({ accepted: true }, 201) : undefined);
+  await client.requestPasswordReset('Member@Example.com');
+  assert.deepEqual(h.calls.at(-1)?.body, { email: 'member@example.com' });
+  await client.signIn('member@example.com', 'password');
+  await client.signOut();
+  client.resetTenant();
+  assert.equal(client.tenantSlug, '');
+});
+
+test('attendance may read offices, sites and work contexts from the projects area with HRMS alone', () => {
+  assert.deepEqual(modulesForPath('projects/locations'), ['projects', 'hrms']);
+  assert.deepEqual(modulesForPath('projects'), ['projects', 'hrms']);
+  assert.deepEqual(modulesForPath('projects/abc/execution'), ['projects']);
+  assert.deepEqual(modulesForPath('project-core/projects'), ['projects']);
+  assert.deepEqual(modulesForPath('crm/notifications'), ['crm']);
+});
+
+const memoryCache = () => { let value: string | null = null; return { cache: { read: async () => value, write: async (next: string) => { value = next; }, clear: async () => { value = null; } } satisfies SessionStorage, get value() { return value; } }; };
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test('coming back to the app refreshes the profile with the live token and rotates only near expiry', async () => {
+  const h = harness(), client = h.create();
+  await client.signIn('member@example.com', 'password');
+  await client.restore();
+  assert.equal(h.calls.filter((call) => call.path === '/auth/refresh').length, 0);
+  assert.equal(h.calls.at(-1)?.path, '/me');
+  h.clock = 1000 + 900_000 - 60_000;
+  await client.restore();
+  assert.equal(h.calls.filter((call) => call.path === '/auth/refresh').length, 1);
+  assert.equal(client.getSnapshot().status, 'signedIn');
+});
+
+test('a start without a connection opens with the last verified profile and verifies it once back online', async () => {
+  const h = harness(), memory = memoryCache();
+  await h.create('iglo-architects', memory.cache).signIn('member@example.com', 'password');
+  await settle();
+  assert.match(memory.value ?? '', /workspace-1/);
+  assert.doesNotMatch(memory.value ?? '', /refresh-1|access-1/);
+  const client = h.create('iglo-architects', memory.cache);
+  h.override = (path) => path === '/auth/refresh' ? Promise.reject(new Error('offline')) : undefined;
+  await client.restore();
+  const offline = client.getSnapshot();
+  assert.equal(offline.status, 'signedIn');
+  assert.equal(offline.status === 'signedIn' && offline.offline, true);
+  // Requests fail as offline (queued captures wait) without signing the person out.
+  await assert.rejects(client.api('/workspaces/workspace-1/hrms/bootstrap'), /Unable to connect/);
+  assert.equal(client.getSnapshot().status, 'signedIn');
+  h.override = undefined;
+  await client.restore();
+  const online = client.getSnapshot();
+  assert.equal(online.status === 'signedIn' && !online.offline, true);
+  assert.equal(JSON.parse(h.saved!).refreshToken, 'refresh-2');
+});
+
+test('without a remembered profile, or after signing out, a start without a connection shows the retry screen', async () => {
+  const other = harness();
+  await other.create().signIn('member@example.com', 'password');
+  const uncached = other.create();
+  other.override = (path) => path === '/auth/refresh' ? Promise.reject(new Error('offline')) : undefined;
+  await uncached.restore();
+  assert.equal(uncached.getSnapshot().status, 'unavailable');
+
+  const h = harness(), memory = memoryCache();
+  const client = h.create('iglo-architects', memory.cache);
+  await client.signIn('member@example.com', 'password');
+  await settle();
+  await client.signOut();
+  assert.equal(memory.value, null);
+  h.override = (path) => path === '/auth/refresh' ? Promise.reject(new Error('offline')) : undefined;
+  await h.create('iglo-architects', memory.cache).restore();
+  assert.equal(h.saved, null);
 });
