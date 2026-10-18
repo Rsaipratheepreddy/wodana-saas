@@ -141,6 +141,20 @@ export class TransactionalEmailService {
     return this.config.get<string>("WEB_ORIGIN", "http://localhost:3000").split(",")[0].trim();
   }
 
+  /** Resolves the tenant's vanity subdomain (e.g. https://plm.wodana.ai) when the base domain is wodana.ai. */
+  private tenantOrigin(brand: { loginSlug?: string | null }) {
+    const base = this.origin();
+    if (!brand.loginSlug) return base;
+    try {
+      const url = new URL(base);
+      if (url.hostname.endsWith("wodana.ai")) {
+        url.hostname = `${brand.loginSlug}.wodana.ai`;
+        return url.toString().replace(/\/+$/, "");
+      }
+    } catch { /* keep base */ }
+    return base;
+  }
+
   /** Whether the platform mailer (team and client-portal emails) has its sending credentials. */
   configured() {
     return this.provider() !== null;
@@ -187,9 +201,12 @@ export class TransactionalEmailService {
 
   async sendPasswordReset(input: { email: string; resetToken: string; tenantSlug: string }): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ loginSlug: input.tenantSlug || undefined });
-    const url = new URL("/login", this.origin());
+    const origin = this.tenantOrigin(brand);
+    const url = new URL("/login", origin);
     url.searchParams.set("reset", input.resetToken);
-    url.searchParams.set("tenant", input.tenantSlug);
+    if (input.tenantSlug && !url.hostname.startsWith(`${input.tenantSlug}.`)) {
+      url.searchParams.set("tenant", input.tenantSlug);
+    }
     const { html, text } = renderBrandedEmail({
       brand,
       preheader: `Reset your ${brand.name} password.`,
@@ -209,8 +226,11 @@ export class TransactionalEmailService {
     loginSlug?: string;
   }): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ workspaceId: input.workspaceId, loginSlug: input.loginSlug });
-    const signIn = new URL("/login", this.origin());
-    if (brand.loginSlug) signIn.searchParams.set("tenant", brand.loginSlug);
+    const origin = this.tenantOrigin(brand);
+    const signIn = new URL("/login", origin);
+    if (brand.loginSlug && !signIn.hostname.startsWith(`${brand.loginSlug}.`)) {
+      signIn.searchParams.set("tenant", brand.loginSlug);
+    }
     const copy = input.kind === "password_changed"
       ? { subject: `Your ${brand.name} password was changed`, heading: "Your password was changed", body: "The password for your account was just changed and your other sessions were signed out." }
       : { subject: `Two-step verification was turned off for ${brand.name}`, heading: "Two-step verification was turned off", body: "Two-step verification was just turned off for your account. Signing in now needs only your password." };
@@ -229,8 +249,11 @@ export class TransactionalEmailService {
     invitation: WorkspaceInvitationMessage,
   ): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ workspaceId: invitation.workspaceId });
-    const activationUrl = new URL("/login", this.origin());
-    if (brand.loginSlug) activationUrl.searchParams.set("tenant", brand.loginSlug);
+    const origin = this.tenantOrigin(brand);
+    const activationUrl = new URL("/login", origin);
+    if (brand.loginSlug && !activationUrl.hostname.startsWith(`${brand.loginSlug}.`)) {
+      activationUrl.searchParams.set("tenant", brand.loginSlug);
+    }
     activationUrl.searchParams.set("invitation", invitation.invitationToken);
     const roles = invitation.roleCodes.map(readableRole).join(", ") || "Member";
     const expiresOn = new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone: "UTC" }).format(invitation.expiresAt);
@@ -251,8 +274,9 @@ export class TransactionalEmailService {
   /** A notification for a team member (e.g. a new enquiry assigned), in the tenant's brand. */
   async sendStaffNotice(input: { workspaceId: string; to: string; subject: string; body: string; deepLink?: string | null; actionLabel?: string }, options: EmailSendOptions = {}): Promise<EmailDeliveryResult> {
     const brand = await this.brand({ workspaceId: input.workspaceId });
+    const origin = this.tenantOrigin(brand);
     const paragraphs = input.body.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
-    const url = input.deepLink ? new URL(input.deepLink, this.origin()).toString() : null;
+    const url = input.deepLink ? new URL(input.deepLink, origin).toString() : null;
     const { html, text } = renderBrandedEmail({
       brand,
       preheader: input.subject,

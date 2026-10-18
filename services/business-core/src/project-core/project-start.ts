@@ -226,7 +226,7 @@ export async function autoStartProject(client: Db, access: WorkspaceAccessServic
       [workspaceId, managers])).rows;
     for (const person of people)
       await notifyUserInApp(client, { workspaceId, recipientUserId: person.userId, code: "project.ready_to_start", eventType: "project.ready_to_start",
-        variables: { title: facts.name, clientName: facts.clientName, actor: "", revision: "", note }, deepLink: "/workspace/projects",
+        variables: { title: facts.name, clientName: facts.clientName, actor: "System (Automated Trigger)", revision: "", note }, deepLink: "/workspace/projects",
         idempotencyKey: `project.ready_to_start:${caseId}:${quote.id}:${person.userId}` });
   };
   if (!lead) {
