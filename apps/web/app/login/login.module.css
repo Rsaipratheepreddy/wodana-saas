@@ -1,10 +1,10 @@
 .loginRoot {
   /* Workspace colors, with the reference's white canvas and soft top glow. */
-  --login-lilac: #d6b9f3;
-  --login-rose: #e4a2bc;
-  --login-peach: #f39b54;
-  --login-accent: var(--wd-workspace-brand-light-600, #694f7a);
-  --login-accent-soft: var(--wd-workspace-brand-light-50, #f0e8fa);
+  --login-lilac: #cfe0d5;
+  --login-rose: #e6e1d3;
+  --login-peach: #d9d3c7;
+  --login-accent: var(--wd-workspace-brand-light-600, #46705a);
+  --login-accent-soft: var(--wd-workspace-brand-light-50, #f2f6f3);
   --login-brand-gradient: linear-gradient(120deg, var(--login-lilac) 0%, var(--login-rose) 48%, var(--login-peach) 100%);
   --login-backdrop:
     linear-gradient(180deg, rgb(255 255 255 / 0), #ffffff 44%),
@@ -13,12 +13,12 @@
     radial-gradient(ellipse 64% 48% at 100% 0%, color-mix(in srgb, var(--login-peach) 55%, #ffffff) 36%, transparent 100%),
     #ffffff;
   --login-control-height: 2.75rem;
-  --login-ink: #2f232d;
+  --login-ink: #1f2622;
   --login-muted: color-mix(in srgb, var(--login-ink) 72%, #ffffff);
   --login-line: color-mix(in srgb, var(--login-ink) 16%, #ffffff);
   /* Login is a light surface, even after signing out of a dark workspace. */
   --wd-ink: var(--login-ink);
-  --wd-danger: #a83f46;
+  --wd-danger: #a3454a;
   --wd-color-focus: var(--login-accent);
   --wd-focus: 0 0 0 3px color-mix(in srgb, var(--login-accent) 20%, transparent);
   color-scheme: light;
@@ -27,32 +27,6 @@
   overflow: hidden;
   background: #ffffff;
   color: var(--login-ink);
-}
-
-/* The Iglo demo and Palm Living use the approved flat beige-and-black palette. */
-.loginRoot[data-tenant-slug="plm"],
-.loginRoot[data-tenant-slug="palm-living"],
-.loginRoot[data-tenant-slug="iglo"],
-.loginRoot[data-tenant-slug="iglo-architects"] {
-  --login-lilac: #e4e3de;
-  --login-rose: #f1f0ec;
-  --login-peach: #d7d5ce;
-  --login-accent: #000000;
-  --login-accent-soft: #e4e3de;
-  --wd-workspace-brand-light-50: #f7f6f2 !important;
-  --wd-workspace-brand-light-600: #000000 !important;
-  --wd-workspace-brand-light-700: #000000 !important;
-  --wd-workspace-brand-light-on: #ffffff !important;
-  --login-backdrop: #e4e3de;
-  background: #e4e3de;
-}
-
-.loginRoot[data-tenant-slug="plm"] .loginLayout,
-.loginRoot[data-tenant-slug="palm-living"] .loginLayout,
-.loginRoot[data-tenant-slug="iglo"] .loginLayout,
-.loginRoot[data-tenant-slug="iglo-architects"] .loginLayout {
-  background: #e4e3de;
-  background-image: none;
 }
 
 .loginLayout {

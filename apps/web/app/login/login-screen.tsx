@@ -33,14 +33,12 @@ type MfaStage = "credentials" | "challenge" | "enrollment" | "recovery";
 type MfaSetup = { secret: string; otpauthUri: string; setupExpiresInSeconds: number };
 
 export function LoginScreen({
-  demoCredentials,
   invitationToken,
   passwordResetToken,
   nextPath,
   initialStatus,
   tenant,
 }: {
-  demoCredentials?: { email: string; password: string };
   invitationToken?: string;
   passwordResetToken?: string;
   nextPath: string;
@@ -50,8 +48,8 @@ export function LoginScreen({
   const router = useRouter();
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const settingPassword = Boolean(invitationToken || passwordResetToken);
-  const [email, setEmail] = useState(demoCredentials?.email ?? "");
-  const [password, setPassword] = useState(settingPassword ? "" : demoCredentials?.password ?? "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState("");
@@ -644,8 +642,6 @@ export function LoginScreen({
             <p className={styles.supportCopy}>
               {mfaStage !== "credentials" ? null : settingPassword ? (
                 <button onClick={() => router.replace(`/login?tenant=${encodeURIComponent(tenant.loginSlug)}`)} type="button">Back to sign in</button>
-              ) : demoCredentials ? (
-                <>Demo tenant: <strong>{tenant.displayName}</strong></>
               ) : (
                 <>New to Wodana? Ask your administrator for an invitation.</>
               )}

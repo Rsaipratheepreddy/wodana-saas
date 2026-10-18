@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 test("uses one identity palette in the sidebar, organization, members and CRM", async ({ page }, testInfo) => {
-  await page.goto("/workspace");
+  await page.goto("/workspace/company");
   if (new URL(page.url()).pathname === "/login") {
     expect((await page.request.post("/api/auth/login", { data: { email: "admin@igloarchitects.com", password: "IgloDemo#2026", tenantSlug: "iglo-architects" } })).ok()).toBe(true);
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
   }
   const profile = page.getByRole("region", { name: "Company profile" });
   await expect(profile).toBeVisible();

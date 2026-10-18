@@ -11,6 +11,20 @@ import userEvent from "@testing-library/user-event";
 import type { ProjectState } from "@/lib/projects/execution";
 vi.mock("@/design-system", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/design-system")>()),
+  InspectorSheet: ({
+    isOpen,
+    title,
+    children,
+  }: {
+    isOpen: boolean;
+    title: string;
+    children: React.ReactNode;
+  }) =>
+    isOpen ? (
+      <div role="dialog" aria-label={title}>
+        {children}
+      </div>
+    ) : null,
   ControlledModalDialog: ({
     isOpen,
     title,
@@ -169,7 +183,8 @@ describe("project workspace", () => {
     );
     try {
       render(<ProjectWorkspace initial={initial} section="overview" />);
-      await user.click(screen.getByRole("button", { name: "Project settings" }));
+      await user.click(screen.getByRole("button", { name: "More" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Project settings" }));
       expect(screen.getByRole("dialog", { name: "Project controls" })).toBeInTheDocument();
       fireEvent.change(screen.getByLabelText(/Project \/ work-order reference/), { target: { value: "PLM-001" } });
       await user.click(screen.getByRole("button", { name: "Save project controls" }));
@@ -232,7 +247,7 @@ describe("project workspace", () => {
   it("opens schedules with baseline dates and milestones by default", () => {
     render(<ProjectWorkspace initial={initial} section="plan-teams" />);
     expect(screen.getByRole("radio", { name: "Schedule & milestones" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByRole("heading", { name: "Milestone timeline" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Milestones" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Project task timeline" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add milestone" })).toBeTruthy();
   });
@@ -298,13 +313,13 @@ describe("project workspace", () => {
     );
     const dialog = screen.getByRole("dialog", { name: "Install wardrobes" });
     expect(
-      within(dialog).getByRole("button", { name: "Subtasks" }),
+      within(dialog).getByRole("radio", { name: "Subtasks" }),
     ).toBeTruthy();
     expect(
-      within(dialog).getByRole("button", { name: "Comments (0)" }),
+      within(dialog).getByRole("radio", { name: "Comments (0)" }),
     ).toBeTruthy();
     expect(
-      within(dialog).getByRole("button", { name: "Edit task" }),
+      within(dialog).getByRole("button", { name: "More" }),
     ).toBeTruthy();
   });
   it("includes task scope, dependencies and readiness in the task form", () => {

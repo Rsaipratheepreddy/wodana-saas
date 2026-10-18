@@ -38,6 +38,7 @@ import {
   ApprovalRelease,
 } from "./commercial-workflows";
 import { PreExecutionFlow } from "./pre-execution-flow";
+import { CaseSpine } from "@/components/pre-project/case-spine";
 import s from "./commercial.module.css";
 import colors from "../crm/crm-workspace-colors.module.css";
 const QuotationStudio = dynamic(() => import('./quotation-studio').then(module => module.QuotationStudio), { loading: PreProjectSectionLoading });
@@ -232,6 +233,7 @@ export function CommercialPage({
           <h1 className={s.visuallyHidden}>Quotations</h1>
         )}
         {!(section === "quotations" && quotationId && draft) && (
+          <><CaseSpine compact record={record} search={search} section={section} />
           <header className={s.header}>
             <div>
               <h1>{labels[section]}</h1>
@@ -253,7 +255,7 @@ export function CommercialPage({
                 <RefreshCw size={16} />
               </IconButton>
             </div>
-          </header>
+          </header></>
         )}
         {showReadinessFlow ? <PreExecutionFlow state={state} section={section} root={root} /> : null}
         {error && (

@@ -2,26 +2,14 @@
   display: grid;
   gap: var(--wd-space-5);
 }
-.projectSummary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--wd-space-2) var(--wd-space-6);
-  padding-block-end: var(--wd-space-3);
-  border-block-end: 1px solid var(--wd-color-structural-divider);
-  color: var(--wd-color-text-secondary);
-  font-size: var(--wd-text-xs);
-}
-.projectSummary strong { color: var(--wd-color-text); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
-.projectPulse {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--wd-color-border);
-  border-radius: var(--wd-radius-md);
-  background: var(--wd-color-surface);
-}
+.pulse { display: grid; gap: var(--wd-phi-2); }
+.pulse dl small { display: block; overflow: hidden; margin-block-start: .1rem; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.pulse dl > div[data-tone="danger"] small { color: var(--wd-color-danger); }
+.followUp { display: grid; gap: var(--wd-space-2); margin-block-end: var(--wd-phi-3); padding: var(--wd-phi-2) var(--wd-phi-3); border-radius: var(--wd-radius-md); background: var(--wd-color-warning-subtle); }
+.followUp p { display: grid; gap: .1rem; margin: 0; }
+.followUp strong { color: var(--wd-color-text); font-size: var(--wd-text-sm); font-weight: var(--wd-weight-medium); }
+.followUp small { color: var(--wd-color-text-secondary); font-size: var(--wd-text-2xs); }
+.followUp .note { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); line-height: 1.5; }
 .eyebrow {
   display: flex;
   gap: 0.4rem;
@@ -331,11 +319,10 @@
   font-size: 0.73rem;
 }
 .scopePanel {
-  padding: 1.1rem 1rem;
-  border: 1px solid var(--wd-color-border);
-  background: var(--wd-color-surface);
+  padding: var(--wd-phi-2) var(--wd-phi-3);
+  background: var(--wd-color-surface-muted);
   border-radius: var(--wd-radius-md);
-  margin-bottom: 1rem;
+  margin-bottom: var(--wd-phi-3);
 }
 .scopePanel > strong {
   display: block;

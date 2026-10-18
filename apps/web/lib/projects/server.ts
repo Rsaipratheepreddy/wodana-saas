@@ -68,6 +68,10 @@ export async function projectRead<T>(path:string){
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'portfolio') {
     return {workspaceId:w,data:e2ePortfolio as T};
   }
+  if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path.startsWith('calendar?')) {
+    const query=new URLSearchParams(path.slice('calendar?'.length));
+    return {workspaceId:w,data:{range:{from:query.get('from')??'',to:query.get('to')??'',timezone:'Asia/Dubai'},departments:[],events:[],items:[],overlapCount:0,conflictCount:0} as T};
+  }
   if(process.env.NODE_ENV !== 'production' && process.env.E2E_AUTH_BYPASS === 'true' && path === 'demo/execution') {
     return {workspaceId:w,data:e2eProject(w) as T};
   }

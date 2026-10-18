@@ -88,15 +88,6 @@ export function DailyProgress({
   return (
     <div className={d.diary}>
       <div className={d.diarySummary}>
-        <div>
-          <span className={v.eyebrow}>
-            <Camera size={14} /> FIELD DIARY
-          </span>
-          <h2>Every shift. Every detail.</h2>
-          <p>
-            Site photos, completed work and the issues your team needs to see.
-          </p>
-        </div>
         <div className={d.diaryStats}>
           <span>
             <Camera size={16} />

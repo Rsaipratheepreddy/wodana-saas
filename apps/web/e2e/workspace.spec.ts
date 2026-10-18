@@ -8,7 +8,7 @@ test.describe("workspace shell", () => {
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Route inventory is viewport independent");
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
     await page.context().addCookies([{ name: "wodana_access", value: "local-e2e-fixture", url: new URL(page.url()).origin }]);
     const directlyAddressableScreens = workspaceScreens.filter((screen) => !screen.href.startsWith("/workspace/projects/") || screen.href === "/workspace/projects");
     for (const screen of directlyAddressableScreens) {
@@ -30,7 +30,7 @@ test.describe("workspace shell", () => {
   });
 
   test("moves between Workspace and CRM without losing navigation context", async ({ page }, testInfo) => {
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();
     }
@@ -109,7 +109,7 @@ test.describe("workspace shell", () => {
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name === "mobile", "Desktop popover placement");
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
     const sidebar = page.getByRole("complementary", { name: "Workspace navigation" });
     const sidebarBox = await sidebar.boundingBox();
     expect(sidebarBox).not.toBeNull();
@@ -147,7 +147,7 @@ test.describe("workspace shell", () => {
   });
 
   test("has no automatic accessibility violations", async ({ page }, testInfo) => {
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
     if (testInfo.project.name === "mobile") {
       await page.getByRole("button", { name: "Open navigation" }).click();
     }
@@ -187,7 +187,7 @@ test.describe("workspace shell", () => {
         status: 200,
       });
     });
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
     await page.getByRole("button", { name: "Edit profile" }).click();
     const dialog = page.getByRole("dialog", { name: "Edit profile" });
     await expect(dialog).toBeVisible();
@@ -208,7 +208,7 @@ test.describe("workspace shell", () => {
   });
 
   test("matches the approved company profile workspace", async ({ page }) => {
-    await page.goto("/workspace");
+    await page.goto("/workspace/company");
     await page.addStyleTag({ content: "nextjs-portal { display: none !important; }" });
     await expect(page).toHaveScreenshot("workspace-shell.png", {
       animations: "disabled",

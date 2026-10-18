@@ -20,11 +20,11 @@ test("project table opens the backend-guided workspace and its sections", async 
   const mobile = testInfo.project.name === "mobile";
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
   for (const [name, section] of [
-    ["Scope & Design", "documents"], ["BOQ", "boq"], ["Material planning", "material-planning"],
-    ["Procurement", "procurement"], ["Schedules", "plan-teams"], ["Production", "production"],
-    ["Onsite execution", "site-work"], ["Daily progress", "daily-progress"],
-    ["Snagging & warranty", "snagging"], ["Handover", "handover"],
-    ["Budget", "commercial"], ["Dashboard", "overview"],
+    ["Drawings & documents", "documents"], ["Scope", "boq"], ["Materials", "material-planning"],
+    ["Purchasing", "procurement"], ["Plan & schedule", "plan-teams"], ["Factory", "production"],
+    ["Site", "site-work"], ["Daily progress", "daily-progress"],
+    ["Snags & warranty", "snagging"], ["Handover", "handover"],
+    ["Budget & payments", "commercial"], ["Overview", "overview"],
   ] as const) {
     if (mobile) await page.getByRole("button", { name: "Open navigation" }).click();
     await navigation.getByRole("link", { name, exact: true }).click();

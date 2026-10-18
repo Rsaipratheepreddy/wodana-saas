@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Choose a valid organization." }, { status: 400 });
   }
   const tenantSlug = resolvedHost.kind === "tenant" ? resolvedHost.branding.loginSlug
-    : requestedSlug || process.env.LOGIN_TENANT_SLUG || "iglo-architects";
+    : requestedSlug || process.env.LOGIN_TENANT_SLUG || "";
   if (resolvedHost.kind === "tenant" && requestedSlug && requestedSlug !== tenantSlug) {
     return NextResponse.json({ message: "This organization does not match the login address." }, { status: 400 });
   }

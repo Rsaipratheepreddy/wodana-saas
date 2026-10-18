@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within, act } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactNode } from "react";
@@ -10,7 +10,7 @@ import type {
 } from "@/lib/pre-project/content";
 import { DesignsPage } from "./designs-page";
 import { DesignFileDetails } from "./design-file-details";
-import { inDesignTab, mergeDesigns } from "@/lib/pre-project/design-workflow";
+import { mergeDesigns } from "@/lib/pre-project/design-workflow";
 vi.mock("next/navigation", async () => {
   const React = await import("react");
   return {
@@ -110,14 +110,6 @@ const design: CaseDesign = {
     },
   ],
 };
-function setup(d = design, o = options) {
-  render(
-    <DesignSystemProvider>
-      <DesignsPage initialData={data} initialDesigns={[d]} options={o} />
-    </DesignSystemProvider>,
-  );
-  return userEvent.setup();
-}
 function setupReview(d: CaseDesign) {
   render(
     <DesignSystemProvider>
@@ -134,102 +126,7 @@ function setupReview(d: CaseDesign) {
   );
   return userEvent.setup();
 }
-describe("design folder workflow", () => {
-  it("reloads rooms and items before creating, then stays on the folder list", async () => {
-    const fresh = {
-      ...data,
-      rooms: [{ id: "room", name: "Meeting room", version: 1 }],
-    };
-    const fetcher = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => fresh })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ ...options, items: [design] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          id: "new-folder",
-          name: "Meeting room",
-          roomId: "room",
-          scopeEntryId: null,
-          description: "",
-          version: 1,
-        }),
-      });
-    vi.stubGlobal("fetch", fetcher);
-    const user = setup();
-    await user.click(screen.getByRole("button", { name: "New folder" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Choose a room Room" }),
-    );
-    await user.click(screen.getByRole("option", { name: "Meeting room" }));
-    expect(
-      screen.queryByRole("textbox", { name: "Folder name" }),
-    ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Create folder" }));
-    await screen.findByRole("button", { name: "Open folder Meeting room" });
-    expect(window.location.search).not.toContain("folder=");
-    expect(
-      screen.queryByRole("button", { name: "Add files" }),
-    ).not.toBeInTheDocument();
-    expect(JSON.parse(fetcher.mock.calls[2][1].body)).toMatchObject({
-      name: "Meeting room",
-      roomId: "room",
-      scopeEntryId: null,
-    });
-  });
-  it("shows a load failure with a working retry instead of an empty folder form", async () => {
-    const fetcher = vi.fn().mockRejectedValue(new Error("Connection lost"));
-    vi.stubGlobal("fetch", fetcher);
-    const user = setup();
-    await user.click(screen.getByRole("button", { name: "New folder" }));
-    await screen.findByRole("alert");
-    expect(
-      screen.queryByRole("region", { name: "New design folder" }),
-    ).not.toBeInTheDocument();
-    fetcher.mockImplementation(async (url: string) => ({
-      ok: true,
-      json: async () =>
-        url.includes("/brief") ? data : { ...options, items: [design] },
-    }));
-    await user.click(screen.getByRole("button", { name: "Reload designs" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
-    );
-    expect(
-      screen.getByRole("button", { name: "Open folder Reception" }),
-    ).toBeInTheDocument();
-  });
-  it("shows only the folder name and file count without duplicate context labels", () => {
-    setup(design, {
-      ...options,
-      folders: [
-        {
-          id: "folder",
-          name: "Reception + Custom reception desk",
-          description: "",
-          roomId: "room",
-          roomName: "Reception",
-          scopeEntryId: "item",
-          scopeTitle: "Custom reception desk",
-          version: 1,
-        },
-      ],
-    });
-    expect(
-      screen.getByRole("button", {
-        name: "Open folder Reception + Custom reception desk",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Item · Custom reception desk"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Add files" }),
-    ).not.toBeInTheDocument();
-  });
+describe("design review details", () => {
   it("shows comments without legacy thread blockers", async () => {
     setupReview({
       ...design,
@@ -262,37 +159,6 @@ describe("design folder workflow", () => {
     expect(
       screen.getByRole("region", { name: "Comments" }),
     ).toBeInTheDocument();
-  });
-  it("opens folders first, then a simple file, design type and note screen", async () => {
-    const user = setup();
-    expect(
-      screen.queryByRole("button", { name: "Open Layout" }),
-    ).not.toBeInTheDocument();
-    await user.click(
-      screen.getByRole("button", { name: "Open folder Reception" }),
-    );
-    expect(
-      screen.getByRole("button", { name: "Add files" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "New folder" }),
-    ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open Layout" }));
-    expect(
-      screen.getByRole("region", { name: "Design file" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Edit details" }));
-    expect(screen.getByRole("textbox", { name: "Note" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: /2D layout \/ space plan Design type/,
-      }),
-    ).toBeInTheDocument();
-    expect(window.location.search).toContain("file=design");
-    expect(
-      screen.queryByRole("list", { name: "Review progress" }),
-    ).not.toBeInTheDocument();
   });
   it("shows the revision author, source context and included client-review usage", () => {
     setupReview({
@@ -351,213 +217,60 @@ describe("design folder workflow", () => {
     expect(screen.getByText("Raised ceiling")).toBeInTheDocument();
     expect(screen.getByText("Original ceiling")).toBeInTheDocument();
   });
-  it("keeps existing unfiled documents discoverable", async () => {
-    const user = setup({ ...design, folderId: null });
-    await user.click(
-      screen.getByRole("button", { name: "Open folder Unfiled" }),
-    );
-    expect(
-      screen.getByRole("button", { name: "Open Layout" }),
-    ).toBeInTheDocument();
-  });
-  it("hides internal approval from a member who is not assigned", async () => {
-    setupReview({
-      ...design,
-      versions: [
-        {
-          ...design.versions[0],
-          status: "internal_review",
-          reviewerId: "someone-else",
-        },
-      ],
-    });
-    expect(
-      screen.queryByRole("button", { name: "Approve" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Thread" }),
-    ).not.toBeInTheDocument();
-  });
-});
-describe("stable design library and review queues", () => {
-  it.each([
-    "draft",
-    "internal_review",
-    "internal_approved",
-    "client_review",
-    "approved",
-    "changes_requested",
-  ])("keeps %s files in their folder", async (status) => {
-    const user = setup({
-      ...design,
-      versions: [{ ...design.versions[0], status }],
-    });
-    expect(screen.getByRole("tab", { name: /^Designs/ })).toHaveTextContent(
-      "1",
-    );
-    expect(
-      screen.getByRole("button", { name: "Open folder Reception" }),
-    ).toHaveTextContent("1 file");
-    await user.click(
-      screen.getByRole("button", { name: "Open folder Reception" }),
-    );
-    expect(
-      screen.getByRole("button", { name: "Open Layout" }),
-    ).toBeInTheDocument();
-  });
   it("ignores a stale background listing after a local save", () => {
     const saved = { ...design, version: 4, description: "Newest note" };
     expect(mergeDesigns([saved], [design])[0]).toEqual(saved);
-    expect(inDesignTab(saved, "designs")).toBe(true);
   });
-  it("finds an empty folder and files across folders from library search", async () => {
-    const user = setup(design, {
-      ...options,
-      folders: [
-        ...options.folders,
-        {
-          id: "empty",
-          name: "Kitchen",
-          description: "",
-          roomId: null,
-          scopeEntryId: null,
-          version: 1,
-        },
-      ],
-    });
-    await user.type(screen.getByRole("searchbox"), "Kitchen");
-    expect(
-      screen.getByRole("button", { name: "Open folder Kitchen" }),
-    ).toBeInTheDocument();
-    await user.clear(screen.getByRole("searchbox"));
-    await user.type(screen.getByRole("searchbox"), "Layout");
-    expect(
-      screen.getByRole("button", { name: "Open Layout" }),
-    ).toBeInTheDocument();
+});
+
+const scopedData = {
+  ...data,
+  rooms: [{ id: "room-1", name: "Master bedroom", version: 1 }, { id: "room-2", name: "Kitchen", version: 1 }],
+  entries: [
+    { id: "scope-1", version: 1, kind: "requirement", title: "Built-in wardrobe", roomId: "room-1", scopeStatus: "included", archivedAt: null, updatedAt: "2026-09-08T00:00:00Z" },
+    { id: "scope-2", version: 1, kind: "requirement", title: "Kitchen cabinets", roomId: "room-2", scopeStatus: "included", archivedAt: null, updatedAt: "2026-09-08T00:00:00Z" },
+    { id: "scope-3", version: 1, kind: "requirement", title: "Excluded item", roomId: "room-2", scopeStatus: "excluded", archivedAt: null, updatedAt: "2026-09-08T00:00:00Z" },
+  ],
+} as unknown as CaseContent;
+const wardrobeDesign: CaseDesign = { ...design, id: "design-wardrobe", title: "Wardrobe elevation", roomId: "room-1", scopeEntryId: "scope-1", versions: [{ ...design.versions[0], status: "internal_review", reviewerId: "reviewer" }] };
+
+describe("design board", () => {
+  it("lists every included scope item with its design stage and next step", () => {
+    render(<DesignSystemProvider><DesignsPage initialData={scopedData} initialDesigns={[wardrobeDesign]} options={options} /></DesignSystemProvider>);
+    const table = screen.getByRole("table", { name: "Design board" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Room", "Scope item", "Design", "Stage", "With", "Folder", "Updated", "Next step"]);
+    expect(within(table).getByText("Built-in wardrobe")).toBeInTheDocument();
+    expect(within(table).getByText("Needs internal review")).toBeInTheDocument();
+    expect(within(table).getByText("Reviewer")).toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: "Review now: Built-in wardrobe" })).toBeInTheDocument();
+    expect(within(table).getByText("Needs design")).toBeInTheDocument();
+    expect(within(table).getByRole("button", { name: "Upload design: Kitchen cabinets" })).toBeInTheDocument();
+    expect(within(table).queryByText("Excluded item")).not.toBeInTheDocument();
+    expect(screen.getByText("0 of 2 designs approved")).toBeVisible();
   });
-  it("keeps the reviewed file open and makes the next action available", async () => {
-    let saved = {
-      ...design,
-      versions: [
-        {
-          ...design.versions[0],
-          status: "internal_review",
-          reviewerId: "reviewer",
-        },
-      ],
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init?: RequestInit) => {
-        const input = JSON.parse(String(init?.body ?? "{}"));
-        saved = {
-          ...saved,
-          version: saved.version + 1,
-          versions: [{ ...saved.versions[0], status: input.action }],
-        };
-        return { ok: true, json: async () => saved };
-      }),
-    );
-    const user = setup(saved);
-    await user.click(screen.getByRole("tab", { name: /Internal approval/ }));
-    await user.click(screen.getByRole("button", { name: "Open Layout" }));
-    await user.click(screen.getByRole("button", { name: "Approve" }));
-    const dialog = screen.getByRole("region", { name: "Approve" });
-    await user.click(within(dialog).getByRole("button", { name: "Approve" }));
-    await screen.findByRole("button", { name: "Send to client" });
-    expect(window.location.search).toContain("file=design");
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Back to files" }));
-    expect(
-      screen.getByRole("button", { name: "Open Layout" }),
-    ).toHaveTextContent("Ready to send to client");
-  });
-  it("applies portal approval without closing the open file", async () => {
-    const waiting = {
-      ...design,
-      versions: [{ ...design.versions[0], status: "client_review" }],
-    };
-    const approved = {
-      ...waiting,
-      version: 2,
-      versions: [{ ...waiting.versions[0], status: "approved" }],
-    };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        json: async () => ({ ...options, items: [approved] }),
-      })),
-    );
-    const user = setup(waiting);
-    await user.click(screen.getByRole("tab", { name: /Client approval/ }));
-    await user.click(screen.getByRole("button", { name: "Open Layout" }));
-    act(() => window.dispatchEvent(new Event("focus")));
-    await screen.findByText(
-      "Approved by the client. This revision and its decision are kept in history.",
-    );
-    expect(window.location.search).toContain("file=design");
-    await user.click(screen.getByRole("button", { name: "Back to files" }));
-    expect(
-      screen.queryByRole("button", { name: "Open Layout" }),
-    ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: /^Approved/ }));
-    expect(
-      screen.getByRole("button", { name: "Open Layout" }),
-    ).toBeInTheDocument();
-  });
-  it("preserves unsent comments on failed requests and guards the back action", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline")));
-    const close = vi.fn();
-    render(
-      <DesignSystemProvider>
-        <DesignFileDetails
-          data={data}
-          design={design}
-          folderName="Reception"
-          options={options}
-          onClose={close}
-          onUpdate={() => {}}
-          onReviewed={() => {}}
-        />
-      </DesignSystemProvider>,
-    );
+  it("uploads a design for a scope item without one, linked to its room and item", async () => {
+    render(<DesignSystemProvider><DesignsPage initialData={scopedData} initialDesigns={[wardrobeDesign]} options={options} /></DesignSystemProvider>);
     const user = userEvent.setup();
-    await user.type(
-      screen.getByRole("textbox", { name: "Add a comment" }),
-      "Please check clearance",
-    );
-    await user.click(screen.getByRole("button", { name: "Post comment" }));
-    await screen.findByRole("alert");
-    expect(screen.getByRole("textbox", { name: "Add a comment" })).toHaveValue(
-      "Please check clearance",
-    );
-    await user.click(screen.getByRole("button", { name: "Back to files" }));
-    expect(screen.getByRole("dialog", { name: "Discard your unsent comment?" })).toBeInTheDocument();
-    expect(close).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Upload design: Kitchen cabinets" }));
+    expect(await screen.findByRole("region", { name: "Add design files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Save/ })).toBeDisabled();
   });
-  it("shows a setup action instead of sending to an unavailable portal", async () => {
-    const user = setup(
-      {
-        ...design,
-        versions: [{ ...design.versions[0], status: "internal_approved" }],
-      },
-      {
-        ...options,
-        portal: { enabled: false, slug: null, hasApprover: false },
-      },
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Open folder Reception" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Open Layout" }));
-    await user.click(screen.getByRole("button", { name: "Send to client" }));
-    const dialog = screen.getByRole("region", { name: "Send to client" });
-    expect(
-      within(dialog).getByRole("button", { name: "Send to client" }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("link", { name: "Set up client access" }),
-    ).toHaveAttribute("href", "/workspace/pre-projects/cases/c/client-portal");
+  it("opens the design details from a row and returns to the board", async () => {
+    render(<DesignSystemProvider><DesignsPage initialData={scopedData} initialDesigns={[wardrobeDesign]} options={options} /></DesignSystemProvider>);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Review now: Built-in wardrobe" }));
+    expect(window.location.search).toContain("file=design-wardrobe");
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to files" }));
+    await waitFor(() => expect(screen.getByRole("table", { name: "Design board" })).toBeInTheDocument());
+  });
+  it("keeps viewers read-only", () => {
+    render(<DesignSystemProvider><DesignsPage initialData={{ ...scopedData, canEdit: false } as CaseContent} initialDesigns={[]} options={options} /></DesignSystemProvider>);
+    expect(screen.queryByRole("button", { name: "Upload design" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("No design yet")).toHaveLength(2);
+  });
+  it("ignores a stale background listing after a local save", () => {
+    const saved = { ...design, version: 2 };
+    expect(mergeDesigns([saved], [design])[0]).toEqual(saved);
   });
 });

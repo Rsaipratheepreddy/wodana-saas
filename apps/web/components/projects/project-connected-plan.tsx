@@ -44,7 +44,7 @@ export function ProjectConnectedPlan({ state, onEdit }: {
     } } },
   ];
   return <section className={s.scheduleWorkspace} aria-labelledby="connected-plan-heading">
-    <div className={s.timelineHeading}><div><span className={s.timelineEyebrow}>CONNECTED DELIVERY PLAN</span><h2 id="connected-plan-heading">Packages, promises and capacity</h2><p>{plan.promise.statement || "Set the client promise in project controls."}{plan.promise.targetCompletion ? ` Target ${plan.promise.targetCompletion}.` : ""}</p></div></div>
+    <div className={s.timelineHeading}><div><h2 id="connected-plan-heading">Delivery packages</h2><p>{plan.promise.statement || "Set the client promise in project controls."}{plan.promise.targetCompletion ? ` Target ${plan.promise.targetCompletion}.` : ""}</p></div></div>
     <DataGrid appearance="flush" ariaLabel="Connected project packages" columns={columns} data={plan.packages} emptyDescription="Released scope creates delivery packages automatically." emptyTitle="No released packages" getRowId={(item) => item.id} rowNumbers={false} selectable={false} showToolbar={false} />
   </section>;
 }

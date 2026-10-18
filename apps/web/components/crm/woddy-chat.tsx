@@ -10,7 +10,7 @@ import { submitChatOnEnter } from "./chat-composer";
 import workspaceColors from "./crm-workspace-colors.module.css";
 import styles from "./woddy-chat.module.css";
 
-type RecordContext = { type: "lead" | "opportunity" | "customer" | "conversation" | "commercial"; id: string; label: string };
+type RecordContext = { type: "lead" | "opportunity" | "customer" | "conversation" | "commercial" | "pre-project" | "project"; id: string; label: string };
 type Message = { role: "user" | "assistant"; text: string };
 const WoddyContext = createContext<{ open: () => void; register: (record: RecordContext) => () => void } | null>(null);
 

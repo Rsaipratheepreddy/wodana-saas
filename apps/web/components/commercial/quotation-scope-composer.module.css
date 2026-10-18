@@ -9,11 +9,11 @@
 .complete { display: inline-flex; align-items: center; gap: .35rem; color: var(--wd-color-success) !important; font-size: .75rem; font-weight: 600; }
 .compact { display:flex; align-items:center; justify-content:center; gap:.35rem; min-inline-size:0; color:var(--wd-color-text-secondary); font-size:.72rem; white-space:nowrap; }
 .compact :global(.wd-button) { min-block-size:1.75rem; padding:.25rem .45rem; }
-.compactError { color:var(--wd-color-status-danger); font-weight:600; }
+.compactError { color:var(--wd-color-danger); font-weight:600; }
 .compactNotice { max-inline-size:14rem; overflow:hidden; text-overflow:ellipsis; }
 .muted { margin: 0 0 .75rem; line-height: 1.5; }
 .muted a { color: var(--wd-color-action-primary); text-underline-offset: .18rem; }
-.error { color: var(--wd-color-status-danger); }
+.error { color: var(--wd-color-danger); }
 .notice { color: var(--wd-color-text); }
 .summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; background:var(--wd-color-structural-divider); border-block:1px solid var(--wd-color-structural-divider); }
 .summary>div { display:grid; gap:.2rem; padding:.75rem; background:var(--wd-color-surface); }

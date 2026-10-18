@@ -97,33 +97,49 @@ function ProjectInitiationContent({ state, busy, run }: {
       setRevisionReason("");
     }
   }
+  const summary = baseline ? <dl className={styles.summary}>
+    <div><dt>Project owner</dt><dd>{person(baseline.projectOwnerId)}</dd></div>
+    <div><dt>Delivery team</dt><dd>{baseline.teamMemberIds.map(person).join(", ") || "—"}</dd></div>
+    <div><dt>Site</dt><dd>{baseline.siteReadiness === "not_required" ? "Not required" : baseline.siteReadiness === "to_confirm" ? "To confirm" : baseline.siteIds.map(site).join(", ")}</dd></div>
+    <div><dt>Start → target</dt><dd>{baseline.operationalStart} → {baseline.targetCompletion}</dd></div>
+    <div><dt>Client promise</dt><dd>{baseline.clientPromise}</dd></div>
+    <div><dt>Commercial</dt><dd>{initiation.commercial.currency} {initiation.commercial.value.toLocaleString()} · {initiation.commercial.agreementReference}</dd></div>
+  </dl> : null;
+  const reviseButton = state.canManage && !editing && (!baseline || canRevise) ? (
+    <button className={baseline ? styles.secondary : styles.primary} type="button" onClick={() => {
+      setDraft(initialDraft(state));
+      setRoles((state.data.roleAssignments ?? []).filter((entry) => entry.role !== "project_manager"));
+      setEditing(true);
+    }}>{baseline ? "Revise setup" : "Set up project"}</button>
+  ) : null;
+  if (baseline && !editing) {
+    return (
+      <details className={styles.confirmed} aria-label="Project setup">
+        <summary>
+          <span><strong>Project setup</strong><small>Confirmed by {initiation.confirmedByName} · {initiation.confirmedAt.slice(0, 10)}</small></span>
+          <span className={styles.summaryHint}>Details</span>
+        </summary>
+        <div className={styles.confirmedBody}>
+          {summary}
+          <div className={styles.actions}>{reviseButton}{!canRevise ? <p className={styles.locked}>Detailed planning has started. Change the delivery plan through project change control.</p> : null}</div>
+        </div>
+      </details>
+    );
+  }
   return (
-    <section className={styles.panel} aria-label="Project setup">
+    <section className={styles.panel} aria-label="Project setup" data-open={!baseline || undefined}>
       <div className={styles.header}>
         <div>
           <h2>Project setup</h2>
-          <p>{baseline ? `Confirmed by ${initiation.confirmedByName} · ${initiation.confirmedAt.slice(0, 10)}` : "Confirm the owner, delivery plan and client promise before detailed planning."}</p>
+          <p>{baseline ? `Revising the setup confirmed by ${initiation.confirmedByName} · ${initiation.confirmedAt.slice(0, 10)}` : "Confirm the owner, delivery plan and client promise before detailed planning."}</p>
         </div>
-        {state.canManage && !editing && (!baseline || canRevise) && (
-          <button className={styles.secondary} type="button" onClick={() => {
-            setDraft(initialDraft(state));
-            setRoles((state.data.roleAssignments ?? []).filter((entry) => entry.role !== "project_manager"));
-            setEditing(true);
-          }}>{baseline ? "Revise setup" : "Set up project"}</button>
-        )}
+        {reviseButton}
       </div>
-      <div className={styles.commercial}>
+      {!baseline && <div className={styles.commercial}>
         <span>Deal File <strong>{initiation.commercial.dealFileReference}</strong></span>
         <span>Agreement <strong>{initiation.commercial.agreementReference}</strong></span>
         <span>Accepted value <strong>{initiation.commercial.currency} {initiation.commercial.value.toLocaleString()}</strong></span>
-      </div>
-      {baseline && !editing && <dl className={styles.summary}>
-        <div><dt>Project owner</dt><dd>{person(baseline.projectOwnerId)}</dd></div>
-        <div><dt>Delivery team</dt><dd>{baseline.teamMemberIds.map(person).join(", ")}</dd></div>
-        <div><dt>Site</dt><dd>{baseline.siteReadiness === "not_required" ? "Not required" : baseline.siteReadiness === "to_confirm" ? "To confirm" : baseline.siteIds.map(site).join(", ")}</dd></div>
-        <div><dt>Start / target</dt><dd>{baseline.operationalStart} → {baseline.targetCompletion}</dd></div>
-        <div><dt>Client promise</dt><dd>{baseline.clientPromise}</dd></div>
-      </dl>}
+      </div>}
       {editing && <form className={styles.form} onSubmit={(event) => void submit(event)}>
         <div className={styles.grid}>
           <label>Project owner
@@ -181,7 +197,6 @@ function ProjectInitiationContent({ state, busy, run }: {
           <button type="submit" className={styles.primary} disabled={busy || draft.siteReadiness === "confirmed" && !draft.siteIds.length}>{baseline ? "Save revised setup" : "Confirm project setup"}</button>
         </div>
       </form>}
-      {baseline && !canRevise && <p className={styles.locked}>Detailed planning has started. Change the delivery plan through project change control.</p>}
     </section>
   );
 }

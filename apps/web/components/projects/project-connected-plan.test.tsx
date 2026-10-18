@@ -82,7 +82,7 @@ describe("connected project plan", () => {
     const onEdit = vi.fn();
     render(<ProjectConnectedPlan state={state()} onEdit={onEdit} />);
 
-    expect(screen.getByRole("heading", { name: "Packages, promises and capacity" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Delivery packages" })).toBeVisible();
     expect(screen.getByText("Joinery partner · 2026-09-19 · 14d")).toBeVisible();
     expect(screen.getByText("Main factory · Confirmed")).toBeVisible();
     expect(screen.getByText("Confirm factory slot")).toBeVisible();

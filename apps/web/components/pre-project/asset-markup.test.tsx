@@ -29,6 +29,6 @@ describe('web photo drawing', () => {
     fireEvent.pointerUp(canvas, { pointerId: 1 });
     fireEvent.click(screen.getByRole('button', { name: 'Save marked copy' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(saved));
-    expect(vi.mocked(caseRequest).mock.calls[1]).toMatchObject(['workspace', 'case', 'assets/original/markup', 'POST', { strokes: [{ color: '#4a46f3', width: 0.004, points: [{ x: 0.2, y: 0.3 }, { x: 0.8, y: 0.9 }] }] }]);
+    expect(vi.mocked(caseRequest).mock.calls[1]).toMatchObject(['workspace', 'case', 'assets/original/markup', 'POST', { strokes: [{ color: '#46705a', width: 0.004, points: [{ x: 0.2, y: 0.3 }, { x: 0.8, y: 0.9 }] }] }]);
   });
 });

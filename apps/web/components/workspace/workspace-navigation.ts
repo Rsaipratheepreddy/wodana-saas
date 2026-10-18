@@ -75,7 +75,6 @@ export type WorkspaceModuleDefinition = {
 };
 
 export type WorkspaceIdentity = {
-  brandPalette?: "beige-black";
   description: string;
   id: string;
   imageUrl?: string;
@@ -94,18 +93,18 @@ export type WorkspaceUser = {
 
 export const workspaceModules: WorkspaceModuleDefinition[] = [
   {
-    description: "Company, team and workspace settings",
-    href: "/workspace",
-    icon: "workspace",
+    description: "Company, team, connections and account",
+    href: "/workspace/company",
+    icon: "settings",
     id: "workspace",
-    label: "Workspace",
+    label: "Settings",
     navigation: [
       {
         id: "workspace-company",
         label: "Company",
         items: [
           {
-            href: "/workspace",
+            href: "/workspace/company",
             icon: "company",
             id: "company",
             label: "Company profile",
@@ -315,7 +314,7 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
             href: "/workspace/pre-projects",
             icon: "preProjects",
             id: "pre-projects",
-            label: "Pre-execution cases",
+            label: "Cases",
             description: "CRM-linked opportunities, assignments, stages, and next actions.",
           },
           {href:"/workspace/pre-projects/master-data",icon:"materialPlan",id:"pre-project-catalogs",label:"Master Data",description:"Rooms, items, variants, materials and prices."},
@@ -354,40 +353,34 @@ export const workspaceModules: WorkspaceModuleDefinition[] = [
     label: "Projects",
     navigation: [
       {
-        id: "projects-control",
-        label: "Project control",
-        items: [
-          { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "Portfolio overview", description: "Live delivery progress, milestones, blockers and decisions." },
-          { href: "/workspace/projects/calendar", icon: "calendar", id: "projects-calendar", label: "Portfolio calendar", description: "Projects, resources, site visits and confirmed work in one schedule." },
-          { href: "/workspace/projects/commercial", icon: "commercial", id: "project-commercial", label: "Budget", description: "Approved budget, forecast, costs and payments." },
-        ],
-      },
-      {
         id: "projects-plan",
         label: "Plan",
         items: [
-          { href: "/workspace/projects/documents", icon: "designs", id: "project-documents", label: "Scope & Design", description: "Drawings, revisions and approved project documents." },
-          { href: "/workspace/projects/boq", icon: "boq", id: "project-boq", label: "BOQ", description: "Released scope items, quoted sizes and delivery coverage." },
-          { href: "/workspace/projects/material-planning", icon: "materialPlan", id: "material-planning", label: "Material planning", description: "Requirements, stock, reservations and warehouse transfers." },
-          { href: "/workspace/projects/procurement", icon: "procurement", id: "procurement", label: "Procurement", description: "Supplier enquiries, purchase orders, receipts and returns." },
-          { href: "/workspace/projects/plan-teams", icon: "calendar", id: "plan-teams", label: "Schedules", description: "Task dates, milestones, dependencies, calendars and bookings." },
+          { href: "/workspace/projects", icon: "home", id: "projects-overview", label: "All projects", description: "Live delivery progress, milestones, blockers and decisions." },
+          { href: "/workspace/projects/calendar", icon: "calendar", id: "projects-calendar", label: "Calendar", description: "Projects, resources, site visits and confirmed work in one schedule." },
+          { href: "/workspace/projects/plan-teams", icon: "calendar", id: "plan-teams", label: "Plan & schedule", description: "Tasks, dates, milestones, teams and bookings." },
+          { href: "/workspace/projects/boq", icon: "boq", id: "project-boq", label: "Scope", description: "Released scope items, approved sizes and delivery coverage." },
+          { href: "/workspace/projects/documents", icon: "designs", id: "project-documents", label: "Drawings & documents", description: "Drawings, revisions and approved project documents." },
         ],
       },
       {
-        id: "projects-deliver",
-        label: "Deliver",
+        id: "projects-build",
+        label: "Build",
         items: [
-          { href: "/workspace/projects/production", icon: "production", id: "production", label: "Production", description: "Factory work, approvals, output and dispatch readiness." },
-          { href: "/workspace/projects/site-work", icon: "installation", id: "site-work", label: "Onsite execution", description: "Site readiness, installation, commissioning and technical queries." },
+          { href: "/workspace/projects/material-planning", icon: "materialPlan", id: "material-planning", label: "Materials", description: "Requirements, stock, allocations and warehouse transfers." },
+          { href: "/workspace/projects/procurement", icon: "procurement", id: "procurement", label: "Purchasing", description: "Supplier enquiries, purchase orders, receipts and returns." },
+          { href: "/workspace/projects/production", icon: "production", id: "production", label: "Factory", description: "Workshop jobs, approvals, output and dispatch." },
+          { href: "/workspace/projects/site-work", icon: "installation", id: "site-work", label: "Site", description: "Site readiness, installation, commissioning and technical queries." },
           { href: "/workspace/projects/daily-progress", icon: "reports", id: "daily-progress", label: "Daily progress", description: "Field reports, evidence, workforce, blockers and review." },
         ],
       },
       {
         id: "projects-close",
-        label: "Quality & close",
+        label: "Close",
         items: [
-          { href: "/workspace/projects/snagging", icon: "snagging", id: "snagging", label: "Snagging & warranty", description: "Defects, verification, closure and aftercare." },
+          { href: "/workspace/projects/snagging", icon: "snagging", id: "snagging", label: "Snags & warranty", description: "Defects, verification, closure and aftercare." },
           { href: "/workspace/projects/handover", icon: "handover", id: "handover", label: "Handover", description: "Client acceptance, completion records and warranties." },
+          { href: "/workspace/projects/commercial", icon: "commercial", id: "project-commercial", label: "Budget & payments", description: "Contract value, budget, committed orders and payments." },
           { href: "/workspace/projects/workflow-templates", icon: "settings", id: "project-workflow-templates", label: "Workflow setup", description: "Reusable project stages, owners and release checks." },
         ],
       },

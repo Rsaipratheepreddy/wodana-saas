@@ -16,22 +16,11 @@ import {
   label,
   type ProjectState,
 } from "@/lib/projects/execution";
+import { initials, shortDate } from "@/lib/projects/format";
+import { daysLabel, daysUntil, projectControls } from "./project-header";
 import s from "./project-workspace.module.css";
 import v from "./project-visual.module.css";
-export const initials = (name: string) =>
-  name
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((x) => x[0])
-    .join("")
-    .toUpperCase();
-export const shortDate = (day: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  });
+export { initials, shortDate } from "@/lib/projects/format";
 
 type DeliveryStageState = "complete" | "current" | "attention" | "upcoming";
 
@@ -130,15 +119,26 @@ export function ProjectOverview({
     },
   ];
   const mentions = d.comments.filter((comment) => comment.mentions?.includes(state.memberId) && !comment.resolved).slice(-2);
-  const showAside = Boolean(d.scope || mentions.length || d.audit.length);
+  const controls = projectControls(state);
+  const followUp = Boolean(controls.nextAction || controls.nextClientMeeting || controls.clientNote);
+  const showAside = Boolean(d.scope || followUp || mentions.length || d.audit.length);
+  const overdue = leaf.filter((task) => task.status !== "completed" && task.end && task.end < today).length;
+  const handoverDays = daysUntil(controls.handoverDate, today);
   const person = (id: string) =>
     state.members.find((m) => m.id === id)?.name ?? "Unassigned";
   return (
     <div className={v.overview}>
-      {leaf.length || upcoming[0] ? <div className={v.projectSummary}>
-        {leaf.length ? <span><strong>{progress}%</strong> approved work · {done} of {leaf.length} tasks complete</span> : null}
-        {upcoming[0] ? <span>Next milestone · {upcoming[0].title} · {shortDate(upcoming[0].dueDate)}</span> : null}
-      </div> : null}
+      <section aria-label="Project pulse" className={v.pulse}>
+        <dl className="wd-stage-metrics">
+          <div><dt>Progress</dt><dd>{progress}%</dd></div>
+          <div><dt>Tasks complete</dt><dd>{done} / {leaf.length}</dd></div>
+          <div data-tone={overdue ? "danger" : undefined}><dt>Overdue tasks</dt><dd>{overdue}</dd></div>
+          <div data-tone={openSnags.length ? "attention" : undefined}><dt>Open snags</dt><dd>{openSnags.length}</dd></div>
+          <div data-tone={handoverDays !== null && handoverDays < 0 ? "danger" : undefined}><dt>Handover</dt><dd>{controls.handoverDate ? shortDate(controls.handoverDate) : "Not set"}</dd>{handoverDays !== null ? <small>{daysLabel(handoverDays)}</small> : null}</div>
+          {upcoming[0] ? <div><dt>Next milestone</dt><dd>{shortDate(upcoming[0].dueDate)}</dd><small>{upcoming[0].title}</small></div> : null}
+        </dl>
+        <span aria-hidden="true" className={v.pulseTrack}><span style={{ width: `${Math.min(100, progress)}%` }} /></span>
+      </section>
       <section aria-labelledby="delivery-flow-title">
         <div className={v.flowHeading}>
           <div><span className={v.eyebrow}>LIVE DELIVERY FLOW</span><h2 id="delivery-flow-title">Plan to handover</h2></div>
@@ -283,6 +283,12 @@ export function ProjectOverview({
           </section> : null}
         </div>
         {showAside ? <aside>
+          {followUp ? <section className={v.followUp} aria-label="Client follow-up">
+            <span className={v.eyebrow}>Client follow-up</span>
+            {controls.nextAction ? <p><strong>{controls.nextAction}</strong><small>{controls.nextActionDate ? `Due ${shortDate(controls.nextActionDate)}` : "No due date"}{controls.nextActionOwnerId ? ` · ${person(controls.nextActionOwnerId)}` : ""}</small></p> : null}
+            {controls.nextClientMeeting ? <p><strong>Client meeting · {shortDate(controls.nextClientMeeting)}</strong>{controls.nextClientMeetingOwnerId ? <small>{person(controls.nextClientMeetingOwnerId)}</small> : null}</p> : null}
+            {controls.clientNote ? <p className={v.note}>{controls.clientNote}</p> : null}
+          </section> : null}
           {d.scope ? <section className={v.scopePanel}>
             <span className={v.eyebrow}>Agreed scope</span>
             <strong>

@@ -1363,6 +1363,7 @@ export function applyExecution(
       required: num(v.required),
       supply: choice(v.supply, ["company", "vendor", "client"]),
       taskId,
+      scopeLineId: str(v.scopeLineId, 80) || old?.scopeLineId || "",
       needBy: day(v.needBy, true),
       movements: [],
     };
@@ -1370,6 +1371,115 @@ export function applyExecution(
       throw new BadRequestException("Enter the required quantity.");
     if (old) Object.assign(old, value);
     else d.materials.push(value);
+  } else if (action === "link_designs") {
+    manage();
+    let linked = 0;
+    for (const t of d.tasks) {
+      if (["cancelled", "completed"].includes(t.status) || t.location === "office")
+        continue;
+      const gate = designReadinessForTask(d, t);
+      const current = d.documents.find((x) => x.id === t.drawingId);
+      if (gate.ready && current?.status === "approved") continue;
+      const candidates = gate.documentIds.length
+        ? gate.documentIds
+        : d.documents
+            .filter(
+              (x) =>
+                x.status === "approved" &&
+                x.scopeLineIds?.some((id) => t.scopeIds.includes(id)),
+            )
+            .map((x) => x.id);
+      if (!candidates.length) continue;
+      const preferred = candidates[candidates.length - 1];
+      if (t.drawingId === preferred) continue;
+      t.drawingId = preferred;
+      linked++;
+    }
+    if (!linked)
+      throw new ConflictException(
+        "No approved drawing covers the tasks that still need one.",
+      );
+    note = `${linked} task${linked === 1 ? "" : "s"} linked to approved drawings.`;
+  } else if (action === "materials_from_scope") {
+    manage();
+    const lines = [
+      ...(d.scope?.lines ?? []),
+      ...(d.variations ?? []).flatMap((variation) => variation.lines),
+    ];
+    if (!lines.length)
+      throw new ConflictException("No released scope to plan materials from.");
+    const planned = new Set(
+      d.materials.map((material) => material.scopeLineId).filter(Boolean),
+    );
+    let created = 0;
+    for (const line of lines) {
+      if (planned.has(line.id) || line.deductsLineId) continue;
+      const task = d.tasks.find(
+        (candidate) =>
+          candidate.status !== "cancelled" &&
+          (candidate.scopeIds ?? []).includes(line.id),
+      );
+      const needBy =
+        task?.start || d.controls?.targetCompletion || a.now.slice(0, 10);
+      const rows =
+        line.pricingMode === "materials" && line.materialRows?.length
+          ? line.materialRows
+              .filter((row) => row.type === "material" || row.type === "finish")
+              .map((row) => ({
+                title: row.name || line.material || line.title,
+                specification: [row.specification, line.room]
+                  .filter(Boolean)
+                  .join(" · "),
+                unit: row.unit || line.unit,
+                required: row.quantity || line.quantity,
+                supply: row.suppliedByClient
+                  ? ("client" as const)
+                  : ("company" as const),
+              }))
+          : [
+              {
+                title: line.material || line.title,
+                specification: [
+                  line.title,
+                  line.specification,
+                  line.finish,
+                  line.room,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                unit: line.unit,
+                required: line.quantity,
+                supply: line.customMaterials?.some(
+                  (material) => material.suppliedByClient,
+                )
+                  ? ("client" as const)
+                  : ("company" as const),
+              },
+            ];
+      for (const row of rows) {
+        if (!row.required) continue;
+        d.materials.push({
+          id: randomUUID(),
+          title: row.title.slice(0, 240),
+          specification: row.specification.slice(0, 2000),
+          catalogId: "",
+          catalogVersion: 0,
+          unit: (row.unit || "nos").slice(0, 30),
+          required: row.required,
+          supply: row.supply,
+          taskId: task?.id ?? "",
+          scopeLineId: line.id,
+          needBy,
+          movements: [],
+        });
+        created++;
+      }
+    }
+    if (!created)
+      throw new ConflictException(
+        "Every released scope item already has material requirements.",
+      );
+    note = `${created} material requirement${created === 1 ? "" : "s"} planned from the released scope.`;
   } else if (action === "reserve_material") {
     manage();
     active();

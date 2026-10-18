@@ -209,17 +209,22 @@ export function FolderEditor({
   );
 }
 
+export type DesignUploadTarget = { folderId: string | null; roomId: string | null; scopeEntryId: string | null; name: string };
 export function DesignUpload({
   data,
   folder,
+  target,
   onClose,
   onSaved,
 }: {
   data: CaseContent;
-  folder: DesignFolder;
+  /** Legacy folder target; prefer `target` for scope-rooted uploads. */
+  folder?: DesignFolder;
+  target?: DesignUploadTarget;
   onClose: () => void;
   onSaved: (designs: CaseDesign[]) => void;
 }) {
+  const destination: DesignUploadTarget = target ?? { folderId: folder?.id ?? null, roomId: folder?.roomId ?? null, scopeEntryId: folder?.scopeEntryId ?? null, name: folder?.name ?? "Whole home" };
   const [files, setFiles] = useState<
     Array<{
       id: string;
@@ -246,9 +251,9 @@ export function DesignUpload({
         "designs/upload",
         "POST",
         {
-          folderId: folder.id,
-          roomId: folder.roomId,
-          scopeEntryId: folder.scopeEntryId,
+          ...(destination.folderId ? { folderId: destination.folderId } : {}),
+          roomId: destination.roomId,
+          scopeEntryId: destination.scopeEntryId,
           note: "",
           files: files.map((f) => ({
             id: f.id,
@@ -271,7 +276,7 @@ export function DesignUpload({
   return (
     <CaseModal
       title="Add design files"
-      description={folder.name}
+      description={destination.name}
       onClose={onClose}
       busy={disabled}
       dirty={files.length > 0}

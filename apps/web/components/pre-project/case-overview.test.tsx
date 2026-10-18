@@ -64,12 +64,9 @@ describe("pre-execution case overview", () => {
       data: { revision: 1, quotes: [], requests: [], agreement: null, payments: [], audit: [], release: null, ownerReview: null, dealFile: null, materialApprovals: [], credits: [] },
     } as CommercialState;
     view(initial, undefined, commercial);
-    const journey = screen.getByRole("navigation", { name: "Pre-execution readiness timeline" });
-    expect(within(journey).getByText("From accepted scope to execution release")).toBeVisible();
-    expect(within(journey).getByText("1 of 7 release checks complete")).toBeVisible();
-    expect(within(journey).getByRole("link", { name: /Agreement & payments/ })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/contracts");
-    expect(within(journey).getByRole("link", { name: /Change control/ })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/variations");
-    expect(within(journey).getByRole("link", { name: /Approvals & release/ })).toHaveAttribute("href", "/workspace/pre-projects/cases/case-1/execution-release");
+    // The case spine owns journey navigation; the overview no longer repeats it.
+    expect(screen.queryByRole("navigation", { name: "Pre-execution readiness timeline" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Case actions" })).toBeVisible();
   });
 
   it("does not offer a lifecycle action that a viewer cannot perform", () => {
@@ -88,7 +85,7 @@ describe("pre-execution case overview", () => {
     caseRequest.mockResolvedValue({ ...initial, version: 4, ownerMembershipId: "owner-2", engagementOwnerName: "Designer", priority: "high", riskLevel: "medium" });
     const updated = view();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Edit case" }));
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
     await user.click(screen.getByRole("button", { name: /Case owner/ }));
     await user.click(screen.getByRole("option", { name: "Designer" }));
     await user.click(screen.getByRole("button", { name: /Priority/ }));
@@ -107,11 +104,13 @@ describe("pre-execution case overview", () => {
       .mockResolvedValueOnce({ ...initial, status: "active", version: 5, holdReason: null });
     view();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Put on hold" }));
+    await user.click(screen.getByRole("button", { name: "Case actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Put on hold" }));
     const dialog = screen.getByRole("dialog", { name: "Put on hold" });
     await user.type(within(dialog).getByLabelText("Reason *"), "Waiting for client");
     await user.click(within(dialog).getByRole("button", { name: "Put on hold" }));
-    await user.click(await screen.findByRole("button", { name: "Resume" }));
+    await user.click(await screen.findByRole("button", { name: "Case actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Resume" }));
     await user.click(within(screen.getByRole("dialog", { name: "Resume" })).getByRole("button", { name: "Resume" }));
     await waitFor(() => expect(caseRequest).toHaveBeenCalledTimes(2));
     expect(caseRequest.mock.calls[0][4]).toMatchObject({ version: 3, action: "hold", reason: "Waiting for client" });
@@ -120,12 +119,13 @@ describe("pre-execution case overview", () => {
 
   it("keeps viewers read-only", () => {
     view({ ...initial, canManageLifecycle: false });
-    expect(screen.queryByRole("button", { name: "Edit case" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Put on hold" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit details" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Case actions" })).not.toBeInTheDocument();
     expect(screen.getByText("Villa interiors")).toBeVisible();
+    expect(screen.getByText(/View only/)).toBeVisible();
   });
 
-  it("shows the frozen CRM decision and linked source records", () => {
+  it("shows the frozen CRM decision and linked source records", async () => {
     view({
       ...initial,
       conversionOrigin: "lead_qualification",
@@ -147,8 +147,8 @@ describe("pre-execution case overview", () => {
       },
     });
 
-    expect(screen.getByText("CRM handoff preserved")).toBeVisible();
-    expect(screen.getByText("Palm enquiry")).toBeVisible();
+    expect(screen.getByText(/Palm enquiry/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByText("Qualification answers from CRM"));
     expect(screen.getByText("Property type")).toBeVisible();
     expect(screen.getByText("Villa")).toBeVisible();
     expect(screen.getByRole("link", { name: "Original enquiry" })).toHaveAttribute("href", "/workspace/crm/leads?lead=lead-1");

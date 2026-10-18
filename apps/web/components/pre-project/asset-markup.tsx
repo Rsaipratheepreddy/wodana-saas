@@ -6,7 +6,7 @@ import {CaseModal} from './case-controls';
 import styles from './case-content.module.css';
 import view from './asset-markup.module.css';
 type Stroke={color:string;width:number;points:{x:number;y:number}[]};
-const pens=[['#4a46f3','Indigo'],['#c83737','Red'],['#2063b6','Blue'],['#1b1b1b','Black'],['#ffffff','White']];
+const pens=[['#46705a','Sage'],['#c83737','Red'],['#2063b6','Blue'],['#1b1b1b','Black'],['#ffffff','White']];
 export function AssetMarkup({workspaceId,caseId,asset,onClose,onSaved}:{workspaceId:string;caseId:string;asset:CaseAsset;onClose:()=>void;onSaved:(asset:CaseAsset)=>void}){
  const [strokes,setStrokes]=useState<Stroke[]>([]),[original,setOriginal]=useState(asset.id),[ready,setReady]=useState(false),[imageReady,setImageReady]=useState(false),[size,setSize]=useState({width:1000,height:750}),[color,setColor]=useState(pens[0][0]),[width,setWidth]=useState(.004),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [saveId]=useState(()=>crypto.randomUUID());const active=useRef(false);const [initial,setInitial]=useState('[]');

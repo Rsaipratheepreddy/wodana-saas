@@ -16,10 +16,12 @@ export function PreExecutionFlow({
   state,
   section,
   root,
+  compact = true,
 }: {
   state: CommercialState;
   section: string;
   root: string;
+  compact?: boolean;
 }) {
   const data = state.data;
   const accepted = data.quotes.find(
@@ -112,13 +114,13 @@ export function PreExecutionFlow({
   ];
 
   return (
-    <nav className={s.preExecutionFlow} aria-label="Pre-execution readiness timeline">
+    <nav className={s.preExecutionFlow} aria-label="Pre-execution readiness timeline" data-compact={compact || undefined}>
       <div className={s.flowIntro}>
         <div>
-          <span>LIVE READINESS</span>
-          <strong>From accepted scope to execution release</strong>
+          <span>Release readiness</span>
+          {!compact ? <strong>From accepted scope to execution release</strong> : null}
         </div>
-        <small>{checksDone} of 7 release checks complete</small>
+        <small>{checksDone} of 7 checks complete</small>
       </div>
       <ol>
         {steps.map((step) => (

@@ -37,3 +37,4 @@ infra/hostinger/data/
 # Private deployment handoffs may contain scoped vendor access links
 /output/
 /tmp/
+.claude/

@@ -3,8 +3,8 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus } from "lucide-react";
-import { Avatar, Badge, Button, Container, ControlledModalDialog, DataGrid, Form, SelectField, type DataGridColumn } from "@/design-system";
+import { Plus } from "lucide-react";
+import { Avatar, Badge, Button, Container, ControlledModalDialog, DataGrid, Form, PageHeader, SelectField, type DataGridColumn } from "@/design-system";
 import { jsonRequest } from "@/lib/commercial/client";
 import { projectPath, label } from "@/lib/projects/execution";
 import styles from "./project-portfolio.module.css";
@@ -47,10 +47,10 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
   handoverLimit.setUTCDate(handoverLimit.getUTCDate() + 30);
   const handoverLimitDay = handoverLimit.toISOString().slice(0, 10);
   const metrics = [
-    { label: "High risk", value: rows.filter((row) => ["high_risk", "urgent_action"].includes(row.risk)).length },
-    { label: "On hold", value: rows.filter((row) => row.onHold).length },
-    { label: "Overdue actions", value: rows.filter((row) => row.nextActionDate && row.nextActionDate < today).length },
-    { label: "Handover next 30 days", value: rows.filter((row) => row.handoverDate && row.handoverDate >= today && row.handoverDate <= handoverLimitDay).length },
+    { label: "High risk", value: rows.filter((row) => ["high_risk", "urgent_action"].includes(row.risk)).length, tone: "danger" },
+    { label: "On hold", value: rows.filter((row) => row.onHold).length, tone: "attention" },
+    { label: "Overdue actions", value: rows.filter((row) => row.nextActionDate && row.nextActionDate < today).length, tone: "danger" },
+    { label: "Handover next 30 days", value: rows.filter((row) => row.handoverDate && row.handoverDate >= today && row.handoverDate <= handoverLimitDay).length, tone: "neutral" },
   ];
   const columns: DataGridColumn<PortfolioRow>[] = [
     { accessorKey: "name", header: "Project", meta: { primary: true, renderCell: (row) => <span className={styles.projectName}>{row.name}</span> } },
@@ -84,12 +84,16 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
     }
   }
 
-  return <Container as="section" aria-label="Projects" className={styles.page}>
-    <Link className={styles.back} href="/workspace/pre-projects"><ArrowLeft aria-hidden="true" size={15} />Pre-execution</Link>
-    <div className={styles.heading}><h1>Projects</h1><span>{rows.length}</span></div>
-    {metrics.some((metric) => metric.value > 0) ? <div aria-label="Project attention" className={styles.metrics} role="group">
-      {metrics.filter((metric) => metric.value > 0).map((metric) => <div key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>)}
-    </div> : null}
+  return <Container as="section" aria-label="Projects" className={styles.page} size="full">
+    <PageHeader
+      actions={<Button onPress={() => void start()} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Start project</Button>}
+      description={<>{rows.length} project{rows.length === 1 ? "" : "s"} · released from <Link href="/workspace/pre-projects">Pre-execution</Link></>}
+      eyebrow="Delivery"
+      title="Projects"
+    />
+    {metrics.some((metric) => metric.value > 0) ? <dl aria-label="Project attention" className={styles.metrics}>
+      {metrics.filter((metric) => metric.value > 0).map((metric) => <div data-tone={metric.tone} key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}
+    </dl> : null}
     <DataGrid
       ariaLabel="Projects"
       columns={columns}
@@ -101,13 +105,13 @@ export function ProjectPortfolio({ workspaceId, rows, today }: { workspaceId: st
       onRowAction={(row) => router.push(`/workspace/projects/${row.id}/overview`)}
       onSearchChange={setSearch}
       onViewChange={setStatus}
+      persistKey="projects-portfolio"
       rowNumbers={false}
       savedViews={views}
       searchLabel="Search projects"
       searchValue={search}
       selectable={false}
       selectedView={status}
-      toolbarActions={<Button onPress={() => void start()} size="compact" variant="primary"><Plus aria-hidden="true" size={14} />Start project</Button>}
     />
     <ControlledModalDialog isOpen={open} onOpenChange={setOpen} title="Start project">
       <Form className={styles.form} onSubmit={createProject}>

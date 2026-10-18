@@ -31,21 +31,21 @@ describe("WorkspaceShell theme", () => {
     route.pathname = "/workspace/crm/leads";
     render(<WorkspaceShell {...shellProps} modules={workspaceModules.filter((module) => !["pre-project", "projects"].includes(module.id))}><p>Module content</p></WorkspaceShell>);
     const modules = within(screen.getByRole("navigation", { name: "Modules" }));
-    expect(modules.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/workspace", "/workspace/crm", "/workspace/hrms"]);
+    expect(modules.getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["/workspace/crm", "/workspace/hrms"]);
     expect(modules.getByRole("link", { name: "CRM" })).toHaveAttribute("aria-current", "page");
-    expect(modules.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/workspace");
+    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/workspace/company");
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Enquiries");
   });
 
   it.each([
-    ["/workspace/pre-projects", "Pre-execution cases"],
+    ["/workspace/pre-projects", "Cases"],
     ["/workspace/pre-projects/master-data", "Master Data"],
   ])("shows the shared pre-execution destinations at %s", (pathname, label) => {
     route.pathname = pathname;
     const { container } = render(<WorkspaceShell {...shellProps}><p>Module content</p></WorkspaceShell>);
     expect(container.querySelector("[data-module-selector]")).toBeNull();
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(["Pre-execution cases", "Master Data", "Supplier Offers", "Quotation Templates"]);
+    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(["Cases", "Master Data", "Supplier Offers", "Quotation Templates"]);
     expect(navigation.getByRole("link", { name: label })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(label);
   });
@@ -55,8 +55,8 @@ describe("WorkspaceShell theme", () => {
     const { container } = render(<WorkspaceShell {...shellProps}><p>Project portfolio</p></WorkspaceShell>);
     expect(container.querySelector("[data-module-selector]")).toBeNull();
     const navigation = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(["Portfolio overview", "Portfolio calendar", "Workflow setup"]);
-    expect(navigation.getByRole("link", { name: "Portfolio overview" })).toHaveAttribute("aria-current", "page");
+    expect(navigation.getAllByRole("link").map((link) => link.textContent)).toEqual(["All projects", "Calendar", "Workflow setup"]);
+    expect(navigation.getByRole("link", { name: "All projects" })).toHaveAttribute("aria-current", "page");
   });
 
   it("opens case sections after leaving the module list and keeps Master Data shared", () => {
@@ -74,7 +74,7 @@ describe("WorkspaceShell theme", () => {
     view.rerender(<WorkspaceShell {...shellProps}><p>Catalog content</p></WorkspaceShell>);
     expect(navigation.queryByRole("link", { name: "Requirements" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Requirements" })).not.toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Main navigation" })).toHaveTextContent("Pre-execution cases");
+    expect(screen.getByRole("navigation", { name: "Main navigation" })).toHaveTextContent("Cases");
   });
 
   it("keeps Inbox inside CRM before and after client effects run", () => {

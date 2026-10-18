@@ -11,6 +11,8 @@ export * from "./components/overlays";
 export * from "./components/status";
 export * from "./patterns/data-grid";
 export * from "./patterns/page-header";
+export * from "./patterns/stage-header";
+export * from "./patterns/month-calendar";
 export * from "./patterns/grouped-table";
 export * from "./patterns/comments";
 export * from "./patterns/documents";

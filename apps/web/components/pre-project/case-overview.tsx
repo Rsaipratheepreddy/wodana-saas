@@ -2,13 +2,12 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Badge, Button, Callout, ControlledModalDialog, Form, SelectField, StageTracker, TextAreaField, TextInput, type WorkflowStage } from "@/design-system";
+import { Badge, Button, Callout, ControlledModalDialog, Form, MenuButton, SelectField, StageTracker, TextAreaField, TextInput, type ActionItem, type WorkflowStage } from "@/design-system";
 import { qualificationEvidenceRows, qualificationEvidenceSnapshot } from "@/lib/crm/qualification-fields";
 import { caseRequest } from "@/lib/pre-project/content";
 import type { DefinitionPageData, ReadinessState } from "@/lib/pre-project/definition";
 import type { PreProjectCase } from "@/lib/pre-project/types";
 import type { CommercialState } from "@/lib/commercial/types";
-import { PreExecutionFlow } from "@/components/commercial/pre-execution-flow";
 import styles from "./case-overview.module.css";
 
 type Action = "hold" | "resume" | "cancel" | "reopen" | "set_phase";
@@ -70,6 +69,7 @@ export function CaseOverview({ record: initial, workspaceId, members, progress, 
   const manageable = Boolean(record.canManageLifecycle) && ["draft", "active", "on_hold"].includes(record.status);
   const qualificationEvidence = qualificationEvidenceSnapshot(record.qualificationEvidence);
   const qualificationRows = qualificationEvidenceRows(qualificationEvidence);
+  void commercial;
   const preparation = progress && !("error" in progress) ? progress : null;
   const readiness = preparation?.readiness;
   const firstBlocker = readiness?.blockers[0];
@@ -80,6 +80,13 @@ export function CaseOverview({ record: initial, workspaceId, members, progress, 
     : readiness?.summary.includedItemCount === 0
       ? "Add the first scope item"
       : `${readiness?.summary.blockerCount ?? 0} blocker${readiness?.summary.blockerCount === 1 ? "" : "s"} before pricing`;
+
+  const caseActions: ActionItem[] = record.canManageLifecycle && record.status !== "released" ? [
+    ...(active ? [{ id: "set_phase", label: "Change stage" }, { id: "hold", label: "Put on hold" }] : []),
+    ...(record.status === "on_hold" ? [{ id: "resume", label: "Resume" }] : []),
+    ...(record.status === "cancelled" ? [{ id: "reopen", label: "Reopen" }] : []),
+    ...(["draft", "active", "on_hold"].includes(record.status) ? [{ id: "cancel", label: "Cancel case", tone: "danger" as const }] : []),
+  ] : [];
 
   function update(next: PreProjectCase) {
     const updated = { ...next, canManageLifecycle: record.canManageLifecycle };
@@ -126,8 +133,11 @@ export function CaseOverview({ record: initial, workspaceId, members, progress, 
     {error && !action ? <p role="alert" className={styles.error}>{error}</p> : null}
     {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
     <div className={styles.identity}>
-      <div><h1>{record.title}</h1><span>{record.customerName}</span></div>
-      {manageable && !editing ? <Button size="compact" onPress={() => { setError(""); setEditing(true); }}>Edit case</Button> : null}
+      <div><h2>{record.title}</h2><span>{manageable ? "Case details" : "View only · ask a case manager to change details"}</span></div>
+      {manageable && !editing ? <div className={styles.identityActions}>
+        <Button size="compact" onPress={() => { setError(""); setEditing(true); }}>Edit details</Button>
+        {caseActions.length ? <MenuButton items={caseActions} label="Case actions" onAction={(id) => { setError(""); if (id === "set_phase") setPhase(record.phase); setAction(id as Action); }} /> : null}
+      </div> : null}
     </div>
     {editing ? <Form className={styles.form} onSubmit={(event) => void saveProfile(event)}>
       {members.length ? <SelectField label="Case owner" items={members.map((member) => ({ id: member.id, label: member.displayName }))} selectedKey={owner} onSelectionChange={(key) => setOwner(String(key))} isRequired /> : null}
@@ -149,7 +159,7 @@ export function CaseOverview({ record: initial, workspaceId, members, progress, 
     {progress && "error" in progress ? <Callout tone="warning" title="Preparation status unavailable">{progress.error}</Callout> : null}
     {preparation && readiness ? <section className={styles.pulse} aria-labelledby="preparation-pulse-title">
       <div className={styles.pulseHeading}>
-        <div><span className={styles.kicker}>Preparation pulse</span><h2 id="preparation-pulse-title">{preparationTitle}</h2><p>{readiness.ready ? "The confirmed scope passes the current pricing checks. AI assistance remains optional inside the quotation studio." : readiness.summary.includedItemCount ? `${readiness.summary.readyItemCount} of ${readiness.summary.includedItemCount} included items currently pass their item checks. Resolve the ordered blockers below.` : "Add and review the first requirement before confirming scope or pricing."}</p></div>
+        <div><span className={styles.kicker}>Next step</span><h2 id="preparation-pulse-title">{preparationTitle}</h2></div>
         <Badge tone={readiness.ready ? "success" : "warning"}>{readiness.ready ? "Pricing ready" : "Action needed"}</Badge>
       </div>
       <StageTracker ariaLabel="Pre-execution preparation path" stages={preparationStages(preparation)} />
@@ -162,19 +172,12 @@ export function CaseOverview({ record: initial, workspaceId, members, progress, 
       {!readiness.ready && readiness.blockers.length ? <ol className={styles.blockers} aria-label="Preparation blockers">{readiness.blockers.slice(0, 3).map((blocker, index) => <li key={`${blocker.code}-${blocker.scopeItemId ?? index}`}><span>{index + 1}</span><div><strong>{blocker.label}</strong><p>{blocker.detail}</p></div></li>)}</ol> : null}
       <div className={styles.pulseAction}>{readiness.ready ? <Link href={`/workspace/pre-projects/cases/${record.id}/quotations`}>Open quotations</Link> : nextActionAllowed ? <Link href={readinessHref(record.id, nextAction)}>{nextAction?.label ?? "Open requirements"}</Link> : <span>Ask a case manager to {nextAction?.label.toLocaleLowerCase()}.</span>}{readiness.blockers.length > 3 ? <span>+{readiness.blockers.length - 3} more in scope confirmation</span> : null}</div>
     </section> : null}
-    {commercial ? <PreExecutionFlow state={commercial} section="overview" root={`/workspace/pre-projects/cases/${record.id}`} /> : null}
-    {qualificationEvidence ? <section className={styles.handoff} aria-labelledby="crm-handoff-title">
-      <Callout title="CRM handoff preserved">Customer identity and the exact qualification decision remain linked to this case. Discovery can add detail without rewriting the original enquiry.</Callout>
-      <div className={styles.handoffHeading}><h2 id="crm-handoff-title">Confirmed at qualification</h2><span>{qualificationEvidence.form?.name ?? "No configured form"}</span></div>
+    {qualificationEvidence ? <details className={styles.handoff}>
+      <summary><span>Qualification answers from CRM</span><small>{qualificationRows.length} answer{qualificationRows.length === 1 ? "" : "s"} · {qualificationEvidence.form?.name ?? "No configured form"}</small></summary>
       {qualificationRows.length ? <dl className={styles.handoffFacts}>{qualificationRows.map(answer => <div key={answer.key}><dt>{answer.label}</dt><dd>{answer.value}</dd></div>)}</dl> : <p className={styles.context}>No qualification answers were required for this enquiry.</p>}
-    </section> : null}
-    <div className={styles.links}>{record.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>Original enquiry</Link> : null}<Link href={`/workspace/crm/opportunities?record=${record.opportunityId}`}>CRM opportunity</Link><Link href={`/workspace/pre-projects/cases/${record.id}/requirements`}>Requirements</Link><Link href={`/workspace/pre-projects/cases/${record.id}/definition`}>Scope confirmation</Link><Link href={`/workspace/pre-projects/cases/${record.id}/quotations`}>Quotations</Link></div>
-    {record.canManageLifecycle && record.status !== "released" ? <div className={styles.controls} id="case-controls">
-      {active ? <><Button size="compact" onPress={() => { setPhase(record.phase); setAction("set_phase"); setError(""); }}>Change stage</Button><Button size="compact" onPress={() => { setAction("hold"); setError(""); }}>Put on hold</Button></> : null}
-      {record.status === "on_hold" ? <Button size="compact" onPress={() => { setAction("resume"); setError(""); }}>Resume</Button> : null}
-      {record.status === "cancelled" ? <Button size="compact" onPress={() => { setAction("reopen"); setError(""); }}>Reopen</Button> : null}
-      {["draft", "active", "on_hold"].includes(record.status) ? <Button size="compact" onPress={() => { setAction("cancel"); setError(""); }}>Cancel case</Button> : null}
-    </div> : null}
+      <div className={styles.links}>{record.leadId ? <Link href={`/workspace/crm/leads?lead=${record.leadId}`}>Original enquiry</Link> : null}<Link href={`/workspace/crm/opportunities?record=${record.opportunityId}`}>CRM opportunity</Link></div>
+    </details> : null}
+    <span id="case-controls" />
     <ControlledModalDialog isOpen={Boolean(action)} title={action ? actionLabel[action] : "Case action"} isDismissable={!busy} onOpenChange={(open) => { if (!open && !busy) { setAction(null); setReason(""); } }} footer={<div className={styles.formActions}><Button isDisabled={busy} onPress={() => { setAction(null); setReason(""); }}>Close</Button><Button type="submit" form="case-lifecycle" variant="primary" isLoading={busy} isDisabled={action === "set_phase" && phase === record.phase}>{action ? actionLabel[action] : "Save"}</Button></div>}>
       <Form id="case-lifecycle" className={styles.form} onSubmit={(event) => void transition(event)}>
         {error ? <p role="alert" className={styles.error}>{error}</p> : null}

@@ -1,15 +1,8 @@
 "use client";
-import { useState, useRef, useEffect, type ReactNode } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import {
-  Plus,
-  RefreshCw,
-  MessageSquare,
-  ArrowUpRight,
-  ClipboardCheck,
-  FileText,
-} from "lucide-react";
-import { Button, Checkbox, ControlledModalDialog, DataGrid, Form, IconButton, MultiSelectField, NumericInput, SearchInput, SegmentedControl, SelectField, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
+import { Plus, ArrowUpRight } from "lucide-react";
+import { Button, Callout, Checkbox, ControlledModalDialog, DataGrid, Form, InspectorSheet, MenuButton, MultiSelectField, NumericInput, SearchInput, SegmentedControl, SelectField, TextAreaField, TextInput, type DataGridColumn } from "@/design-system";
 import { CatalogChoiceField } from "@/components/pre-project/case-controls";
 import type { CatalogChoice } from "@/lib/pre-project/content";
 import { ProjectSchedule, type Milestone } from "./project-schedule";
@@ -30,18 +23,20 @@ import {
   type Order,
   type Material,
   type ProjectWorkPackage,
+  type Snag,
+  type Handover,
 } from "@/lib/projects/execution";
+import { DocumentsTable, ExpeditingTable, FactoryTable, HandoversTable, MaterialsTable, OrdersTable, RoomBudgetTable, ShortagesTable, SnagsTable, StageHeader, StateBadge, expediting, materialPosition, shortages, type DocumentAction, type FactoryAction, type HandoverAction, type MaterialAction, type OrderAction, type ProjectDocument, type ShortageAction, type SnagAction, type StageMetric } from "./project-stage";
 import s from "./project-workspace.module.css";
 import theme from "../crm/crm-workspace-colors.module.css";
 import { quantityToSource } from "@/lib/projects/purchasing";
 import { ProjectAccounting } from "./project-accounting";
-import { ProjectProduction } from "./project-production";
 import { ProjectOrderDetail } from "./project-order-detail";
 import { ProjectBoq } from "./project-boq";
 import { ProjectOverview } from "./project-overview";
 import { ProjectInitiation } from "./project-initiation";
 import { ProjectTaskBoard } from "./project-task-board";
-import { ProjectControlStrip } from "./project-control-strip";
+import { ProjectHeader } from "./project-header";
 import { DailyReportView } from "./daily-report-view";
 import { DailyProgress, DailyReportEditor } from "./project-daily-progress";
 import { ProjectConnectedPlan } from "./project-connected-plan";
@@ -84,24 +79,6 @@ function Meter({ value }: { value: number }) {
       </span>
       {Math.round(value)}%
     </span>
-  );
-}
-function Empty({
-  title,
-  children,
-  action,
-}: {
-  title: string;
-  children: ReactNode;
-  action?: ReactNode;
-}) {
-  return (
-    <div className={s.empty}>
-      <ClipboardCheck size={26} />
-      <h2>{title}</h2>
-      <p>{children}</p>
-      {action}
-    </div>
   );
 }
 export function ProjectWorkspace({
@@ -935,6 +912,85 @@ export function ProjectWorkspace({
           },
     );
   }
+  const weekAhead = new Date(Date.parse(`${today()}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+  const materialAction = (kind: MaterialAction, m: Material) => {
+    if (kind === "order") editOrder(undefined, true, { ...m, required: quantityToSource(m, d.orders) });
+    else if (kind === "allocate") decision("Allocate stock to work", "reserve_material", m.id, { taskId: m.taskId, quantity: 0 }, [
+      f("taskId", "Work that will use it", "select", true, taskOptions),
+      { ...f("quantity", "Quantity to allocate", "number", true), hint: "Enter 0 to remove the allocation from the selected work." },
+      f("note", "Allocation note", "textarea", true),
+    ]);
+    else if (kind === "move") decision("Update stock quantity", "material_move", m.id, { kind: "issue", quantity: 0, taskId: m.taskId }, [
+      f("kind", "What happened", "select", true, opts(m.supply === "company" ? ["issue", "return", "waste"] : ["receive", "issue", "return", "waste"])),
+      f("quantity", "Quantity", "number", true),
+      f("taskId", "For task", "select", false, taskOptions),
+      f("note", "Delivery or stock evidence", "textarea", true),
+    ]);
+    else conversation(m.id);
+  };
+  const orderAction = (kind: OrderAction, o: Order) => {
+    if (kind === "open") { setSelected(o.id); setDetailTab("details"); }
+    else if (kind === "edit") editOrder(o);
+    else if (kind === "step") advanceOrder(o);
+    else if (kind === "vendor") void vendorAccess(o.id);
+    else conversation(o.id);
+  };
+  const snagAction = (kind: SnagAction, x: Snag) => {
+    if (kind === "submit") decision("Submit snag correction", "snag_status", x.id, { status: "ready" });
+    else if (kind === "verify") decision("Verify snag closure", "snag_status", x.id, { status: "closed" });
+    else if (kind === "reopen") decision("Reopen snag", "snag_status", x.id, { status: "open" });
+    else conversation(x.id);
+  };
+  const handoverAction = (kind: HandoverAction, x: Handover) => {
+    if (kind === "prepare") decision(
+      x.status === "returned" ? "Prepare corrected handover pack" : "Review generated handover pack",
+      "handover_status", x.id, { status: "ready", confirmed: false },
+      [{ ...f("confirmed", "I reviewed the generated scope, inspections, passed commissioning, published closeout documents, accepted materials and affected defects", "check", true), hint: "The server regenerates the pack from live project records and rechecks every control before it becomes client-ready." }],
+    );
+    else if (kind === "accept") decision("Record client handover acceptance", "handover_status", x.id, { status: "accepted", acceptedBy: "" }, [
+      f("signedRecord", "I have a signed client acceptance record to attach", "check", true),
+      f("acceptedBy", "Client signatory", "text", true),
+      f("note", "Signed acceptance reference / evidence", "textarea", true),
+    ]);
+    else if (kind === "warranty") open({
+      title: "Record warranty defect", action: "warranty_snag", wrapper: "snag",
+      value: { handoverId: x.id, area: x.area, title: "", severity: "minor", ownerId: "", dueDate: today(), evidence: "" },
+      fields: [
+        f("title", "Defect", "text", true),
+        f("severity", "Severity", "select", true, opts(["minor", "major", "critical"])),
+        f("ownerId", "Responsible person", "select", true, memberOptions),
+        f("dueDate", "Response due", "date", true),
+        f("evidence", "Photos / service request reference", "textarea", true),
+      ],
+    });
+    else conversation(x.id);
+  };
+  const openOrders = d.orders.filter((o) => !["enquiry", "closed", "cancelled"].includes(o.status));
+  const materialMetrics: StageMetric[] = [
+    { label: "Requirements", value: d.materials.length },
+    { label: "Shortfall", value: d.materials.filter((m) => m.supply === "company" && quantityToSource(m, d.orders) > 0).length, tone: "attention" },
+    { label: "Needed this week", value: d.materials.filter((m) => m.needBy && m.needBy <= weekAhead && materialPosition(m).remaining > 0).length },
+    { label: "Allocated units", value: d.materials.reduce((n, m) => n + materialPosition(m).reserved, 0) },
+  ];
+  const orderMetrics: StageMetric[] = [
+    { label: "Open orders", value: openOrders.length },
+    { label: "Awaiting approval", value: d.orders.filter((o) => o.status === "submitted").length, tone: "attention" },
+    { label: "To expedite", value: expediting(state).length, tone: expediting(state).length ? "attention" : "neutral" },
+    { label: "Overdue deliveries", value: openOrders.filter((o) => ["approved", "acknowledged"].includes(o.status) && o.promisedDate < today()).length, tone: "danger" },
+    { label: "Committed", value: money(d.orders.filter((o) => ["approved", "acknowledged", "closed"].includes(o.status)).reduce((n, o) => n + o.quantity * o.unitCost, 0), d.scope?.currency) },
+  ];
+  const snagMetrics: StageMetric[] = [
+    { label: "Open", value: d.snags.filter((x) => x.status === "open").length },
+    { label: "Ready to verify", value: d.snags.filter((x) => x.status === "ready").length, tone: "attention" },
+    { label: "Overdue", value: d.snags.filter((x) => x.status !== "closed" && x.dueDate < today()).length, tone: "danger" },
+    { label: "Critical open", value: d.snags.filter((x) => x.status !== "closed" && x.severity === "critical").length, tone: "danger" },
+  ];
+  const handoverMetrics: StageMetric[] = [
+    { label: "In preparation", value: d.handovers.filter((x) => ["draft", "returned"].includes(x.status)).length },
+    { label: "With client", value: d.handovers.filter((x) => x.status === "ready").length, tone: "attention" },
+    { label: "Accepted", value: d.handovers.filter((x) => x.status === "accepted").length, tone: "success" },
+    { label: "Blocking items", value: d.handovers.reduce((n, x) => n + (x.outstandingItems ?? []).filter((item) => item.blocking && !["closed", "warranty"].includes(item.status)).length, 0), tone: "danger" },
+  ];
   const primary =
     section === "plan-teams" ||
     section === "site-work" ||
@@ -998,6 +1054,121 @@ export function ProjectWorkspace({
           (view === "completed" && t.status === "completed")) &&
         filtered(`${t.title} ${t.area} ${t.package}`),
     );
+  const leafTasks = d.tasks.filter((t) => t.status !== "cancelled" && !d.tasks.some((c) => c.parentId === t.id && c.status !== "cancelled"));
+  const taskMetrics = (scope: Task[]): StageMetric[] => [
+    { label: "Tasks", value: scope.length },
+    { label: "In progress", value: scope.filter((t) => t.status === "in_progress").length },
+    { label: "Blocked", value: scope.filter((t) => ["blocked", "on_hold"].includes(t.status)).length, tone: "danger" },
+    { label: "Awaiting inspection", value: scope.filter((t) => t.status === "awaiting_inspection").length, tone: "attention" },
+    { label: "Complete", value: scope.filter((t) => t.status === "completed").length, tone: "success" },
+  ];
+  const planMetrics: StageMetric[] = [
+    { label: "Tasks", value: leafTasks.length },
+    { label: "Complete", value: leafTasks.filter((t) => t.status === "completed").length, tone: "success" },
+    { label: "Overdue", value: leafTasks.filter((t) => t.status !== "completed" && t.end && t.end < today()).length, tone: "danger" },
+    { label: "Milestones accepted", value: `${(d.milestones ?? []).filter((m) => m.acceptedAt).length} / ${(d.milestones ?? []).length}` },
+  ];
+  const reportMetrics: StageMetric[] = [
+    { label: "Drafts", value: d.reports.filter((r) => r.status === "draft").length },
+    { label: "To review", value: d.reports.filter((r) => r.status === "submitted").length, tone: "attention" },
+    { label: "Returned", value: d.reports.filter((r) => r.status === "returned").length, tone: "danger" },
+    { label: "Approved", value: d.reports.filter((r) => r.status === "approved").length, tone: "success" },
+  ];
+  const approvedDrawing = (id: string) => d.documents.some((x) => x.id === id && x.status === "approved");
+  const linkableDesigns = d.tasks.filter((t) =>
+    !["cancelled", "completed"].includes(t.status) && t.location !== "office" && !approvedDrawing(t.drawingId) &&
+    d.documents.some((x) => x.status === "approved" && x.scopeLineIds?.some((id) => t.scopeIds.includes(id))),
+  ).length;
+  const documentMetrics: StageMetric[] = [
+    { label: "Documents", value: d.documents.length },
+    { label: "Awaiting approval", value: d.documents.filter((x) => x.status === "review").length, tone: "attention" },
+    { label: "Approved", value: d.documents.filter((x) => x.status === "approved").length, tone: "success" },
+    { label: "Shared with client", value: d.documents.filter((x) => x.published).length },
+    ...(linkableDesigns ? [{ label: "Tasks without drawing", value: linkableDesigns, tone: "attention" as const }] : []),
+  ];
+  const contractValue = (d.scope?.value ?? 0) + (d.variations ?? []).reduce((n, v) => n + v.value, 0);
+  const committed = d.orders.filter((o) => ["approved", "acknowledged", "closed"].includes(o.status)).reduce((n, o) => n + o.quantity * o.unitCost, 0);
+  const commercialMetrics: StageMetric[] = [
+    { label: d.variations?.length ? "Contract incl. variations" : "Contract value", value: money(contractValue, d.scope?.currency) },
+    { label: "Approved budget", value: money(d.budget, d.scope?.currency) },
+    { label: "Committed orders", value: money(committed, d.scope?.currency), tone: d.budget > 0 && committed > d.budget ? "danger" : "neutral" },
+    { label: "Forecast at completion", value: money(d.forecast, d.scope?.currency), tone: d.budget > 0 && d.forecast > d.budget ? "attention" : "neutral" },
+  ];
+  const scopeLines = [...(d.scope?.lines ?? []), ...(d.variations ?? []).flatMap((v) => v.lines)].filter((line) => !line.deductsLineId);
+  const unplannedScope = scopeLines.filter((line) => !d.materials.some((m) => m.scopeLineId === line.id)).length;
+  const toOrder = shortages(state).length;
+  const stages: Record<string, { title: string; description: string; metrics: StageMetric[]; readOnly: boolean }> = {
+    "plan-teams": { title: "Plan & schedule", description: "Break the released scope into tasks, set dates and milestones, and book the people or factory capacity that will do the work.", metrics: planMetrics, readOnly: !state.canManage },
+    production: { title: "Factory", description: "Workshop jobs made in-house or by an outside factory. Start when drawings, materials and approvals are ready; dispatch once output is approved.", metrics: taskMetrics(leafTasks.filter((t) => t.location === "factory")), readOnly: !state.canManage && !state.canReport },
+    "site-work": { title: "Site", description: "Installation, commissioning and technical queries on site. Progress is proven through daily updates and inspections.", metrics: taskMetrics(leafTasks.filter((t) => t.location === "site")), readOnly: !state.canManage && !state.canReport },
+    "daily-progress": { title: "Daily progress", description: "Field updates with quantities, photos and blockers. A reviewer approves each update before task progress changes.", metrics: reportMetrics, readOnly: !state.canReport && !state.canReview },
+    "material-planning": { title: "Materials", description: "What each task needs, what is in stock and what still has to be ordered. Requirements come from the released quotation scope; stock changes only through recorded receipts, issues and returns.", metrics: [...(scopeLines.length ? [{ label: "Scope items planned", value: `${scopeLines.length - unplannedScope} / ${scopeLines.length}`, tone: unplannedScope ? "attention" as const : "success" as const }] : []), ...materialMetrics], readOnly: !state.canManage && !state.canBuy },
+    procurement: { title: "Purchasing", description: "Compare offers, approve orders and receive deliveries against the same project requirements.", metrics: [{ label: "To order", value: toOrder, tone: toOrder ? "attention" : "neutral" }, ...orderMetrics], readOnly: !state.canBuy },
+    documents: { title: "Drawings & documents", description: "Approved drawings released from Pre-execution plus specifications, permits and closeout records. Revisions keep the information used for released work.", metrics: documentMetrics, readOnly: !state.canManage && !state.canReview },
+    snagging: { title: "Snags & warranty", description: "Every defect is assigned, corrected with evidence and verified by a different reviewer. Major and critical defects block area handover.", metrics: snagMetrics, readOnly: !state.canManage && !state.canReview && !state.canReport },
+    handover: { title: "Handover", description: "Hand over by package or area. Packs are generated from live records and accepted by the client in the portal or with a signed record.", metrics: handoverMetrics, readOnly: !state.canReview && !state.canReport },
+    commercial: { title: "Budget & payments", description: "Contract value, approved budget, committed orders and forecast, connected to the agreement and accounting records.", metrics: commercialMetrics, readOnly: !state.canReview },
+  };
+  const stage = stages[section];
+  const views: [string, string][] =
+    section === "plan-teams" ? [["schedule", "Schedule & milestones"], ["all", "Tasks"], ["teams", "Teams & bookings"], ["calendar", "Calendar"]]
+    : section === "site-work" ? [["all", "Tasks"], ["mine", "My work"], ["attention", "Needs attention"], ["commissioning", "Commissioning"], ["technical_query", "Technical queries"]]
+    : section === "production" ? [["all", "Factory jobs"], ["mine", "My work"], ["attention", "Needs attention"], ["dispatch", "Dispatch"]]
+    : section === "daily-progress" ? [["all", "All updates"], ["draft", "Drafts"], ["submitted", "To review"], ["approved", "Approved"], ["returned", "Returned"], ["issues", "Issues & blockers"]]
+    : section === "procurement" ? [["all", "Orders"], ["shortages", toOrder ? `To order · ${toOrder}` : "To order"], ["expediting", expediting(state).length ? `Expediting · ${expediting(state).length}` : "Expediting"], ["enquiries", "Enquiries & comparison"], ["supplier_return", "Returns & credits"]]
+    : section === "material-planning" && (state.canBuy || state.canManage) ? [["all", "Requirements & stock"], ["warehouse", "Warehouse & transfers"]]
+    : section === "documents" ? [["all", "Documents"], ["technical_query", "Technical queries"], ["transmittal", "Transmittals"]]
+    : section === "commercial" ? [["all", "Budget"], ["accounting", "Payments & books"], ["retention", "Retention"]]
+    : [];
+  const recordViews = ["dispatch", "commissioning", "technical_query", "transmittal", "retention", "supplier_return", "warehouse", "calendar", "legacy"];
+  const primaryButton =
+    section === "procurement" && view === "enquiries" && state.canBuy ? (
+      <Button isDisabled={busy} onPress={() => editOrder(undefined, true)} size="compact" variant="primary"><Plus size={16} />New enquiry</Button>
+    ) : primary?.allowed && !recordViews.includes(view) ? (
+      <Button isDisabled={busy} onPress={primary.fn} size="compact" variant="primary"><Plus size={16} />{primary.label}</Button>
+    ) : null;
+  const stageAction = (
+    <>
+      {["documents", "production", "site-work", "plan-teams"].includes(section) && state.canManage && linkableDesigns > 0 ? <Button isDisabled={busy} onPress={() => void run("link_designs")} size="compact">Link approved drawings · {linkableDesigns}</Button> : null}
+      {section === "material-planning" && state.canManage && unplannedScope > 0 ? <Button isDisabled={busy} onPress={() => void run("materials_from_scope")} size="compact">Plan from scope · {unplannedScope}</Button> : null}
+      {section === "procurement" && state.canBuy && view === "all" ? <Button isDisabled={busy} onPress={() => editOrder(undefined, true)} size="compact">New enquiry</Button> : null}
+      {section === "handover" && state.canReview ? <Button isDisabled={busy} onPress={() => d.phase === "completed" ? decision("Reopen project", "reopen_project", state.id) : void run("complete_project")} size="compact">{d.phase === "completed" ? "Reopen project" : "Complete project"}</Button> : null}
+      {section === "commercial" && state.canManage && view === "all" ? <Button isDisabled={busy} onPress={() => void run("sync_variations")} size="compact">Refresh accepted changes</Button> : null}
+      {primaryButton}
+    </>
+  );
+  function shortageAction(kind: ShortageAction, m: Material) {
+    if (kind === "comments") conversation(m.id);
+    else editOrder(undefined, kind === "enquiry", { ...m, required: quantityToSource(m, d.orders) });
+  }
+  function factoryAction(kind: FactoryAction, t: Task) {
+    if (kind === "open") { setSelected(t.id); setDetailTab("details"); }
+    else if (kind === "start") void run("task_status", { id: t.id, status: "in_progress" });
+    else if (kind === "report") newReport(t);
+    else if (kind === "order") editOrder(undefined, true, t);
+    else if (kind === "comments") conversation(t.id);
+    else planDispatch(t);
+  }
+  function planDispatch(t: Task) {
+    const receivingTasks = d.tasks.filter((candidate) => candidate.location === "site" && !["completed", "cancelled"].includes(candidate.status) && candidate.predecessors.includes(t.id));
+    const receivingTask = receivingTasks.length === 1 ? receivingTasks[0] : undefined;
+    setDispatchDraft({
+      title: `${t.title} · delivery`,
+      taskId: t.id,
+      receivingTaskId: receivingTask?.id ?? "",
+      quantity: Math.max(0, t.approved - (d.dispatches ?? []).filter((x) => x.taskId === t.id && ["ready", "dispatched", "received"].includes(x.status)).reduce((n, x) => n + x.quantity - x.rejected, 0)),
+      dueDate: t.end,
+      destination: receivingTask?.area ? `${state.name} · ${receivingTask.area}` : state.name,
+    });
+    setView("dispatch");
+  }
+  function documentAction(kind: DocumentAction, x: ProjectDocument) {
+    if (kind === "submit") void run("document_status", { id: x.id, status: "review" });
+    else if (kind === "approve") void run("document_status", { id: x.id, status: "approved" });
+    else if (kind === "revise") editDocument(x.id);
+    else if (kind === "publish" || kind === "unpublish") void run("publish_document", { id: x.id, published: kind === "publish" });
+    else conversation(x.id);
+  }
   const record = [
     ...d.tasks,
     ...d.reports,
@@ -1047,123 +1218,37 @@ export function ProjectWorkspace({
       className={`${theme.theme} ${s.page}`}
       aria-label={`${projectTabs.find(([id]) => id === section)?.[1]} workspace`}
     >
-      <header className={s.header} data-compact={section !== "overview" || undefined}>
-        <div className={s.projectIdentity}>
-          <div className={s.heading}><h1>{state.name}</h1><Badge state={d.phase} /></div>
-          <p>{state.customer}</p>
-        </div>
-        <div className={s.actions}>
-          <span role="status" className={s.muted}>
-            {busy ? "Saving…" : success}
-          </span>
-          <IconButton
-            aria-label="Refresh project"
-            isDisabled={busy}
-            onPress={() => void refresh()}
-          >
-            <RefreshCw size={16} />
-          </IconButton>
-          {primary?.allowed &&
-            ![
-              "dispatch",
-              "commissioning",
-              "technical_query",
-              "transmittal",
-              "retention",
-              "supplier_return",
-              "warehouse",
-              "calendar",
-              "legacy",
-            ].includes(view) && (
-              <Button isDisabled={busy} onPress={primary.fn} size="compact" variant="primary">
-                <Plus size={16} />
-                {primary.label}
-              </Button>
-            )}
-        </div>
-      </header>
-      <ProjectControlStrip state={state} busy={busy} run={run} compact={section !== "overview"} />
+      <ProjectHeader
+        busy={busy}
+        onRefresh={() => void refresh()}
+        run={run}
+        state={state}
+        status={success}
+        today={today()}
+      />
       {error && !editor && !report && (
-        <div className={s.error} role="alert">
-          {error}{" "}
-          <Button onPress={() => void refresh()} size="compact" variant="quiet">
-            Refresh project
-          </Button>
-        </div>
+        <div className={s.callout}><Callout actions={<Button onPress={() => void refresh()} size="compact" variant="quiet">Refresh project</Button>} title="Something did not save" tone="danger">{error}</Callout></div>
       )}
       {!state.commercialReady && (
-        <div className={s.notice}>
-          <strong>Execution not released.</strong> A quotation, agreement or required payment approval is still pending.{" "}
-          <Link href={`${pre}/execution-release`}>Review release →</Link>
-        </div>
+        <div className={s.callout}><Callout actions={<Link className={s.calloutLink} href={`${pre}/execution-release`}>Review release →</Link>} title="Execution not released" tone="warning">A quotation, agreement or required payment approval is still pending, so work cannot start yet.</Callout></div>
       )}
-      {!["overview", "boq"].includes(section) && (
+      {section !== "overview" && stage ? (
+        <StageHeader
+          action={stageAction}
+          description={stage.description}
+          metrics={stage.metrics}
+          readOnly={stage.readOnly}
+          title={stage.title}
+        />
+      ) : null}
+      {views.length > 1 || !["overview", "boq"].includes(section) ? (
         <div className={s.toolbar}>
           <div className={s.tabs}>
-            <SegmentedControl label="Views" options={(taskView
-              ? [
-                  [
-                    "all",
-                    section === "production" ? "Manufacturing jobs" : "Tasks",
-                  ],
-                  ["mine", "My work"],
-                  ["attention", "Needs attention"],
-                  ["completed", "Completed"],
-                  ...(section === "production"
-                    ? [["dispatch", "Dispatch"]]
-                    : section === "site-work"
-                      ? [
-                          ["commissioning", "Commissioning"],
-                          ["technical_query", "Technical queries"],
-                        ]
-                      : []),
-                  ...(section === "plan-teams"
-                    ? [
-                        ["schedule", "Schedule & milestones"],
-                        ["teams", "Teams & bookings"],
-                        ["calendar", "Work calendars"],
-                      ]
-                    : []),
-                ]
-              : section === "daily-progress"
-                ? [
-                    ["all", "All updates"],
-                    ["draft", "Drafts"],
-                    ["submitted", "To review"],
-                    ["approved", "Approved"],
-                    ["returned", "Returned"],
-                    ["issues", "Issues & blockers"],
-                  ]
-                : section === "procurement"
-                  ? [
-                      ["all", "Orders"],
-                      ["enquiries", "Enquiries & comparison"],
-                      ["supplier_return", "Returns & credits"],
-                    ]
-                  : section === "material-planning" &&
-                      (state.canBuy || state.canManage)
-                    ? [
-                        ["all", "Requirements & stock"],
-                        ["warehouse", "Warehouse & transfers"],
-                      ]
-                    : section === "documents"
-                      ? [
-                          ["all", "Documents"],
-                          ["technical_query", "Technical queries"],
-                          ["transmittal", "Transmittals"],
-                        ]
-                      : section === "commercial"
-                        ? [
-                            ["all", "Financial plan"],
-                            ["accounting", "Payments & Books"],
-                            ["retention", "Retention"],
-                          ]
-                : [["all", "All records"]]
-            ).map(([id, title]) => ({ id, label: title }))} value={view} onChange={setView} />
+            {views.length > 1 ? <SegmentedControl label="Views" options={views.map(([id, title]) => ({ id, label: title }))} value={view} onChange={setView} /> : null}
           </div>
-          <div className={s.search}><SearchInput label="Search project records" placeholder="Search this view…" value={search} onChange={setSearch} /></div>
+          {!["overview", "boq"].includes(section) ? <div className={s.search}><SearchInput label="Search project records" placeholder="Search this view…" value={search} onChange={setSearch} /></div> : null}
         </div>
-      )}
+      ) : null}
       {view === "warehouse" ? (
         <ProjectWarehouse state={state} onRefresh={refresh} />
       ) : [
@@ -1186,11 +1271,11 @@ export function ProjectWorkspace({
           initialValues={view === "dispatch" ? dispatchDraft : undefined}
         />
       ) : view === "calendar" ? (
-        <ProjectCalendar state={state} run={run} busy={busy} />
+        <ProjectCalendar state={state} run={run} busy={busy} today={today()} onOpen={(id) => { setSelected(id); setDetailTab("details"); }} />
       ) : section === "boq" ? (
         <ProjectBoq state={state} />
       ) : section === "overview" ? (
-        <><ProjectInitiation state={state} busy={busy} run={run} /><ProjectOverview
+        <>{!d.initiation?.baseline ? <ProjectInitiation state={state} busy={busy} run={run} /> : null}<ProjectOverview
           state={state}
           today={today()}
           open={(id) => {
@@ -1202,55 +1287,11 @@ export function ProjectWorkspace({
             }
           }}
           conversation={conversation}
-        /></>
+        />{d.initiation?.baseline ? <ProjectInitiation state={state} busy={busy} run={run} /> : null}</>
       ) : taskView ? (
         section === "production" &&
         ["all", "mine", "attention", "completed"].includes(view) ? (
-          <ProjectProduction
-            state={state}
-            tasks={tasks}
-            busy={busy}
-            onOpen={(t) => {
-              setSelected(t.id);
-              setDetailTab("details");
-            }}
-            onStart={(t) =>
-              void run("task_status", { id: t.id, status: "in_progress" })
-            }
-            onReport={(t) => newReport(t)}
-            onDispatch={(t) => {
-              const receivingTasks = d.tasks.filter(
-                (candidate) =>
-                  candidate.location === "site" &&
-                  !["completed", "cancelled"].includes(candidate.status) &&
-                  candidate.predecessors.includes(t.id),
-              );
-              const receivingTask =
-                receivingTasks.length === 1 ? receivingTasks[0] : undefined;
-              setDispatchDraft({
-                title: `${t.title} · delivery`,
-                taskId: t.id,
-                receivingTaskId: receivingTask?.id ?? "",
-                quantity: Math.max(
-                  0,
-                  t.approved -
-                    (d.dispatches ?? [])
-                      .filter(
-                        (x) =>
-                          x.taskId === t.id &&
-                          ["ready", "dispatched", "received"].includes(x.status),
-                      )
-                      .reduce((n, x) => n + x.quantity - x.rejected, 0),
-                ),
-                dueDate: t.end,
-                destination: receivingTask?.area
-                  ? `${state.name} · ${receivingTask.area}`
-                  : state.name,
-              });
-              setView("dispatch");
-            }}
-            onOrder={(t) => editOrder(undefined, true, t)}
-          />
+          <FactoryTable state={state} tasks={tasks} busy={busy} onAction={factoryAction} />
         ) : view === "schedule" ? (
           schedule
         ) : view === "teams" ? (
@@ -1298,204 +1339,10 @@ export function ProjectWorkspace({
         />
       ) : section === "material-planning" ? (
         <>
-          <div className={s.scroll}>
-            <table data-record-table="" className={s.table}>
-              <thead>
-                <tr>
-                  <th>Material</th>
-                  <th>Used for</th>
-                  <th>Demand</th>
-                  <th>Stock position</th>
-                  <th>Needed by</th>
-                  <th>Next step</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.materials
-                  .filter((m) => filtered(`${m.title} ${m.specification}`))
-                  .map((m) => {
-                    const stock = m.movements.reduce(
-                        (n, x) =>
-                          n +
-                          (["receive", "return"].includes(x.kind)
-                            ? x.quantity
-                            : -x.quantity),
-                        0,
-                      ),
-                      received = m.movements
-                        .filter((x) => x.kind === "receive")
-                        .reduce((n, x) => n + x.quantity, 0);
-                    return (
-                      <tr key={m.id}>
-                        <td>
-                          <strong>{m.title}</strong>
-                          <span className={s.detail}>{m.specification}</span>
-                        </td>
-                        <td>
-                          {label(m.supply)}
-                          <span className={s.detail}>
-                            {d.tasks.find((t) => t.id === m.taskId)?.title}
-                          </span>
-                        </td>
-                        <td>
-                          {m.required} {m.unit}
-                          <span className={s.detail}>
-                            {Math.max(0, m.required - received)} remaining to
-                            receive
-                          </span>
-                        </td>
-                        <td>
-                          {stock} {m.unit}
-                          <span className={s.detail}>
-                            {(m.reservations ?? []).reduce(
-                              (n, r) => n + r.quantity,
-                              0,
-                            )}{" "}
-                            reserved ·{" "}
-                            {stock -
-                              (m.reservations ?? []).reduce(
-                                (n, r) => n + r.quantity,
-                                0,
-                              )}{" "}
-                            available
-                          </span>
-                          {m.reservations
-                            ?.filter((r) => r.quantity > 0)
-                            .map((r) => (
-                              <span className={s.detail} key={r.taskId}>
-                                {r.quantity} →{" "}
-                                {d.tasks.find((t) => t.id === r.taskId)?.title}
-                              </span>
-                            ))}
-                        </td>
-                        <td>{m.needBy}</td>
-                        <td>
-                          {state.canBuy && m.supply === "company" && (quantityToSource(m,d.orders)>0 ? (
-                            <button className={s.button} onClick={()=>editOrder(undefined,true,{...m,required:quantityToSource(m,d.orders)})}>Order {quantityToSource(m,d.orders)} {m.unit}</button>
-                          ): <span className={s.detail}>Covered by accepted stock and existing orders</span>)}
-                          {state.canManage && (
-                            <div className={s.actions}>
-                              <button
-                                className={s.button}
-                                onClick={() =>
-                                  decision(
-                                    "Allocate stock to work",
-                                    "reserve_material",
-                                    m.id,
-                                    { taskId: m.taskId, quantity: 0 },
-                                    [
-                                      f(
-                                        "taskId",
-                                        "Work that will use it",
-                                        "select",
-                                        true,
-                                        taskOptions,
-                                      ),
-                                      {
-                                        ...f(
-                                          "quantity",
-                                        "Quantity to allocate",
-                                          "number",
-                                          true,
-                                        ),
-                                        hint: "Enter 0 to remove the allocation from the selected work.",
-                                      },
-                                      f(
-                                        "note",
-                                        "Allocation note",
-                                        "textarea",
-                                        true,
-                                      ),
-                                    ],
-                                  )
-                                }
-                              >
-                                Allocate stock
-                              </button>
-                              <button
-                                className={s.button}
-                                onClick={() =>
-                                  decision(
-                                    "Update stock quantity",
-                                    "material_move",
-                                    m.id,
-                                    {
-                                      kind: "issue",
-                                      quantity: 0,
-                                      taskId: m.taskId,
-                                    },
-                                    [
-                                      f(
-                                        "kind",
-                                        "What happened",
-                                        "select",
-                                        true,
-                                        opts(
-                                          m.supply === "company"
-                                            ? ["issue", "return", "waste"]
-                                            : [
-                                                "receive",
-                                                "issue",
-                                                "return",
-                                                "waste",
-                                              ],
-                                        ),
-                                      ),
-                                      f("quantity", "Quantity", "number", true),
-                                      f(
-                                        "taskId",
-                                        "For task",
-                                        "select",
-                                        false,
-                                        taskOptions,
-                                      ),
-                                      f(
-                                        "note",
-                                        "Delivery or stock evidence",
-                                        "textarea",
-                                        true,
-                                      ),
-                                    ],
-                                  )
-                                }
-                              >
-                                Update stock
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-            {!d.materials.length && (
-              <Empty title="Plan materials against the actual work">
-                Define the material and supply responsibility. Company orders
-                create accepted stock through verified receipts.
-              </Empty>
-            )}
-          </div>
-          <p className={s.muted}>
-            Allocate received stock to the work that will use it. Ordering demand is calculated from accepted receipts, current stock and existing orders.
-          </p>
+          <MaterialsTable state={state} search={search} onAction={materialAction} />
         </>
       ) : section === "procurement" ? (
         <>
-          {state.canBuy && (
-            <div className={s.row}>
-              <p className={s.muted}>
-                Source, compare, approve and receive against the same project
-                requirements.
-              </p>
-              <button
-                className={s.button}
-                onClick={() => editOrder(undefined, true)}
-              >
-                New enquiry
-              </button>
-            </div>
-          )}
           {view === "enquiries" ? (
             <VendorComparison
               state={state}
@@ -1526,598 +1373,27 @@ export function ProjectWorkspace({
                 );
               }}
             />
+          ) : view === "shortages" ? (
+            <ShortagesTable state={state} search={search} onAction={shortageAction} />
+          ) : view === "expediting" ? (
+            <ExpeditingTable state={state} search={search} onAction={orderAction} />
           ) : (
             <>
-              <div className={s.scroll}>
-                <table data-record-table="" className={s.table}>
-                  <thead>
-                    <tr>
-                      <th>Order / vendor</th>
-                      <th>Value</th>
-                      <th>Promised date</th>
-                      <th>Accepted</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.orders
-                      .filter(
-                        (o) =>
-                          o.status !== "enquiry" &&
-                          filtered(`${o.title} ${o.vendor} ${o.number}`),
-                      )
-                      .map((o) => (
-                        <tr key={o.id}>
-                          <td>
-                            <button
-                              className={s.link}
-                              onClick={() => {
-                                setSelected(o.id);
-                                setDetailTab("details");
-                              }}
-                            >
-                              {o.number} · {o.title} <ArrowUpRight size={13} />
-                            </button>
-                            <span className={s.detail}>
-                              {o.vendor} · {label(o.kind)}
-                            </span>
-                            {o.acknowledgement && (
-                              <span className={s.detail}>
-                                {o.acknowledgement}
-                              </span>
-                            )}
-                            {o.vendorUpdates?.length ? (
-                              <button
-                                className={s.link}
-                                onClick={() => conversation(o.id)}
-                              >
-                                {o.vendorUpdates.length} vendor updates
-                              </button>
-                            ) : null}
-                          </td>
-                          <td>{money(o.quantity * o.unitCost, o.currency)}</td>
-                          <td>{o.promisedDate}</td>
-                          <td>
-                            {o.receipts.reduce((n, r) => n + r.accepted, 0)} /{" "}
-                            {o.quantity} {o.unit}
-                            <span className={s.detail}>
-                              {o.receipts.reduce((n, r) => n + r.rejected, 0)}{" "}
-                              rejected
-                            </span>
-                          </td>
-                          <td>
-                            <Badge state={o.status} />
-                          </td>
-                          <td>
-                            <div className={s.actions}>
-                              {state.canBuy &&
-                                !["closed", "cancelled"].includes(o.status) && (
-                                  <button
-                                    className={s.button}
-                                    disabled={busy}
-                                    onClick={() => void vendorAccess(o.id)}
-                                  >
-                                    Vendor form
-                                  </button>
-                                )}
-                              {state.canBuy && o.status === "draft" && (
-                                <>
-                                  <button
-                                    className={s.button}
-                                    onClick={() => editOrder(o)}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    className={s.button}
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void run("order_status", {
-                                        id: o.id,
-                                        status: "submitted",
-                                      })
-                                    }
-                                  >
-                                    Submit
-                                  </button>
-                                </>
-                              )}
-                              {state.canBuy &&
-                                state.canReview &&
-                                o.status === "submitted" && (
-                                  <button
-                                    className={s.button}
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void run("order_status", {
-                                        id: o.id,
-                                        status: "approved",
-                                      })
-                                    }
-                                  >
-                                    Approve order
-                                  </button>
-                                )}
-                              {state.canBuy && o.status === "approved" && (
-                                <button
-                                  className={s.button}
-                                  onClick={() =>
-                                    decision(
-                                      "Vendor acknowledgement",
-                                      "order_status",
-                                      o.id,
-                                      { status: "acknowledged" },
-                                    )
-                                  }
-                                >
-                                  Record acknowledgement
-                                </button>
-                              )}
-                              {state.canBuy && o.status === "acknowledged" && (
-                                <>
-                                  <button
-                                    className={s.button}
-                                    onClick={() =>
-                                      decision(
-                                        "Verify delivery / service receipt",
-                                        "receipt",
-                                        o.id,
-                                        { accepted: 0, rejected: 0 },
-                                        [
-                                          f(
-                                            "accepted",
-                                            "Accepted quantity",
-                                            "number",
-                                            true,
-                                          ),
-                                          f(
-                                            "rejected",
-                                            "Rejected quantity",
-                                            "number",
-                                            true,
-                                          ),
-                                          f(
-                                            "note",
-                                            "Delivery / inspection evidence",
-                                            "textarea",
-                                            true,
-                                          ),
-                                        ],
-                                      )
-                                    }
-                                  >
-                                    Receive
-                                  </button>
-                                  <button
-                                    className={s.button}
-                                    disabled={busy}
-                                    onClick={() =>
-                                      void run("order_status", {
-                                        id: o.id,
-                                        status: "closed",
-                                      })
-                                    }
-                                  >
-                                    Close order
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                className={s.icon}
-                                aria-label={`Comments on ${o.number}`}
-                                onClick={() => conversation(o.id)}
-                              >
-                                <MessageSquare size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-                {!d.orders.length && (
-                  <Empty title="Buy against clear requirements">
-                    Record the selected vendor offer, approve within budget,
-                    confirm dates and verify partial deliveries.
-                  </Empty>
-                )}
-              </div>
-              <p className={s.muted}>
-                Order approval records an internal commitment. It does not send
-                a purchase order or create a vendor bill automatically.
-              </p>
+              {!d.budget && state.canBuy ? <div className={s.callout}><Callout actions={<Link className={s.calloutLink} href={`/workspace/projects/${state.id}/commercial`}>Set budget →</Link>} title="No approved budget yet" tone="info">Orders can be drafted now, but approving them needs the approved operational budget in Budget & payments.</Callout></div> : null}
+              {toOrder && !d.orders.some((o) => o.status !== "enquiry") ? <div className={s.callout}><Callout actions={<Button onPress={() => setView("shortages")} size="compact">See what to order</Button>} title={`${toOrder} material${toOrder === 1 ? "" : "s"} still need${toOrder === 1 ? "s" : ""} an order`} tone="warning">Requirements planned from the released scope are waiting for a supplier order or enquiry.</Callout></div> : null}
+              <OrdersTable state={state} search={search} onAction={orderAction} />
             </>
           )}
         </>
       ) : section === "documents" ? (
-        <section className={s.documentWorkspace} aria-label="Scope and design records">
-          <div className={s.scopeConnection}>
-            <div><strong>Scope, design and delivery stay connected</strong><span>{d.scope?.lines.length ?? 0} approved BOQ items · {d.documents.filter((document) => document.status === "approved").length} approved files</span></div>
-            <div><Link href={`/workspace/projects/${state.id}/boq`}>Open BOQ <ArrowUpRight size={13}/></Link><Link href={`/workspace/projects/${state.id}/material-planning`}>Plan materials <ArrowUpRight size={13}/></Link></div>
-          </div>
-          <div className={s.documentGrid}>
-            {d.documents
-              .filter((x) => filtered(`${x.title} ${x.kind}`))
-              .map((x) => {
-                const href = x.url || (x.sourceDesignAssetId ? `/api/project-files/${state.id}/${x.sourceDesignAssetId}?workspaceId=${state.workspaceId}` : "");
-                const canPreview = Boolean(x.sourceDesignAssetId) || /\.(avif|gif|jpe?g|png|webp)(?:\?.*)?$/i.test(x.url);
-                const linkedItems = x.scopeLineIds?.length ?? 0;
-                return <article className={s.documentCard} key={x.id}>
-                  {href ? <a className={s.documentPreview} href={href} target="_blank" rel="noreferrer" aria-label="Open preview" tabIndex={-1}>
-                    <FileText size={28} aria-hidden="true"/>{canPreview ? <img alt="" loading="lazy" src={href}/> : null}
-                  </a> : <div className={s.documentPreview}><FileText size={28} aria-hidden="true"/></div>}
-                  <div className={s.documentBody}>
-                    <div className={s.documentTitleRow}><div>{href ? <a className={s.link} href={href} target="_blank" rel="noreferrer">{x.title}</a> : <strong>{x.title}</strong>}<span>{label(x.kind)} · Revision {x.revision}</span></div><Badge state={x.status}/></div>
-                    {x.note ? <p title={x.note}>{x.note}</p> : null}
-                    <div className={s.documentMeta}><span>{x.published ? "Visible to client" : "Internal"}</span><span data-linked={linkedItems > 0 || undefined}>{linkedItems ? `Linked to ${linkedItems} BOQ ${linkedItems === 1 ? "item" : "items"}` : "Not linked to BOQ"}</span></div>
-                  </div>
-                  <footer className={s.documentActions}>
-                        {state.canManage && x.status === "draft" && (
-                          <button
-                            className={s.button}
-                            disabled={busy}
-                            onClick={() =>
-                              void run("document_status", {
-                                id: x.id,
-                                status: "review",
-                              })
-                            }
-                          >
-                            Submit
-                          </button>
-                        )}
-                        {state.canReview && x.status === "review" && (
-                          <button
-                            className={s.button}
-                            disabled={busy}
-                            onClick={() =>
-                              void run("document_status", {
-                                id: x.id,
-                                status: "approved",
-                              })
-                            }
-                          >
-                            Approve
-                          </button>
-                        )}
-                        {x.status === "approved" && (
-                          <>
-                            {state.canManage && (
-                              <button
-                                className={s.button}
-                                onClick={() => editDocument(x.id)}
-                              >
-                                New revision
-                              </button>
-                            )}
-                            {state.canReview && (
-                              <button
-                                className={s.button}
-                                disabled={busy}
-                                onClick={() =>
-                                  void run("publish_document", {
-                                    id: x.id,
-                                    published: !x.published,
-                                  })
-                                }
-                              >
-                                {x.published ? "Unpublish" : "Publish"}
-                              </button>
-                            )}
-                          </>
-                        )}
-                        <button
-                          className={s.icon}
-                          aria-label={`Comments on ${x.title}`}
-                          onClick={() => conversation(x.id)}
-                        >
-                          <MessageSquare size={15} />
-                        </button>
-                  </footer>
-                </article>;
-              })}
-          </div>
-          {!d.documents.length && (
-            <Empty title="Keep the approved information close to the work">
-              Add drawings, specifications, permits and closeout documents.
-              Revisions preserve the information used for released work.
-            </Empty>
-          )}
-        </section>
+        <DocumentsTable state={state} search={search} onAction={documentAction} />
       ) : section === "snagging" ? (
-        <div className={s.scroll}>
-          <table data-record-table="" className={s.table}>
-            <thead>
-              <tr>
-                <th>Defect / area</th>
-                <th>Responsible</th>
-                <th>Severity</th>
-                <th>Due</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {d.snags
-                .filter((x) => filtered(`${x.title} ${x.area}`))
-                .map((x) => (
-                  <tr key={x.id}>
-                    <td>
-                      <strong>{x.title}</strong>
-                      <span className={s.detail}>
-                        {x.area} · {x.evidence}
-                      </span>
-                      {x.resolution && (
-                        <span className={s.detail}>{x.resolution}</span>
-                      )}
-                    </td>
-                    <td>{person(x.ownerId)}</td>
-                    <td>
-                      <Badge state={x.severity} />
-                    </td>
-                    <td>{x.dueDate}</td>
-                    <td>
-                      <Badge state={x.status} />
-                    </td>
-                    <td>
-                      <div className={s.actions}>
-                        {(state.canManage || x.ownerId === state.memberId) &&
-                          x.status === "open" && (
-                            <button
-                              className={s.button}
-                              onClick={() =>
-                                decision(
-                                  "Submit snag correction",
-                                  "snag_status",
-                                  x.id,
-                                  { status: "ready" },
-                                )
-                              }
-                            >
-                              Submit correction
-                            </button>
-                          )}
-                        {state.canReview && x.status === "ready" && (
-                          <button
-                            className={s.button}
-                            onClick={() =>
-                              decision(
-                                "Verify snag closure",
-                                "snag_status",
-                                x.id,
-                                { status: "closed" },
-                              )
-                            }
-                          >
-                            Verify & close
-                          </button>
-                        )}
-                        {state.canManage && x.status !== "open" && (
-                          <button
-                            className={s.button}
-                            onClick={() =>
-                              decision("Reopen snag", "snag_status", x.id, {
-                                status: "open",
-                              })
-                            }
-                          >
-                            Reopen
-                          </button>
-                        )}
-                        <button
-                          className={s.icon}
-                          aria-label="Snag comments"
-                          onClick={() => conversation(x.id)}
-                        >
-                          <MessageSquare size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          {!d.snags.length && (
-            <Empty title="Track every defect through verification">
-              Assign the correction and review its evidence. Major and critical
-              defects block area handover.
-            </Empty>
-          )}
-        </div>
+        <>
+          <SnagsTable state={state} search={search} onAction={snagAction} />
+        </>
       ) : section === "handover" ? (
         <>
-          <div className={s.scroll}>
-            <table data-record-table="" className={s.table}>
-              <thead>
-                <tr>
-                  <th>Handover / area</th>
-                  <th>Scope & documents</th>
-                  <th>Status</th>
-                  <th>Warranty</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.handovers
-                  .filter((x) => filtered(`${x.title} ${x.area}`))
-                  .map((x) => (
-                    <tr key={x.id}>
-                      <td>
-                        <strong>{x.title}</strong>
-                        <span className={s.detail}>{x.area}</span>
-                        {x.outstanding && (
-                          <span className={s.detail}>
-                            Outstanding: {x.outstanding}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {x.taskIds.length} tasks · {x.documentIds.length}{" "}
-                        documents
-                      </td>
-                      <td>
-                        <Badge state={x.status} />
-                        {x.acceptedBy && (
-                          <span className={s.detail}>
-                            {x.acceptedBy} · {x.acceptedAt.slice(0, 10)}
-                          </span>
-                        )}
-                      </td>
-                      <td>{x.warrantyUntil || "Not specified"}</td>
-                      <td>
-                        <div className={s.actions}>
-                          {state.canReport && x.status === "accepted" && (
-                            <button
-                              className={s.button}
-                              onClick={() =>
-                                open({
-                                  title: "Record warranty defect",
-                                  action: "warranty_snag",
-                                  wrapper: "snag",
-                                  value: {
-                                    handoverId: x.id,
-                                    area: x.area,
-                                    title: "",
-                                    severity: "minor",
-                                    ownerId: "",
-                                    dueDate: today(),
-                                    evidence: "",
-                                  },
-                                  fields: [
-                                    f("title", "Defect", "text", true),
-                                    f(
-                                      "severity",
-                                      "Severity",
-                                      "select",
-                                      true,
-                                      opts(["minor", "major", "critical"]),
-                                    ),
-                                    f(
-                                      "ownerId",
-                                      "Responsible person",
-                                      "select",
-                                      true,
-                                      memberOptions,
-                                    ),
-                                    f("dueDate", "Response due", "date", true),
-                                    f(
-                                      "evidence",
-                                      "Photos / service request reference",
-                                      "textarea",
-                                      true,
-                                    ),
-                                  ],
-                                })
-                              }
-                            >
-                              Warranty defect
-                            </button>
-                          )}
-                          {state.canReview && ["draft", "returned"].includes(x.status) && (
-                            <button
-                              className={s.button}
-                              disabled={busy}
-                              onClick={() =>
-                                decision(
-                                  x.status === "returned" ? "Prepare corrected handover pack" : "Review generated handover pack",
-                                  "handover_status",
-                                  x.id,
-                                  { status: "ready", confirmed: false },
-                                  [
-                                    {
-                                      ...f(
-                                        "confirmed",
-                                        "I reviewed the generated scope, inspections, passed commissioning, published closeout documents, accepted materials and affected defects",
-                                        "check",
-                                        true,
-                                      ),
-                                      hint: "The server regenerates the pack from live project records and rechecks every control before it becomes client-ready.",
-                                    },
-                                  ],
-                                )
-                              }
-                            >
-                              {x.status === "returned" ? "Prepare correction" : "Prepare client review"}
-                            </button>
-                          )}
-                          {state.canReview && x.status === "ready" && (
-                            <button
-                              className={s.button}
-                              onClick={() =>
-                                decision(
-                                  "Record client handover acceptance",
-                                  "handover_status",
-                                  x.id,
-                                  { status: "accepted", acceptedBy: "" },
-                                  [
-                                    f(
-                                      "signedRecord",
-                                      "I have a signed client acceptance record to attach",
-                                      "check",
-                                      true,
-                                    ),
-                                    f(
-                                      "acceptedBy",
-                                      "Client signatory",
-                                      "text",
-                                      true,
-                                    ),
-                                    f(
-                                      "note",
-                                      "Signed acceptance reference / evidence",
-                                      "textarea",
-                                      true,
-                                    ),
-                                  ],
-                                )
-                              }
-                            >
-                              Record signed acceptance
-                            </button>
-                          )}
-                          <button
-                            className={s.icon}
-                            aria-label="Handover comments"
-                            onClick={() => conversation(x.id)}
-                          >
-                            <MessageSquare size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            {!d.handovers.length && (
-              <Empty title="Hand over room by room">
-                Link completed tasks and approved closeout documents. Record
-                client acceptance and warranty obligations.
-              </Empty>
-            )}
-          </div>
-          <div className={s.row}>
-            <p className={s.muted}>
-              Physical handover and financial closure are separate. All work,
-              defects and reconciliation must be complete before closing the
-              project.
-            </p>
-            {state.canReview && (
-              <button
-                className={s.button}
-                disabled={busy}
-                onClick={() =>
-                  d.phase === "completed"
-                    ? decision("Reopen project", "reopen_project", state.id)
-                    : void run("complete_project")
-                }
-              >
-                {d.phase === "completed"
-                  ? "Reopen project"
-                  : "Complete project"}
-              </button>
-            )}
-          </div>
+          <HandoversTable state={state} search={search} onAction={handoverAction} />
         </>
       ) : section === "commercial" && view === "accounting" ? (
         <ProjectAccounting
@@ -2125,105 +1401,51 @@ export function ProjectWorkspace({
           caseId={state.caseId}
         />
       ) : section === "commercial" ? (
-        <>
-          <div className={s.summaryGrid}>
-            <div className={s.metric}>
-              <span>Original contract</span>
-              <strong style={{ fontSize: "1.3rem" }}>
-                {money(d.scope?.value ?? 0, d.scope?.currency)}
-              </strong>
-              {d.variations?.length ? (
-                <span>
-                  With variations:{" "}
-                  {money(
-                    (d.scope?.value ?? 0) +
-                      d.variations.reduce((n, v) => n + v.value, 0),
-                    d.scope?.currency,
-                  )}
-                </span>
-              ) : null}
-            </div>
-            <div className={s.metric}>
-              <span>Approved budget</span>
-              <strong style={{ fontSize: "1.3rem" }}>
-                {money(d.budget, d.scope?.currency)}
-              </strong>
-            </div>
-            <div className={s.metric}>
-              <span>Committed orders</span>
-              <strong style={{ fontSize: "1.3rem" }}>
-                {money(
-                  d.orders
-                    .filter((o) =>
-                      ["approved", "acknowledged", "closed"].includes(o.status),
-                    )
-                    .reduce((n, o) => n + o.quantity * o.unitCost, 0),
-                  d.scope?.currency,
-                )}
-              </strong>
-            </div>
-            <div className={s.metric}>
-              <span>Forecast at completion</span>
-              <strong style={{ fontSize: "1.3rem" }}>
-                {money(d.forecast, d.scope?.currency)}
-              </strong>
-            </div>
-          </div>
-          <div className={s.columns}>
-            <div className={s.section}>
-              <h2>Connected commercial records</h2>
-              {state.canManage && (
-                <Button
-                  size="compact"
-                  isDisabled={busy}
-                  onPress={() => void run("sync_variations")}
-                >
-                  Refresh accepted changes
-                </Button>
-              )}
-              {d.changeCases?.map((change) => (
-                <div className={s.row} key={change.requestId}>
-                  <span>
-                    Change C{change.number} · {change.kind.replaceAll("_", " ")}
-                  </span>
-                  <strong>{change.quoteIds.length} accepted document{change.quoteIds.length === 1 ? "" : "s"}</strong>
-                </div>
-              ))}
-              {d.variations?.map((v) => (
-                <div className={s.row} key={v.quoteId}>
-                  <span>
-                    Variation V{v.number} · {v.lines.length} items
-                  </span>
-                  <strong>{money(v.value, d.scope?.currency)}</strong>
-                </div>
-              ))}
-              {[
-                ["quotations", "Approved quotations & variations"],
-                ["contracts", "Agreement, milestones & receipts"],
-                ["variations", "Change requests"],
-                ["execution-release", "Release evidence"],
-                ["client-portal", "Client access & portal"],
-              ].map(([id, title]) => (
-                <Link key={id} className={s.row} href={`${pre}/${id}`}>
-                  <span>{title}</span>
-                  <ArrowUpRight size={15} />
-                </Link>
-              ))}
-              <Link className={s.row} href="/workspace/integrations">
-                <span>Zoho Books / QuickBooks connections</span>
+        <><div className={s.columns}>
+          <section className={s.section} aria-labelledby="commercial-records">
+            <h2 id="commercial-records">Connected records</h2>
+            {d.changeCases?.map((change) => (
+              <div className={s.row} key={change.requestId}>
+                <span>Change C{change.number} · {change.kind.replaceAll("_", " ")}</span>
+                <strong>{change.quoteIds.length} accepted document{change.quoteIds.length === 1 ? "" : "s"}</strong>
+              </div>
+            ))}
+            {d.variations?.map((v) => (
+              <div className={s.row} key={v.quoteId}>
+                <span>Variation V{v.number} · {v.lines.length} items</span>
+                <strong>{money(v.value, d.scope?.currency)}</strong>
+              </div>
+            ))}
+            {[
+              ["quotations", "Approved quotations & variations"],
+              ["contracts", "Agreement, milestones & receipts"],
+              ["variations", "Change requests"],
+              ["execution-release", "Release evidence"],
+              ["client-portal", "Client access & portal"],
+            ].map(([id, title]) => (
+              <Link key={id} className={s.row} href={`${pre}/${id}`}>
+                <span>{title}</span>
                 <ArrowUpRight size={15} />
               </Link>
-            </div>
-            <div className={s.section}>
-              <h2>Budget & reconciliation</h2>
-              <p className={s.muted}>
-                Approved orders consume the operational budget. Quotations and
-                variations keep their original approval history in Pre-execution.
-              </p>
-              {state.canReview && (
-                <button
-                  className={s.primary}
-                  onClick={() =>
+            ))}
+            <Link className={s.row} href="/workspace/integrations">
+              <span>Zoho Books / QuickBooks connections</span>
+              <ArrowUpRight size={15} />
+            </Link>
+          </section>
+          <section className={s.section} aria-labelledby="commercial-budget">
+            <h2 id="commercial-budget">Budget & final account</h2>
+            <p className={s.muted}>
+              Approved orders consume the operational budget. Quotations and variations keep their approval history in Pre-execution. Zoho Books or QuickBooks stays the source for invoices, bills and settlement.
+            </p>
+            <Callout title={d.financeClosed ? "Final account reconciled" : "Final account open"} tone={d.financeClosed ? "success" : "info"}>
+              {d.financeEvidence || (d.financeClosed ? "All obligations recorded." : "Close the final account once retention, remaining obligations and settlement are reconciled.")}
+            </Callout>
+            {state.canReview && (
+              <div>
+                <Button
+                  isDisabled={busy}
+                  onPress={() =>
                     decision(
                       "Update budget & financial reconciliation",
                       "commercial",
@@ -2237,67 +1459,29 @@ export function ProjectWorkspace({
                       [
                         f("budget", "Approved cost budget", "number", true),
                         f("forecast", "Forecast final cost", "number", true),
-                        f(
-                          "note",
-                          "Budget / forecast approval reference",
-                          "textarea",
-                          true,
-                        ),
+                        f("note", "Budget / forecast approval reference", "textarea", true),
                         f("financeClosed", "Final account reconciled", "check"),
-                        f(
-                          "financeEvidence",
-                          "Accounting, retention and remaining obligations",
-                          "textarea",
-                        ),
+                        f("financeEvidence", "Accounting, retention and remaining obligations", "textarea"),
                       ],
                     )
                   }
+                  size="compact"
                 >
                   Update financial plan
-                </button>
-              )}
-              <div className={s.notice}>
-                {d.financeClosed
-                  ? "Final account reconciled"
-                  : "Final account remains open"}
-                {d.financeEvidence && <p>{d.financeEvidence}</p>}
+                </Button>
               </div>
-              <p className={s.muted}>
-                Zoho Books or QuickBooks remains the source for invoices, bills
-                and settlement. An internal approval or client receipt image
-                does not confirm payment.
-              </p>
-            </div>
-          </div>
-        </>
-      ) : null}
-      {section === "overview" && Boolean(state.notifications?.length) && (
-        <div className={s.form}>
-          <h2>Updates for you</h2>
-          {state.notifications?.map((n) => (
-            <div className={s.row} key={n.id}>
-              <div>
-                <Link className={s.link} href={n.deepLink}>
-                  {n.subject}
-                </Link>
-                <span className={s.detail}>{n.body}</span>
-              </div>
-              {!n.readAt && (
-                <button
-                  className={s.button}
-                  disabled={busy}
-                  onClick={() => void run("notification_read", { id: n.id })}
-                >
-                  Mark read
-                </button>
-              )}
-            </div>
-          ))}
+            )}
+          </section>
         </div>
-      )}
-      <ControlledModalDialog
+        <section className={s.section} aria-labelledby="commercial-rooms">
+          <h2 id="commercial-rooms">Budget by room</h2>
+          <RoomBudgetTable state={state} />
+        </section></>
+      ) : null}
+      <InspectorSheet
         isOpen={Boolean(selected)}
         onOpenChange={(v) => !v && setSelected("")}
+        size="lg"
         title={
           task?.title ??
           ("title" in (record ?? {})
@@ -2311,55 +1495,25 @@ export function ProjectWorkspace({
               {error}
             </p>
           )}
-          <div className={s.actions}>
-            <button
-              className={s.button}
-              disabled={busy}
-              onClick={() =>
-                void run("follow", {
-                  id: selected,
-                  following: !d.followers?.some(
-                    (f) =>
-                      f.recordId === selected && f.memberId === state.memberId,
-                  ),
-                })
-              }
+          <div className={s.detailBar}>
+            <SegmentedControl
+              label="Record sections"
+              options={(task
+                ? [["details", "Details"], ["subtasks", "Subtasks"], ["updates", "Updates"], ["comments", `Comments (${comments.length})`], ["files", "Files"], ["history", "History"]]
+                : [...(d.orders.some((o) => o.id === selected) ? [["details", "Order & next steps"]] : []), ["comments", `Comments (${comments.length})`], ["files", "Files"], ["history", "History"]]
+              ).map(([id, title]) => ({ id, label: title }))}
+              value={detailTab}
+              onChange={setDetailTab}
+            />
+            <Button
+              isDisabled={busy}
+              onPress={() => void run("follow", { id: selected, following: !d.followers?.some((f) => f.recordId === selected && f.memberId === state.memberId) })}
+              size="compact"
+              variant="quiet"
             >
-              {d.followers?.some(
-                (f) => f.recordId === selected && f.memberId === state.memberId,
-              )
-                ? "Following · Unfollow"
-                : "Follow updates"}
-            </button>
+              {d.followers?.some((f) => f.recordId === selected && f.memberId === state.memberId) ? "Following" : "Follow"}
+            </Button>
           </div>
-          <nav className={s.tabs}>
-            {(task
-              ? [
-                  ["details", "Details"],
-                  ["subtasks", "Subtasks"],
-                  ["updates", "Updates"],
-                  ["comments", `Comments (${comments.length})`],
-                  ["files", "Files"],
-                  ["history", "History"],
-                ]
-              : [
-                  ...(d.orders.some((o) => o.id === selected)
-                    ? [["details", "Order & next steps"]]
-                    : []),
-                  ["comments", `Comments (${comments.length})`],
-                  ["files", "Files"],
-                  ["history", "History"],
-                ]
-            ).map(([id, title]) => (
-              <button
-                key={id}
-                aria-pressed={detailTab === id}
-                onClick={() => setDetailTab(id)}
-              >
-                {title}
-              </button>
-            ))}
-          </nav>
           {d.orders.some((o) => o.id === selected) &&
           detailTab === "details" ? (
             (() => {
@@ -2429,164 +1583,59 @@ export function ProjectWorkspace({
               )}
               {task.blocker && <div className={s.notice}>{task.blocker}</div>}
               {task.location!=="office"&&!["completed","cancelled"].includes(task.status)&&(!task.resourceId||!state.bookings.some(b=>b.taskId===task.id&&b.projectId===state.id&&b.status==="confirmed"))&&<p className={s.notice}>Assign a crew or factory and confirm its booking before starting work.</p>}
-              <div className={s.actions}>
-                {state.canManage && (
-                  <>
-                    <button className={s.button} onClick={() => editTask(task)}>
-                      Edit task
-                    </button>
-                    <button
-                      className={s.button}
-                      disabled={d.reports.some((r) =>
-                        r.entries.some((e) => e.taskId === task.id),
-                      )}
-                      onClick={() => editTask(undefined, task.id)}
-                    >
-                      Add subtask
-                    </button>
-                    {task.resourceId &&
-                      (state.bookings.some(
-                        (b) => b.projectId === state.id && b.taskId === task.id,
-                      ) ? (
-                        <button
-                          className={s.button}
-                          disabled={busy}
-                          onClick={() =>
-                            void run("cancel_booking", { taskId: task.id })
-                          }
-                        >
-                          Release booking
-                        </button>
-                      ) : (
-                        <button
-                          className={s.button}
-                          onClick={() =>
-                            decision(
-                              "Confirm resource booking",
-                              "booking",
-                              task.id,
-                              { taskId: task.id },
-                              [
-                                {
-                                  ...f(
-                                    "startTime",
-                                    "Shift start · HH:mm",
-                                    "text",
-                                  ),
-                                  hint: "Optional. Defaults to the resource calendar.",
-                                },
-                                {
-                                  ...f("endTime", "Shift end · HH:mm", "text"),
-                                  hint: "Optional. Hours must fit the working shift.",
-                                },
-                                f(
-                                  "calendarOverride",
-                                  "Approved exception to employee working hours",
-                                  "check",
-                                ),
-                                {
-                                  ...f(
-                                    "note",
-                                    "Acknowledgement / approved calendar exception",
-                                    "textarea",
-                                  ),
-                                  hint: "Required for an external vendor. Internal availability is checked on confirmation.",
-                                },
-                              ],
-                            )
-                          }
-                        >
-                          Confirm booking
-                        </button>
-                      ))}
-                  </>
+              <div className={s.detailActions}>
+                {state.canManage && !["completed", "cancelled", "in_progress", "awaiting_inspection"].includes(task.status) && (
+                  <Button
+                    isDisabled={busy || !state.commercialReady}
+                    onPress={() => void run("task_status", { id: task.id, status: "in_progress" })}
+                    size="compact"
+                    variant="primary"
+                  >
+                    Start work
+                  </Button>
                 )}
-                {state.canReport &&
-                  !d.tasks.some((c) => c.parentId === task.id) && (
-                    <button
-                      className={s.primary}
-                      onClick={() => newReport(task)}
-                    >
-                      Add daily update
-                    </button>
-                  )}
-                {state.canManage &&
-                  ![
-                    "completed",
-                    "cancelled",
-                    "in_progress",
-                    "awaiting_inspection",
-                  ].includes(task.status) && (
-                    <button
-                      className={s.button}
-                      disabled={busy || !state.commercialReady}
-                      title={!state.commercialReady ? "Complete the Pre-execution release checklist before starting work." : undefined}
-                      onClick={() =>
-                        void run("task_status", {
-                          id: task.id,
-                          status: "in_progress",
-                        })
-                      }
-                    >
-                      Start work
-                    </button>
-                  )}
+                {state.canReport && task.status === "in_progress" && !d.tasks.some((c) => c.parentId === task.id) && (
+                  <Button onPress={() => newReport(task)} size="compact" variant="primary">Add daily update</Button>
+                )}
                 {state.canReview && task.status === "awaiting_inspection" && (
                   <>
-                    <button
-                      className={s.primary}
-                      onClick={() =>
-                        decision("Accept inspection", "inspect", task.id, {
-                          passed: true,
-                        })
-                      }
-                    >
-                      Pass inspection
-                    </button>
-                    <button
-                      className={s.button}
-                      onClick={() =>
-                        decision(
-                          "Inspection requires correction",
-                          "inspect",
-                          task.id,
-                          { passed: false },
-                        )
-                      }
-                    >
-                      Return for correction
-                    </button>
+                    <Button onPress={() => decision("Accept inspection", "inspect", task.id, { passed: true })} size="compact" variant="primary">Pass inspection</Button>
+                    <Button onPress={() => decision("Inspection requires correction", "inspect", task.id, { passed: false })} size="compact">Return for correction</Button>
                   </>
                 )}
                 {state.canManage && (
-                  <button
-                    className={s.button}
-                    onClick={() =>
-                      decision(
-                        "Change task status",
-                        "task_status",
-                        task.id,
-                        { status: "on_hold" },
-                        [
-                          f(
-                            "status",
-                            "Status",
-                            "select",
-                            true,
-                            opts([
-                              "planned",
-                              "blocked",
-                              "on_hold",
-                              "cancelled",
-                            ]),
-                          ),
+                  <MenuButton
+                    items={[
+                      { id: "edit", label: "Edit task" },
+                      { id: "subtask", label: "Add subtask", isDisabled: d.reports.some((r) => r.entries.some((e) => e.taskId === task.id)) },
+                      ...(task.resourceId
+                        ? [state.bookings.some((b) => b.projectId === state.id && b.taskId === task.id)
+                          ? { id: "release_booking", label: "Release booking", isDisabled: busy }
+                          : { id: "booking", label: "Confirm booking" }]
+                        : []),
+                      ...(state.canReport && task.status !== "in_progress" && !d.tasks.some((c) => c.parentId === task.id) ? [{ id: "report", label: "Add daily update" }] : []),
+                      { id: "status", label: "Hold / change status" },
+                    ]}
+                    label="More"
+                    onAction={(id) => {
+                      if (id === "edit") editTask(task);
+                      else if (id === "subtask") editTask(undefined, task.id);
+                      else if (id === "release_booking") void run("cancel_booking", { taskId: task.id });
+                      else if (id === "report") newReport(task);
+                      else if (id === "booking")
+                        decision("Confirm resource booking", "booking", task.id, { taskId: task.id }, [
+                          { ...f("startTime", "Shift start · HH:mm", "text"), hint: "Optional. Defaults to the resource calendar." },
+                          { ...f("endTime", "Shift end · HH:mm", "text"), hint: "Optional. Hours must fit the working shift." },
+                          f("calendarOverride", "Approved exception to employee working hours", "check"),
+                          { ...f("note", "Acknowledgement / approved calendar exception", "textarea"), hint: "Required for an external vendor. Internal availability is checked on confirmation." },
+                        ]);
+                      else
+                        decision("Change task status", "task_status", task.id, { status: "on_hold" }, [
+                          f("status", "Status", "select", true, opts(["planned", "blocked", "on_hold", "cancelled"])),
                           f("note", "Reason", "textarea", true),
-                        ],
-                      )
-                    }
-                  >
-                    Hold / change status
-                  </button>
+                        ]);
+                    }}
+                  />
                 )}
               </div>
             </>
@@ -2608,13 +1657,7 @@ export function ProjectWorkspace({
                   </button>
                 ))}
               {state.canManage && (
-                <button
-                  className={s.primary}
-                  onClick={() => editTask(undefined, task.id)}
-                >
-                  <Plus size={15} />
-                  Add subtask
-                </button>
+                <div><Button onPress={() => editTask(undefined, task.id)} size="compact" variant="primary"><Plus size={15} />Add subtask</Button></div>
               )}
             </>
           ) : task && detailTab === "updates" ? (
@@ -2766,9 +1809,7 @@ export function ProjectWorkspace({
                     ) : null}
                     <div className={s.actions}>
                       {c.resolved ? (
-                        <span className={s.status} data-state="completed">
-                          Resolved
-                        </span>
+                        <StateBadge state="resolved" />
                       ) : (
                         <button
                           className={s.link}
@@ -2853,26 +1894,20 @@ export function ProjectWorkspace({
                   external message is sent.
                 </small>
               </label>
-              <button
-                className={s.primary}
-                disabled={busy || !comment.trim()}
-                onClick={async () => {
-                  if (
-                    await run("comment", {
-                      id: selected,
-                      text: comment,
-                      parentId: replyTo,
-                      mentions,
-                    })
-                  ) {
+              <div><Button
+                isDisabled={busy || !comment.trim()}
+                onPress={async () => {
+                  if (await run("comment", { id: selected, text: comment, parentId: replyTo, mentions })) {
                     setComment("");
                     setReplyTo("");
                     setMentions([]);
                   }
                 }}
+                size="compact"
+                variant="primary"
               >
                 Add comment
-              </button>
+              </Button></div>
             </>
           ) : (
             <ul className={s.history}>
@@ -2892,7 +1927,7 @@ export function ProjectWorkspace({
             </ul>
           )}
         </div>
-      </ControlledModalDialog>
+      </InspectorSheet>
       <ControlledModalDialog
         isOpen={Boolean(vendorLink)}
         onOpenChange={(v) => !v && setVendorLink(null)}
@@ -2906,14 +1941,7 @@ export function ProjectWorkspace({
           </p>
           <TextInput isReadOnly label="Order form link" value={vendorLink?.url ?? ""} />
           <div className={s.actions}>
-            <a
-              className={s.primary}
-              href={vendorLink?.url}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Preview vendor form ↗
-            </a>
+            <a className={s.button} href={vendorLink?.url} rel="noreferrer" target="_blank">Preview vendor form ↗</a>
             <Button
               onPress={async () => {
                 if (vendorLink) {

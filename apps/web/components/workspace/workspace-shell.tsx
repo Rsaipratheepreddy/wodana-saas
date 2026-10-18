@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Menu, Moon, Sun } from "lucide-react";
+import { ArrowLeft, ChevronRight, Menu, Moon, Settings, Sun } from "lucide-react";
 import type { HrmsBootstrap } from '@wodana/contracts';
 import { scopedHrmsNavigation } from '@/lib/hrms/navigation';
 import { hrmsRequest } from '@/lib/hrms/client';
@@ -67,6 +67,9 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
   const woddy = useWoddy();
   const { theme, toggleTheme } = useWorkspaceTheme();
   const mobileOpen = mobileNavigationPath === pathname;
+  // Products sit in the top bar; company and account settings open from the utilities.
+  const productModules = modules.filter((module) => module.id !== "workspace");
+  const settingsModule = modules.find((module) => module.id === "workspace");
   useEffect(() => {
     if (!mobileOpen) return;
     document.body.dataset.scrollLock = "true";
@@ -78,7 +81,7 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
 
 
   return (
-    <div className={styles.shell} data-brand-palette={workspaces[0]?.brandPalette} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || !!projectSection || undefined} style={workspacePrimaryColorStyle(workspaces[0])}>
+    <div className={styles.shell} data-focus={Boolean(focus) || moduleSelector || undefined} data-module-selector={moduleSelector || undefined} data-case-workspace={!!preProjectRoute || !!projectSection || undefined} style={workspacePrimaryColorStyle(workspaces[0])}>
       {!moduleSelector ? <div className={styles.desktopSidebar}>
         <WorkspaceSidebar
           activeModule={activeModule}
@@ -126,13 +129,16 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
           >
             <Menu size={19} />
           </button>
-          <ModuleNavigation activeId={activeModule.id} className={styles.topModuleNav} items={modules} />
+          <ModuleNavigation activeId={activeModule.id} className={styles.topModuleNav} items={productModules} />
           <div className={styles.topModuleMenu}><WorkspaceModuleSwitcher activeModule={activeModule} modules={modules} /></div>
-          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="Qualified leads" className={styles.focusBack} href={backHref}><ArrowLeft size={16} data-directional="true" /><span>Qualified leads</span></Link><div><strong>{selectedCase?.record.title ?? "Pre-execution"}</strong><small>{selectedCase?.record.customerName ?? "Loading case…"}</small></div></div> : null}
+          {preProjectRoute && !focus ? <div className={styles.caseHeader}><Link aria-label="All pre-execution cases" className={styles.focusBack} href={backHref}><ArrowLeft size={16} data-directional="true" /><span>Pre-execution</span></Link><div><strong>{selectedCase?.record.title ?? "Pre-execution"}</strong><small>{selectedCase?.record.customerName ?? "Loading case…"}</small></div></div> : null}
           {projectRoute ? <div className={styles.caseHeader}><Link aria-label="All projects" className={styles.focusBack} href="/workspace/projects"><ArrowLeft size={16} data-directional="true" /><span>All projects</span></Link><div><strong>Project workspace</strong><small>Plan · deliver · hand over</small></div></div> : null}
           {focus ? <><Link className={styles.focusBack} href={focus.backHref}><ArrowLeft size={16} /> {preProjectRoute ? (focus.backHref.includes("/quotations") ? "Back to quotations" : "Back to pre-execution") : "Back to CRM"}</Link><strong className={styles.focusTitle}>{focus.title}</strong></> : null}
           <nav aria-label="Breadcrumb" className={styles.breadcrumbs}>
-            <ol><li aria-current="page">{currentScreen.label}</li></ol>
+            <ol>
+              {currentScreen.label !== activeModule.label ? <li><Link href={activeModule.href}>{activeModule.label}</Link><ChevronRight aria-hidden="true" data-directional="true" size={13} /></li> : null}
+              <li aria-current="page">{currentScreen.label}</li>
+            </ol>
           </nav>
           <div className={styles.globalUtilities}>
             <div className={styles.woddyControl}>
@@ -154,6 +160,16 @@ function WorkspaceShellContent({ children, modules, user, workspaces, unavailabl
               </button>
             </div>
             <WorkspaceNotifications workspaceId={workspaceId} />
+            {settingsModule ? <Link
+              aria-current={activeModule.id === "workspace" ? "page" : undefined}
+              aria-label="Settings"
+              className={styles.themeToggle}
+              data-active={activeModule.id === "workspace" || undefined}
+              href={settingsModule.href}
+              title="Settings"
+            >
+              <Settings aria-hidden="true" size={16} />
+            </Link> : null}
             <button
               aria-label={theme === "light" ? "Use dark mode" : "Use light mode"}
               className={styles.themeToggle}

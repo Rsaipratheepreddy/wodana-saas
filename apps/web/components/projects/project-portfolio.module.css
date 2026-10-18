@@ -1,14 +1,16 @@
-.page { display: grid; gap: var(--wd-space-5); padding-block: var(--wd-space-5) var(--wd-space-8); color: var(--wd-color-text); }
+.page { display: grid; gap: var(--wd-phi-3); padding: var(--wd-workspace-page-block-start, 1.3125rem) var(--wd-workspace-page-inline, 2.125rem) var(--wd-workspace-page-block-end, 3.4375rem); color: var(--wd-color-text); }
 .back { display: inline-flex; inline-size: fit-content; align-items: center; gap: var(--wd-space-2); color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); text-decoration: none; }
 .back:hover { color: var(--wd-color-link); }
 .back:focus-visible { outline: 2px solid var(--wd-color-focus); outline-offset: 3px; }
 .heading { display: flex; align-items: baseline; gap: var(--wd-space-2); }
 .heading h1 { margin: 0; font-size: var(--wd-text-xl); font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); }
 .heading span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); font-variant-numeric: tabular-nums; }
-.metrics { display: flex; flex-wrap: wrap; gap: var(--wd-space-4) var(--wd-space-8); padding-block-end: var(--wd-space-4); border-block-end: 1px solid var(--wd-color-structural-divider); }
-.metrics > div { display: inline-flex; align-items: baseline; gap: var(--wd-space-2); }
-.metrics strong { font-size: var(--wd-text-md); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); }
-.metrics span { color: var(--wd-color-text-secondary); font-size: var(--wd-text-xs); }
+.metrics { display: flex; flex-wrap: wrap; gap: var(--wd-space-2) var(--wd-phi-5); margin: 0; }
+.metrics > div { display: grid; gap: .1rem; }
+.metrics dt { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); font-weight: var(--wd-weight-medium); }
+.metrics dd { margin: 0; font-size: var(--wd-text-xl); font-variant-numeric: tabular-nums; font-weight: var(--wd-weight-semibold); letter-spacing: var(--wd-tracking-tight); line-height: 1.15; }
+.metrics > div[data-tone="danger"] dd { color: var(--wd-color-danger); }
+.metrics > div[data-tone="attention"] dd { color: var(--wd-color-warning); }
 .projectName { display: block; overflow: hidden; font-weight: var(--wd-weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .client { display: inline-flex; align-items: center; gap: var(--wd-space-2); white-space: nowrap; }
 .action { display: grid; gap: 2px; min-inline-size: 0; }

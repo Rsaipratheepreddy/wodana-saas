@@ -657,3 +657,23 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Design board */
+.board { display: grid; gap: var(--wd-phi-2); }
+.pulse { display: grid; gap: .5rem; padding-block: .25rem var(--wd-phi-2); }
+.pulseCopy { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wd-phi-3); flex-wrap: wrap; }
+.pulseCopy strong { font-size: var(--wd-text-md); font-weight: var(--wd-weight-semibold); }
+.pulseCopy span { color: var(--wd-color-text-tertiary); font-size: var(--wd-text-xs); }
+.progress { block-size: .3rem; border-radius: 999px; background: var(--wd-color-surface-muted); overflow: hidden; }
+.progress > span { display: block; block-size: 100%; border-radius: inherit; background: var(--wd-color-action-primary); transition: inline-size var(--wd-duration-slow) var(--wd-ease-out); }
+.roomCell { color: var(--wd-color-text-secondary); }
+.scopeCell { font-weight: var(--wd-weight-medium); }
+.designCell { display: flex; align-items: center; gap: .6rem; min-inline-size: 0; }
+.designCell > :global(*):first-child { flex: none; inline-size: 2.25rem; block-size: 2.25rem; border-radius: var(--wd-radius-xs); overflow: hidden; }
+.designCell > span:last-child { display: grid; min-inline-size: 0; }
+.designCell strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--wd-weight-medium); }
+.designCell small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wd-color-text-tertiary); font-size: var(--wd-text-2xs); }
+.muted { color: var(--wd-color-text-tertiary); }
+
+.organize { display: flex; align-items: center; justify-content: space-between; gap: var(--wd-phi-2); }
+.folderGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: var(--wd-phi-2); }

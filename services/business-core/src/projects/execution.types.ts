@@ -145,6 +145,8 @@ export type Material = {
   required: number;
   supply: "company" | "vendor" | "client";
   taskId: string;
+  /** The released scope line this requirement was planned from, when it came from the BOQ. */
+  scopeLineId?: string;
   needBy: string;
   movements: {
     taskId?: string;

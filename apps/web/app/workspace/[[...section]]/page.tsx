@@ -1,4 +1,6 @@
-import { AuditLogPage, BillingPage, CompanyProfile, IntegrationsPage, MembersPage, OrganizationStructurePage, RolesPermissionsPage, SecurityPage, WorkspaceConfigurationPage, workspaceScreens } from "@/components/workspace";
+import { AuditLogPage, BillingPage, CompanyProfile, IntegrationsPage, MembersPage, OrganizationStructurePage, RolesPermissionsPage, SecurityPage, WorkspaceConfigurationPage, workspaceModules, workspaceScreens } from "@/components/workspace";
+import { getAuthenticatedProfile } from "@/lib/auth/server";
+import { visibleWorkspaceModules } from "@/lib/workspace/module-rollout";
 import { CrmCustomers, CrmOpportunities, CrmReports, CrmScreenPage, LeadsPage, type EnquirySection } from "@/components/crm";
 import { TodayJobsPage } from "@/components/jobs";
 import { PRE_PROJECT_ROOT, listSearch } from "@/lib/pre-project/types";
@@ -27,6 +29,18 @@ export default async function WorkspaceScreen({
 }) {
   const { section } = await params;
   const pathname = section?.length ? `/workspace/${section.join("/")}` : "/workspace";
+  if (pathname === "/workspace") {
+    // The workspace root opens the first product the member can use; company
+    // and account settings live under /workspace/company.
+    const profile = await getAuthenticatedProfile();
+    const membership = profile.memberships[0];
+    const ownerAccess = membership?.roles.some((role) => role === "owner" || role === "administrator") ?? false;
+    const allowed = ownerAccess
+      ? (["workspace", "crm", "pre-project", "projects", "hrms"] as const)
+      : membership?.allowedModules ?? (["workspace"] as const);
+    const home = visibleWorkspaceModules(workspaceModules, membership?.workspaceSlug ?? "", allowed).find((module) => module.id !== "workspace");
+    redirect(home?.href ?? "/workspace/company");
+  }
   if (pathname === "/workspace/audit-log") redirect("/workspace/settings/audit-logs");
   if (pathname === "/workspace/security") redirect("/workspace/settings/security");
   if (pathname === "/workspace/projects/installation") redirect("/workspace/projects/site-work");
